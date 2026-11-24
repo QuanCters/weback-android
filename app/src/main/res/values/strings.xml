@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WeBack Robot Control</string>
+    <string name="app_version">v0.1.0-alpha (FCT-001 Foundation)</string>
+    <string name="simulator_badge">Simulator Mode (Offline)</string>
+    <string name="robot_name">WeBack Simulator Robot</string>
+    <string name="telemetry_title">Robot Telemetry</string>
+    <string name="telemetry_battery">Battery</string>
+    <string name="telemetry_status">Status</string>
+    <string name="telemetry_dustbin">Dustbin</string>
+    <string name="telemetry_mode">Mode</string>
+    <string name="status_docked">Docked</string>
+    <string name="status_undocked">Undocked</string>
+    <string name="status_clean">Clean</string>
+    <string name="status_full">Full</string>
+</resources>
