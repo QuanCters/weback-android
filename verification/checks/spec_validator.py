@@ -77,6 +77,11 @@ def validate_markdown_text(text: str, base_dir: Path, repo_root: Optional[Path] 
             if target.startswith("file://"):
                 target = target[len("file://"):]
 
+            # Flag non-portable workstation absolute paths
+            if target.startswith("/home/") or target.startswith("/Users/"):
+                errors.append(f"Line {line_num}: Machine-specific absolute workstation path is non-portable: {target}")
+                continue
+
             parts = target.split("#", 1)
             file_part = parts[0].strip()
             anchor_part = parts[1].strip() if len(parts) > 1 else None

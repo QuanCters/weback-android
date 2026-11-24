@@ -14,7 +14,7 @@ In strict accordance with Constitution Invariant `C-009` (Defect-to-Regression L
 - **No Fabricated Evidence:** Because the new Android application and verification runner have not yet been implemented or executed, unexecuted RED and GREEN test evidence fields must be `null`.
 - **Honest Provenance Classification:** Defect records are explicitly classified into:
   1. `PROPOSED_PREVENTIVE_CHECK`: Conceptual or architectural defects identified during governance review (e.g., INIT-001 audit) that the verification harness must prevent.
-  2. `HISTORICAL_RE_DEFECT`: Reference errata and legacy implementation discrepancies documented in the reverse engineering baseline ([docs/reference/RE_BASELINE.md](file:///home/quan/workspace/project/weback-android/docs/reference/RE_BASELINE.md)). These are historical reference materials, NOT licensing violation claims or confirmed defects in the new application.
+  2. `HISTORICAL_RE_DEFECT`: Reference errata and legacy implementation discrepancies documented in the reverse engineering baseline ([docs/reference/RE_BASELINE.md](../../../docs/reference/RE_BASELINE.md)). These are historical reference materials, NOT licensing violation claims or confirmed defects in the new application.
   3. `CONFIRMED_APPLICATION_DEFECT`: Genuine defects discovered and reproduced within the new application codebase (none currently exist).
 - **Human Authority for Approval:** The `review_status` of all seed defects and anti-patterns is `PROPOSED`. The status `APPROVED` is reserved strictly for genuine human authorization by the Product Owner or Lead Maintainer.
 

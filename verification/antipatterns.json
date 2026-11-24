@@ -48,6 +48,18 @@
       "negative_mutation_sample": "return CheckResult(status=\"FAIL\", exit_code=1)",
       "false_positive_assessment": "Scoped strictly to check runner result constructors.",
       "activation_milestone": "Milestone FCT-000 (Harness Bootstrap)"
+    },
+    {
+      "rule_id": "ANTI-005",
+      "lifecycle_state": "PROPOSED",
+      "target_globs": ["specs/**/*.md", "policies/**/*.md", "docs/**/*.md"],
+      "pattern": "\\]\\(file:///(?:home|Users)/[^)]+\\)",
+      "matcher_type": "regex",
+      "rationale": "Hardcoded workstation filesystem paths break portability across different CI runners and developer machines.",
+      "positive_test_sample": "[link](file:///home/user/workspace/doc.md)",
+      "negative_mutation_sample": "[link](../../doc.md)",
+      "false_positive_assessment": "Scoped strictly to markdown link destinations starting with file:///home or file:///Users.",
+      "activation_milestone": "Milestone FCT-000 (Harness Bootstrap)"
     }
   ]
 }

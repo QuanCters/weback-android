@@ -65,5 +65,13 @@ class TestSpecValidator(unittest.TestCase):
             self.assertEqual(len(errs), 1)
             self.assertIn("missing-heading", errs[0])
 
+    def test_detect_machine_specific_absolute_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "doc.md"
+            p.write_text("See [baseline](file:///home/developer/project/doc.md)")
+            errs = validate_markdown_file(p, repo_root=Path(td))
+            self.assertGreater(len(errs), 0)
+            self.assertTrue(any("workstation" in e.lower() or "file:///home" in e or "does not exist" in e for e in errs))
+
 if __name__ == "__main__":
     unittest.main()
