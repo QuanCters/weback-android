@@ -476,13 +476,12 @@ class TestEvidence(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("Inconsistent check status and exit code", "".join(errs))
 
-    def test_missing_bootstrap_anchor_TEST_EVI_012(self):
+    def test_mismatched_external_policy_context_TEST_EVI_012(self):
         results = [CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
-        report_path = generate_evidence_report(results, tested_sha="a"*40, base_sha="0"*40, policy_sha256="b"*64, policy_modified_from_base=True, lane="candidate", output_dir=self.out_dir)
-        # Missing bootstrap anchor
-        ok, errs = verify_evidence_report(report_path, expected_sha="a"*40, expected_policy_sha256="b"*64, bootstrap_approval_path=self.out_dir / "non_existent.json")
+        report_path = generate_evidence_report(results, tested_sha="a"*40, base_sha="0"*40, policy_sha256="b"*64, policy_modified_from_base=False, lane="candidate", output_dir=self.out_dir)
+        ok, errs = verify_evidence_report(report_path, expected_sha="a"*40, expected_base_sha="0"*40, expected_policy_sha256="w"*64)
         self.assertFalse(ok)
-        self.assertIn("Missing bootstrap policy approval", "".join(errs))
+        self.assertIn("Policy hash mismatch against expected context", "".join(errs))
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -842,17 +841,87 @@ git commit -m "test(verification): add controlled mutation test suite (TEST-MUT-
 
 ---
 
-### Task 9: Initial Policy Activation & Bootstrap Approval Anchor
+### Task 9: CI Workflow Configuration & Structural Validator
+
+**Files:**
+- Create: `.github/workflows/ci.yml`
+- Test: `verification/selftests/test_ci.py`
+
+**Interfaces:**
+- Consumes: GitHub Actions YAML configuration file.
+- Produces: `TEST-CI-001` test asserting structural AST, dictionary permissions, concurrency, checkout ref, candidate lane invocation, and disclaimer documentation.
+
+- [ ] **Step 1: Write failing test `TEST-CI-001` with PyYAML structural validation**
+```python
+# verification/selftests/test_ci.py
+import unittest
+import yaml
+from pathlib import Path
+
+class TestCIWorkflow(unittest.TestCase):
+    def test_workflow_structure_and_permissions_TEST_CI_001(self):
+        wf_path = Path(".github/workflows/ci.yml")
+        self.assertTrue(wf_path.exists(), "CI workflow file must exist")
+        data = yaml.safe_load(wf_path.read_text())
+        
+        # 1. Triggers
+        self.assertIn("push", data["on"])
+        self.assertIn("pull_request", data["on"])
+        self.assertIn("main", data["on"]["push"]["branches"])
+        self.assertIn("main", data["on"]["pull_request"]["branches"])
+        
+        # 2. Least Privilege Permissions
+        self.assertEqual(data.get("permissions"), {"contents": "read"}, "Permissions must strictly be contents: read")
+        
+        # 3. Concurrency
+        self.assertIn("concurrency", data)
+        self.assertTrue(data["concurrency"].get("cancel-in-progress"))
+        
+        # 4. Job Steps
+        steps = data["jobs"]["verify"]["steps"]
+        step_names = [s.get("name", "") for s in steps]
+        self.assertTrue(any("Checkout" in n for n in step_names))
+        self.assertTrue(any("Candidate" in n for n in step_names))
+        
+        # Verify candidate checkout ref
+        checkout_step = next(s for s in steps if "actions/checkout" in s.get("uses", ""))
+        self.assertEqual(checkout_step["with"]["ref"], "${{ github.event.pull_request.head.sha || github.sha }}")
+        
+        # Verify candidate lane invocation
+        run_step = next(s for s in steps if "run.py" in s.get("run", ""))
+        self.assertIn("--lane candidate", run_step["run"])
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+Run: `python3 -m unittest verification/selftests/test_ci.py -v`
+Expected: FAIL with `AssertionError: CI workflow file must exist`
+
+- [ ] **Step 3: Implement `.github/workflows/ci.yml`**
+Author minimal CI workflow with `contents: read` permissions, concurrency grouping with `cancel-in-progress: true`, checking out `${{ github.event.pull_request.head.sha || github.sha }}`, invoking `python3 verification/run.py --lane candidate`, and uploading `artifacts/verification/`.
+
+- [ ] **Step 4: Run test to verify it passes**
+Run: `python3 -m unittest verification/selftests/test_ci.py -v`
+Expected: PASS with 1/1 tests passing.
+
+- [ ] **Step 5: Commit**
+```bash
+git add .github/workflows/ci.yml verification/selftests/test_ci.py
+git commit -m "ci: add GitHub Actions verification harness workflow and structural validator (TEST-CI-001)"
+```
+
+---
+
+### Task 10: Proposed Initial Policy Catalog, Complete Candidate Commit & End-to-End Candidate Verification
 
 **Files:**
 - Create: `policies/checks.json`
-- Create: `policies/bootstrap_approval.json`
+- Create: `policies/bootstrap_proposal.json`
 
 **Interfaces:**
-- Consumes: FCT-000 active checks (`spec-hygiene`, `harness-selftests`).
-- Produces: Canonical check registry and cryptographic bootstrap anchor record.
+- Consumes: All completed checks from Tasks 1–9.
+- Produces: Proposed check catalog (with `harness-selftests` invoking structured `test_adapter.py`) and bootstrap proposal manifest.
 
-- [ ] **Step 1: Write `policies/checks.json` and `policies/bootstrap_approval.json`**
+- [ ] **Step 1: Write proposed `policies/checks.json` and `policies/bootstrap_proposal.json`**
 ```json
 // policies/checks.json
 {
@@ -869,97 +938,48 @@ git commit -m "test(verification): add controlled mutation test suite (TEST-MUT-
     },
     {
       "id": "harness-selftests",
-      "argv": ["python3", "-m", "unittest", "discover", "-s", "verification/selftests"],
+      "argv": ["python3", "verification/checks/test_adapter.py", "--discover", "verification/selftests"],
       "required": true,
       "timeout_seconds": 60,
       "type": "test_suite",
-      "description": "Executes complete verification harness isolated selftest suite"
+      "description": "Executes complete verification harness isolated selftest suite via structured test adapter"
     }
   ]
 }
 ```
 
 ```json
-// policies/bootstrap_approval.json
+// policies/bootstrap_proposal.json
 {
   "milestone": "FCT-000",
-  "approved_policy_path": "policies/checks.json",
-  "approved_policy_sha256": "<CALCULATED_SHA256_OF_CHECKS_JSON>",
-  "authorized_by": "Product Owner & Lead Maintainer",
-  "authorization_date": "2026-11-24",
-  "governance_gate": "G3",
-  "status": "APPROVED"
+  "proposed_policy_path": "policies/checks.json",
+  "proposed_policy_sha256": "<CALCULATED_SHA256_OF_CHECKS_JSON>",
+  "required_check_ids": ["spec-hygiene", "harness-selftests"],
+  "status": "PROPOSED",
+  "authorized_by": null,
+  "authorization_date": null,
+  "governance_gate": "G3_IMPLEMENTATION_PROPOSAL",
+  "notes": "Initial policy catalog proposal. Authoritative verification acceptance requires explicit expected digest binding during evidence audit."
 }
 ```
 
-- [ ] **Step 2: Run verification runner against active checks**
+- [ ] **Step 2: Run verification runner in Fast Lane against active checks**
 Run: `python3 verification/run.py --lane fast`
 Expected: PASS with 100% checks passing.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit the complete candidate working tree**
 ```bash
-git add policies/checks.json policies/bootstrap_approval.json
-git commit -m "feat(policy): activate initial checks.json and anchor bootstrap approval record"
+git add policies/checks.json policies/bootstrap_proposal.json
+git commit -m "feat(policy): propose initial checks.json and bootstrap proposal manifest"
 ```
 
----
+- [ ] **Step 4: Execute Candidate Verification Run on clean checkout**
+Run: `python3 verification/run.py --lane candidate`
+Expected: PASS (Exit code 0, candidate report generated with tested HEAD SHA).
 
-### Task 10: CI Workflow Pipeline, Candidate Run Validation & Review Hand-Off
+- [ ] **Step 5: Run Independent Evidence Audit with expected policy context**
+Run: `python3 verification/checks/evidence.py --audit-latest --require-candidate`
+Expected: PASS (Exit code 0, all cryptographic log hashes verified, verdict recomputed, status consistent).
 
-**Files:**
-- Create: `.github/workflows/ci.yml`
-- Test: `verification/selftests/test_ci.py`
-
-**Interfaces:**
-- Consumes: GitHub Actions runner environment.
-- Produces: `TEST-CI-001` test asserting workflow configuration, clean candidate verification execution.
-
-- [ ] **Step 1: Write failing test `TEST-CI-001`**
-```python
-# verification/selftests/test_ci.py
-import unittest
-from pathlib import Path
-
-class TestCIWorkflow(unittest.TestCase):
-    def test_workflow_permissions_and_steps_TEST_CI_001(self):
-        wf = Path(".github/workflows/ci.yml").read_text()
-        self.assertIn("contents: read", wf)
-        self.assertIn("--lane candidate", wf)
-        self.assertIn("actions/checkout@v4", wf)
-        self.assertIn("ref:", wf)
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-Run: `python3 -m unittest verification/selftests/test_ci.py -v`
-Expected: FAIL with `FileNotFoundError: .github/workflows/ci.yml`
-
-- [ ] **Step 3: Implement `.github/workflows/ci.yml`**
-Author minimal CI workflow with `contents: read` permissions, concurrency grouping, checking out `${{ github.event.pull_request.head.sha || github.sha }}`, invoking `python3 verification/run.py --lane candidate`, and uploading `artifacts/verification/`.
-
-- [ ] **Step 4: Run test to verify it passes**
-Run: `python3 -m unittest verification/selftests/test_ci.py -v`
-Expected: PASS with 1/1 tests passing.
-
-- [ ] **Step 5: Execute Strict Verification-First End-to-End Sequence**
-Follow the mandatory SDD 2.0 lifecycle:
-1. Fast verification check:
-   ```bash
-   python3 verification/run.py --lane fast
-   ```
-   Assert: Returns exit code 0.
-2. Commit all staged work:
-   ```bash
-   git add .github/workflows/ci.yml verification/selftests/test_ci.py
-   git commit -m "ci: add GitHub Actions verification harness gate workflow (TEST-CI-001)"
-   ```
-3. Candidate verification run (clean working tree required):
-   ```bash
-   python3 verification/run.py --lane candidate
-   ```
-   Assert: Returns exit code 0, generates `artifacts/verification/<run_id>/report.json` with tested commit HEAD SHA and `verdict: PASS`.
-4. Independent Evidence Audit:
-   ```bash
-   python3 verification/checks/evidence.py --audit-latest
-   ```
-   Assert: Verifies cryptographic log hashes, recomputes verdict, confirms policy hash against `policies/bootstrap_approval.json`, and returns exit code 0.
-5. Hand-off for Gate G4 / Review: Stop and present evidence report.
+- [ ] **Step 6: Hand-off for Gate G4 Review**
+Stop and present evidence report and policy digest to Product Owner and Lead Maintainer for formal review.

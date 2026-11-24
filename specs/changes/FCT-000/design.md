@@ -21,8 +21,8 @@ graph TD
     TestAdapter["verification/checks/test_adapter.py (Structured Test Runner Adapter)"]
     Evidence["verification/checks/evidence.py (Report & Digest Collector)"]
     SpecChecker["verification/checks/spec_validator.py (Spec & Link Auditor)"]
-    PolicyJSON["policies/checks.json (Check Registry)"]
-    BootstrapJSON["policies/bootstrap_approval.json (Initial Policy Anchor)"]
+    PolicyJSON["policies/checks.json (Proposed Check Registry)"]
+    BootstrapJSON["policies/bootstrap_proposal.json (Initial Policy Proposal Manifest)"]
     Schemas["verification/schemas/*.schema.json"]
     Artifacts["artifacts/verification/<run_id>/"]
 
@@ -75,8 +75,8 @@ verification/
 ├── defects.jsonl                # Machine-readable defect registry
 └── antipatterns.json            # Machine-readable anti-pattern database
 policies/
-├── checks.json                  # Active check registry
-└── bootstrap_approval.json      # FCT-000 bootstrap approval digest
+├── checks.json                  # Proposed check registry
+└── bootstrap_proposal.json      # FCT-000 bootstrap proposal manifest (status: PROPOSED)
 ```
 
 ---
@@ -428,9 +428,9 @@ jobs:
 ```
 
 > [!IMPORTANT]
-> **Repository Remote Status & Governance Notice:**
-> The repository currently has no Git remote configured. Therefore:
-> 1. Remote CI is `NOT_RUN`.
-> 2. Branch protection rulesets are `NOT_CONFIGURED`.
-> 3. Remote required-check enforcement is `NOT_VERIFIED`.
-> The CI workflow specification provides the blueprint for future remote deployment upon human authorization.
+> **CI Execution & Remote Governance Status Notice:**
+> The repository is hosted at `QuanCters/weback-android`. However:
+> 1. Local YAML structural validation asserts workflow schema, triggers, and read-only permissions (`STATIC_VALIDATED`).
+> 2. Remote CI execution remains `NOT_EXECUTED_REMOTELY` until GitHub Actions executes the workflow on an active PR runner.
+> 3. Branch protection rulesets remain `PENDING_HUMAN_CONFIGURATION` on GitHub.
+> 4. The verification runner and evidence validator provide local execution provenance; authoritative merge authorization requires passing remote CI and explicit human sign-off.

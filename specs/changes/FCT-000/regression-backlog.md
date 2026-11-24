@@ -1,37 +1,34 @@
-# FCT-000 Initial Regression Backlog & Anti-Pattern Catalog
+# FCT-000 Regression Backlog & Seed Anti-Pattern Catalog
 
 **Change ID:** `FCT-000`  
 **Milestone:** `FCT-000`  
-**Document ID:** `SPEC-REG-CAT-01`  
-**Version:** `1.1.0 (G3 Readiness Revision)`  
-**Status:** `DRAFT (Prepared for Implementation-Readiness Sign-Off)`  
+**Document ID:** `SPEC-REG-FCT000`  
+**Version:** `1.2.0 (Post-G3 Review Revision)`  
+**Status:** `DRAFT (Prepared for Implementation Baseline Approval)`  
 
 ---
 
-## 1. Provenance & Initial Knowledge Base
+## 1. Principles of Defect Governance
 
-The initial defect knowledge base is derived from confirmed reverse-engineering errata (`docs/reference/RE_BASELINE.md`, `docs/engineering/INIT-001_DISCOVERY_CORRECTIONS.md`) and governance invariants.
-
-> [!IMPORTANT]
-> **Defect Provenance & Zero-Fabrication Invariant:**
-> The new Android application and verification harness do not yet exist in code. Therefore, no unexecuted RED or GREEN execution evidence, simulated test logs, or artificial human approval may be claimed. 
-> - Unexecuted evidence fields (`pre_fix_red_result`, `post_fix_green_result`) are set strictly to `null`.
-> - All records carry lifecycle status `PROPOSED` until formally reviewed and approved by human maintainers.
-
-### Record Classifications
-1. **`HISTORICAL_RE_DEFECT`:** Confirmed defects, vulnerabilities, or erroneous reverse-engineering claims identified in the legacy WeBack 6.1.7 APK (`REF-RE-01`).
-2. **`PROPOSED_PREVENTIVE_CHECK`:** Anticipated failure modes, verification bypass vectors, or documentation hygiene rules designed to prevent future engineering mistakes.
-3. **`CONFIRMED_APPLICATION_DEFECT`:** Genuine bugs discovered in new application source code or verification harness code (0 existing at bootstrap).
+In strict accordance with Constitution Invariant `C-009` (Defect-to-Regression Lifecycle), `policies/verification-integrity.md`, and SDD 2.0:
+- **No Fabricated Evidence:** Because the new Android application and verification runner have not yet been implemented or executed, unexecuted RED and GREEN test evidence fields must be `null`.
+- **Honest Provenance Classification:** Defect records are explicitly classified into:
+  1. `PROPOSED_PREVENTIVE_CHECK`: Conceptual or architectural defects identified during governance review (e.g., INIT-001 audit) that the verification harness must prevent.
+  2. `HISTORICAL_RE_DEFECT`: Reference errata and legacy implementation discrepancies documented in the reverse engineering baseline ([docs/reference/RE_BASELINE.md](file:///home/quan/workspace/project/weback-android/docs/reference/RE_BASELINE.md)). These are historical reference materials, NOT licensing violation claims or confirmed defects in the new application.
+  3. `CONFIRMED_APPLICATION_DEFECT`: Genuine defects discovered and reproduced within the new application codebase (none currently exist).
+- **Human Authority for Approval:** The `review_status` of all seed defects and anti-patterns is `PROPOSED`. The status `APPROVED` is reserved strictly for genuine human authorization by the Product Owner or Lead Maintainer.
 
 ---
 
-## 2. Seed Defect Records (`verification/defects.jsonl` Seed Catalog)
+## 2. Seed Defect Catalog (`verification/defects.jsonl` Seed Records)
+
+The following 10 seed defects establish the initial defect-to-regression database:
 
 ```jsonl
 {"defect_id": "DEF-2026-001", "classification": "PROPOSED_PREVENTIVE_CHECK", "requirement_or_invariant_id": "C-008", "severity": "P0", "affected_module": "verification/checks/evidence.py", "evidence": "Governance audit during INIT-001 identifying risk of narrative G4 assertions without machine-readable evidence.", "reproduction": "Candidate verification attempted without generating or validating report.json.", "root_cause": "Absence of automated report generator allowing narrative claims to masquerade as verified gates.", "regression_test_ref": "verification/selftests/test_evidence.py", "pre_fix_red_result": null, "post_fix_green_result": null, "generalization_decision": "true", "proposed_antipattern_rule_id": "ANTI-004", "review_status": "PROPOSED"}
 {"defect_id": "DEF-2026-002", "classification": "PROPOSED_PREVENTIVE_CHECK", "requirement_or_invariant_id": "REQ-HARN-008", "severity": "P0", "affected_module": "verification/checks/evidence.py", "evidence": "Governance audit identifying risk of submitting prior commit report.json to bypass candidate checks.", "reproduction": "Submit report.json with tested_sha differing from active git HEAD.", "root_cause": "Evidence validator omitting git HEAD commit equality check against report.tested_sha.", "regression_test_ref": "verification/selftests/test_evidence.py", "pre_fix_red_result": null, "post_fix_green_result": null, "generalization_decision": "false", "proposed_antipattern_rule_id": null, "review_status": "PROPOSED"}
 {"defect_id": "DEF-2026-003", "classification": "PROPOSED_PREVENTIVE_CHECK", "requirement_or_invariant_id": "REQ-HARN-011", "severity": "P1", "affected_module": "verification/checks/spec_validator.py", "evidence": "Specification link audit during INIT-001 identifying broken relative links after documentation renaming.", "reproduction": "spec_validator parsing markdown relative paths and anchors.", "root_cause": "Absence of automated link integrity checker during documentation refactoring.", "regression_test_ref": "verification/selftests/test_spec_validator.py", "pre_fix_red_result": null, "post_fix_green_result": null, "generalization_decision": "false", "proposed_antipattern_rule_id": null, "review_status": "PROPOSED"}
-{"defect_id": "DEF-2026-004", "classification": "HISTORICAL_RE_DEFECT", "requirement_or_invariant_id": "C-014", "severity": "P0", "affected_module": "lib/arm64-v8a/libIOTCAPIs.so", "evidence": "Dalvik bytecode in com.yugong.Backome bundles closed-source ThroughTek binaries (REF-RE-01 Section 6.1).", "reproduction": "Inspect legacy APK lib/arm64-v8a/ directory.", "root_cause": "Legacy client bundled proprietary third-party binary blobs with licensing and security vulnerabilities.", "regression_test_ref": null, "pre_fix_red_result": null, "post_fix_green_result": null, "generalization_decision": "true", "proposed_antipattern_rule_id": null, "review_status": "PROPOSED"}
+{"defect_id": "DEF-2026-004", "classification": "HISTORICAL_RE_DEFECT", "requirement_or_invariant_id": "C-014", "severity": "P0", "affected_module": "lib/arm64-v8a/libIOTCAPIs.so", "evidence": "Observed legacy packaging in com.yugong.Backome bundled closed-source vendor binaries (REF-RE-01 Section 6.1) as documented in RE reference material.", "reproduction": "Inspect vendor APK reference files.", "root_cause": "Legacy architecture bundled closed-source proprietary binaries rather than clean-room open-source implementations; recorded as reference baseline, not as licensing violation claim or application defect.", "regression_test_ref": null, "pre_fix_red_result": null, "post_fix_green_result": null, "generalization_decision": "true", "proposed_antipattern_rule_id": null, "review_status": "PROPOSED"}
 {"defect_id": "DEF-2026-005", "classification": "HISTORICAL_RE_DEFECT", "requirement_or_invariant_id": "C-010", "severity": "P0", "affected_module": "AndroidManifest.xml", "evidence": "Legacy APK AndroidManifest.xml configured android:usesCleartextTraffic=true globally (SEC-01 in REF-RE-01).", "reproduction": "Inspect decoded legacy AndroidManifest.xml line 42.", "root_cause": "Legacy application disabled transport security globally to allow unencrypted communication.", "regression_test_ref": null, "pre_fix_red_result": null, "post_fix_green_result": null, "generalization_decision": "true", "proposed_antipattern_rule_id": "ANTI-001", "review_status": "PROPOSED"}
 {"defect_id": "DEF-2026-006", "classification": "HISTORICAL_RE_DEFECT", "requirement_or_invariant_id": "REG-01", "severity": "P1", "affected_module": "com.yugong.Backome.protocol", "evidence": "Bytecode proves outbound WebSocket commands transmit flat state, whereas early notes assumed desired wrapper (REG-01 in RE_BASELINE.md).", "reproduction": "Compare Dalvik bytecode in websocket transmission against REST timer payload.", "root_cause": "Initial reverse engineering documentation conflated WebSocket wire format with REST schedule countdown schema.", "regression_test_ref": null, "pre_fix_red_result": null, "post_fix_green_result": null, "generalization_decision": "false", "proposed_antipattern_rule_id": null, "review_status": "PROPOSED"}
 {"defect_id": "DEF-2026-007", "classification": "HISTORICAL_RE_DEFECT", "requirement_or_invariant_id": "REG-04", "severity": "P1", "affected_module": "com.yugong.Backome.map", "evidence": "Bytecode proves binary SLAM maps decompress with java.util.zip.Inflater (ZLIB header), refuting early GZIP claims (REG-04 in RE_BASELINE.md).", "reproduction": "Decompile MapPacketDecoder.java and observe Inflater usage.", "root_cause": "Early architectural report erroneously assumed GZIP stream format without bytecode confirmation.", "regression_test_ref": null, "pre_fix_red_result": null, "post_fix_green_result": null, "generalization_decision": "false", "proposed_antipattern_rule_id": null, "review_status": "PROPOSED"}
@@ -73,26 +70,17 @@ The initial defect knowledge base is derived from confirmed reverse-engineering 
 - **Matcher Type:** `regex`
 - **Rationale:** EventBus creates untraceable global state spaghetti and breaks clean MVI state machines.
 - **Positive Test Sample:** `EventBus.getDefault().post(UpdateEvent())`
-- **Negative Mutation Sample:** `_uiState.update { it.copy(cleaning = true) }`
-- **False Positive Assessment:** Custom classes named `RobotEventBus` or unrelated domain buses are not matched unless using `org.greenrobot` package or `EventBus.getDefault()`.
+- **Negative Mutation Sample:** `viewModel.eventChannel.send(UpdateEvent)`
+- **False Positive Assessment:** Specific to package and default invocation patterns.
 - **Activation Milestone:** Milestone FCT-001 (Android Foundation).
 
-### ANTI-004: Tautological Self-Referential Test Oracles
-- **Lifecycle Status:** `ADVISORY (Non-blocking warning in FCT-000)`
-- **Scope (`target_globs`):** `["app/src/test/java/**/*.kt", "verification/selftests/*.py"]`
-- **Pattern:** `assert\w*\(\s*([a-zA-Z0-9_.]+)\.([a-zA-Z0-9_]+)\(([^)]*)\)\s*,\s*\1\.\2\(\3\)\s*\)`
+### ANTI-004: In-Tree Report Verdict Masquerade
+- **Lifecycle Status:** `PROPOSED (Inactive in FCT-000)`
+- **Scope (`target_globs`):** `["verification/checks/**/*.py"]`
+- **Pattern:** `status\s*=\s*["']PASS["'].*exit_code\s*=\s*[1-9]`
 - **Matcher Type:** `regex`
-- **Rationale:** Constitution Invariant `C-004` requires test assertions to calculate expected values independently.
-- **Positive Test Sample:** `assertEquals(service.compute(x), service.compute(x))`
-- **Negative Mutation Sample:** `assertEquals(service.compute(x), service.compute(y))`
-- **False Positive Assessment:** Scoped to assertions where the receiver, method, and argument are identical. Comparing different arguments `compute(x)` vs `compute(y)` passes cleanly.
-- **Activation Milestone:** Advisory during FCT-000; blocking in FCT-002 upon introducing AST-based analysis.
-
----
-
-## 4. Phased Activation Matrix
-
-> [!IMPORTANT]
-> **No Premature Activation Invariant:**
-> Checks and anti-pattern rules must **never** be activated before the corresponding codebase components exist. 
-> Only Tier 1 rules (`spec-hygiene`, `harness-selftests`) are active in FCT-000. All future Android rules remain `PROPOSED` and inactive.
+- **Rationale:** Forbids code from assigning `status = "PASS"` when a check command returned a non-zero exit code.
+- **Positive Test Sample:** `return CheckResult(status="PASS", exit_code=1)`
+- **Negative Mutation Sample:** `return CheckResult(status="FAIL", exit_code=1)`
+- **False Positive Assessment:** Scoped strictly to check runner result constructors.
+- **Activation Milestone:** Milestone FCT-000 (Harness Bootstrap).

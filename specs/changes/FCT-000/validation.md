@@ -73,7 +73,7 @@ In accordance with Constitution Invariant `C-004` (Independent Test Oracles) and
 | `TEST-EVI-009` | Rejection of Fast Lane Report for Gate G4 | Candidate verification audit provided with report having `"lane": "fast"` | 1 | `FAIL` | Auditor fails; reports `"Fast lane report cannot be used for candidate gate evaluation"`. |
 | `TEST-EVI-010` | Forged PASS Verdict Rejection | Report declares `"verdict": "PASS"` but contains a check with `exit_code: 1` | 2 | `ERROR` | Auditor recomputes verdict from checks; detects discrepancy; aborts with `"Forged PASS verdict rejected"`. |
 | `TEST-EVI-011` | Inconsistent Status and Exit Code | Check result records `status: "PASS"` but `exit_code: 1` | 2 | `ERROR` | Auditor detects status/code mismatch; aborts with `"Inconsistent check status and exit code"`. |
-| `TEST-EVI-012` | Missing Bootstrap Approval Anchor | Candidate verification run in bootstrap context without valid `policies/bootstrap_approval.json` | 2 | `ERROR` | Auditor detects unanchored initial policy; aborts with `"Missing bootstrap policy approval"`. |
+| `TEST-EVI-012` | Rejection of Mismatched External Policy Context | Candidate verification audit provided with mismatched `--expected-policy-sha256` | 2 | `ERROR` | Auditor detects policy hash mismatch against external expectation; aborts with `"Policy hash mismatch against expected context"`. |
 
 ---
 
@@ -109,7 +109,7 @@ To prove that verification checks actively detect defects rather than behaving a
 
 | Test ID | Scenario Description | Test Fixture / Input | Expected Exit Code | Expected Verdict / Status | Independent Test Oracle Assertion |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `TEST-CI-001` | CI Workflow Least Privilege & Step Validation | `.github/workflows/ci.yml` file content | 0 | `PASS` | Structured YAML parser asserts: `permissions.contents == "read"`, `actions/checkout` ref pins candidate SHA, runner invoked with `--lane candidate`, artifact upload step present. |
+| `TEST-CI-001` | CI Workflow Structural Validation & Least Privilege | `.github/workflows/ci.yml` file content | 0 | `PASS` | Structured PyYAML parser asserts: top-level triggers, permissions dict strictly equals `{'contents': 'read'}`, concurrency group configured with `cancel-in-progress: true`, candidate checkout ref pins candidate SHA, runner invoked with `--lane candidate`, and artifact upload step present. Records disclaimer that remote CI execution remains unexecuted until run on GitHub Actions. |
 | `TEST-DEF-001` | Defect Registry Schema Conformance & Provenance | `verification/defects.jsonl` lines | 0 | `PASS` | All 13 mandatory schema fields present, valid UUIDs, valid severity levels, unexecuted RED/GREEN fields are null, and provenance type is valid enum. |
 | `TEST-ANTI-001` | Anti-Pattern Rule Schema & Dual-Sample Verification | `verification/antipatterns.json` entries | 0 | `PASS` | Evaluates each rule against its `positive_test_sample` (must match) and `negative_mutation_sample` (must NOT match); verifies rules with status `APPROVED_ACTIVE` have test coverage. |
 

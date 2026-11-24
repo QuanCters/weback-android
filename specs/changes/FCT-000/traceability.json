@@ -396,10 +396,10 @@
     {
       "ac_id": "AC-008.9",
       "requirement_id": "REQ-HARN-008",
-      "description": "Bootstrap approval mechanism for FCT-000: Initial verification policy is anchored by policies/bootstrap_approval.json.",
+      "description": "Initial verification policy is generated as a proposal in policies/bootstrap_proposal.json with status PROPOSED and authorized_by: null. Authoritative candidate evidence acceptance requires an externally established expected SHA, base revision, policy digest, and required-check set provided via CLI flags.",
       "validation_test_id": "TEST-EVI-012",
-      "test_oracle": "Missing bootstrap anchor rejects report with 'Missing bootstrap policy approval'",
-      "implementation_task": "Task 3",
+      "test_oracle": "Auditor rejects report when expected policy digest does not match external context",
+      "implementation_task": "Task 3, Task 10",
       "check_id": "harness-selftests",
       "status": "PLANNED"
     },
@@ -436,9 +436,9 @@
     {
       "ac_id": "AC-010.1",
       "requirement_id": "REQ-HARN-010",
-      "description": "For checks designated as test suites (type: test_suite), check execution must utilize structured test adapter (test_adapter.py) emitting machine-readable metrics.",
+      "description": "For checks designated as test suites (type: test_suite), check execution must directly invoke structured test runner adapter (test_adapter.py) rather than relying on console scraping.",
       "validation_test_id": "TEST-INV-004",
-      "test_oracle": "Adapter emits structured JSON summary with exact count metrics",
+      "test_oracle": "Structured adapter executes tests via unittest.TestRunner capturing exact counts",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
       "status": "PLANNED"
@@ -586,10 +586,10 @@
     {
       "ac_id": "AC-015.1",
       "requirement_id": "REQ-HARN-015",
-      "description": "Workflow must declare minimal permissions: permissions: { contents: read }.",
+      "description": "Workflow must declare minimal permissions structurally validated via YAML parser: permissions: { contents: read }. Local validation records STATIC_VALIDATED; remote execution remains NOT_EXECUTED_REMOTELY until GitHub Actions run.",
       "validation_test_id": "TEST-CI-001",
-      "test_oracle": "YAML parser asserts permissions.contents == 'read'",
-      "implementation_task": "Task 10",
+      "test_oracle": "PyYAML parser asserts permissions.contents == 'read' and zero write permissions",
+      "implementation_task": "Task 9",
       "check_id": "harness-selftests",
       "status": "PLANNED"
     },
@@ -599,7 +599,7 @@
       "description": "Workflow executes on pull_request and push to main with concurrency cancellation.",
       "validation_test_id": "TEST-CI-001",
       "test_oracle": "YAML parser asserts triggers include pull_request and push to main",
-      "implementation_task": "Task 10",
+      "implementation_task": "Task 9",
       "check_id": "harness-selftests",
       "status": "PLANNED"
     },
@@ -609,7 +609,7 @@
       "description": "Verifies candidate SHA matches PR head SHA or push SHA, runs python3 verification/run.py --lane candidate, and archives artifacts/verification/ as build artifacts.",
       "validation_test_id": "TEST-CI-001",
       "test_oracle": "YAML parser verifies candidate SHA ref, --lane candidate argument, and upload-artifact action",
-      "implementation_task": "Task 10",
+      "implementation_task": "Task 9",
       "check_id": "harness-selftests",
       "status": "PLANNED"
     },
@@ -619,7 +619,7 @@
       "description": "Contains zero production secrets, AWS tokens, or signing keys.",
       "validation_test_id": "TEST-CI-001",
       "test_oracle": "Audit confirms zero secrets or tokens in workflow YAML",
-      "implementation_task": "Task 10",
+      "implementation_task": "Task 9",
       "check_id": "harness-selftests",
       "status": "PLANNED"
     },
@@ -656,7 +656,7 @@
     {
       "ac_id": "AC-016.4",
       "requirement_id": "REQ-HARN-016",
-      "description": "Every defect record must be categorized as HISTORICAL_RE_DEFECT, PROPOSED_PREVENTIVE_CHECK, or CONFIRMED_APPLICATION_DEFECT. Unexecuted RED/GREEN evidence fields must be null until executed.",
+      "description": "Every defect record must be categorized as HISTORICAL_RE_DEFECT (historical RE reference discrepancies, not application defects or licensing violation claims), PROPOSED_PREVENTIVE_CHECK, or CONFIRMED_APPLICATION_DEFECT. Unexecuted RED/GREEN evidence fields must be null until executed.",
       "validation_test_id": "TEST-DEF-001",
       "test_oracle": "Validates classification enum and asserts unexecuted pre_fix_red_result and post_fix_green_result are null",
       "implementation_task": "Task 7",
@@ -668,145 +668,407 @@
     {
       "id": "REQ-HARN-001",
       "title": "Declarative Check Registry Validation",
-      "acceptance_criteria": ["AC-001.1", "AC-001.2", "AC-001.3", "AC-001.4"],
-      "design_components": ["verification/checks/registry.py", "verification/schemas/checks.schema.json", "policies/checks.json"],
-      "tasks": ["Task 1", "Task 9"],
-      "validation_tests": ["TEST-REG-001", "TEST-REG-002", "TEST-REG-003", "TEST-REG-004", "TEST-REG-005", "TEST-REG-006", "TEST-REG-007", "TEST-REG-008"],
+      "acceptance_criteria": [
+        "AC-001.1",
+        "AC-001.2",
+        "AC-001.3",
+        "AC-001.4"
+      ],
+      "design_components": [
+        "verification/checks/registry.py",
+        "verification/schemas/checks.schema.json",
+        "policies/checks.json"
+      ],
+      "tasks": [
+        "Task 1",
+        "Task 9"
+      ],
+      "validation_tests": [
+        "TEST-REG-001",
+        "TEST-REG-002",
+        "TEST-REG-003",
+        "TEST-REG-004",
+        "TEST-REG-005",
+        "TEST-REG-006",
+        "TEST-REG-007",
+        "TEST-REG-008"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-002",
       "title": "Required vs. Optional Check Selection & Governance",
-      "acceptance_criteria": ["AC-002.1", "AC-002.2", "AC-002.3", "AC-002.4", "AC-002.5"],
-      "design_components": ["verification/checks/registry.py", "verification/run.py", "verification/checks/evidence.py"],
-      "tasks": ["Task 1", "Task 2", "Task 3", "Task 5"],
-      "validation_tests": ["TEST-RUN-001", "TEST-RUN-002", "TEST-RUN-003", "TEST-REG-009", "TEST-EVI-002"],
+      "acceptance_criteria": [
+        "AC-002.1",
+        "AC-002.2",
+        "AC-002.3",
+        "AC-002.4",
+        "AC-002.5"
+      ],
+      "design_components": [
+        "verification/checks/registry.py",
+        "verification/run.py",
+        "verification/checks/evidence.py"
+      ],
+      "tasks": [
+        "Task 1",
+        "Task 2",
+        "Task 3",
+        "Task 5"
+      ],
+      "validation_tests": [
+        "TEST-RUN-001",
+        "TEST-RUN-002",
+        "TEST-RUN-003",
+        "TEST-REG-009",
+        "TEST-EVI-002"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-003",
       "title": "Dual-Lane Verification Architecture & Candidate Locking",
-      "acceptance_criteria": ["AC-003.1", "AC-003.2", "AC-003.3", "AC-003.4", "AC-003.5"],
-      "design_components": ["verification/run.py", "verification/checks/git_auditor.py", "verification/checks/evidence.py"],
-      "tasks": ["Task 3", "Task 4", "Task 5"],
-      "validation_tests": ["TEST-RUN-006", "TEST-RUN-009", "TEST-RUN-010", "TEST-EVI-009"],
+      "acceptance_criteria": [
+        "AC-003.1",
+        "AC-003.2",
+        "AC-003.3",
+        "AC-003.4",
+        "AC-003.5"
+      ],
+      "design_components": [
+        "verification/run.py",
+        "verification/checks/git_auditor.py",
+        "verification/checks/evidence.py"
+      ],
+      "tasks": [
+        "Task 3",
+        "Task 4",
+        "Task 5"
+      ],
+      "validation_tests": [
+        "TEST-RUN-006",
+        "TEST-RUN-009",
+        "TEST-RUN-010",
+        "TEST-EVI-009"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-004",
       "title": "Subprocess Execution & Exit-Code Preservation",
-      "acceptance_criteria": ["AC-004.1", "AC-004.2", "AC-004.3", "AC-004.4", "AC-004.5"],
-      "design_components": ["verification/checks/runner.py"],
-      "tasks": ["Task 2"],
-      "validation_tests": ["TEST-RUN-001", "TEST-RUN-002", "TEST-RUN-004", "TEST-RUN-011", "TEST-RUN-014"],
+      "acceptance_criteria": [
+        "AC-004.1",
+        "AC-004.2",
+        "AC-004.3",
+        "AC-004.4",
+        "AC-004.5"
+      ],
+      "design_components": [
+        "verification/checks/runner.py"
+      ],
+      "tasks": [
+        "Task 2"
+      ],
+      "validation_tests": [
+        "TEST-RUN-001",
+        "TEST-RUN-002",
+        "TEST-RUN-004",
+        "TEST-RUN-011",
+        "TEST-RUN-014"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-005",
       "title": "Process Group Timeout Management & Tree Cleanup",
-      "acceptance_criteria": ["AC-005.1", "AC-005.2", "AC-005.3", "AC-005.4", "AC-005.5", "AC-005.6"],
-      "design_components": ["verification/checks/runner.py"],
-      "tasks": ["Task 2"],
-      "validation_tests": ["TEST-RUN-005", "TEST-RUN-012", "TEST-RUN-013"],
+      "acceptance_criteria": [
+        "AC-005.1",
+        "AC-005.2",
+        "AC-005.3",
+        "AC-005.4",
+        "AC-005.5",
+        "AC-005.6"
+      ],
+      "design_components": [
+        "verification/checks/runner.py"
+      ],
+      "tasks": [
+        "Task 2"
+      ],
+      "validation_tests": [
+        "TEST-RUN-005",
+        "TEST-RUN-012",
+        "TEST-RUN-013"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-006",
       "title": "Clean Candidate Checkout Verification",
-      "acceptance_criteria": ["AC-006.1", "AC-006.2"],
-      "design_components": ["verification/checks/git_auditor.py", "verification/run.py"],
-      "tasks": ["Task 4", "Task 5"],
-      "validation_tests": ["TEST-RUN-006", "TEST-RUN-007", "TEST-MUT-003"],
+      "acceptance_criteria": [
+        "AC-006.1",
+        "AC-006.2"
+      ],
+      "design_components": [
+        "verification/checks/git_auditor.py",
+        "verification/run.py"
+      ],
+      "tasks": [
+        "Task 4",
+        "Task 5"
+      ],
+      "validation_tests": [
+        "TEST-RUN-006",
+        "TEST-RUN-007",
+        "TEST-MUT-003"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-007",
       "title": "Cryptographic Evidence Generation & Provenance",
-      "acceptance_criteria": ["AC-007.1", "AC-007.2", "AC-007.3"],
-      "design_components": ["verification/checks/evidence.py", "verification/schemas/report.schema.json"],
-      "tasks": ["Task 3"],
-      "validation_tests": ["TEST-EVI-001"],
+      "acceptance_criteria": [
+        "AC-007.1",
+        "AC-007.2",
+        "AC-007.3"
+      ],
+      "design_components": [
+        "verification/checks/evidence.py",
+        "verification/schemas/report.schema.json"
+      ],
+      "tasks": [
+        "Task 3"
+      ],
+      "validation_tests": [
+        "TEST-EVI-001"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-008",
       "title": "Evidence Validation, Recomputed Verdict & Trust Boundaries",
-      "acceptance_criteria": ["AC-008.1", "AC-008.2", "AC-008.3", "AC-008.4", "AC-008.5", "AC-008.6", "AC-008.7", "AC-008.8", "AC-008.9"],
-      "design_components": ["verification/checks/evidence.py", "verification/schemas/report.schema.json", "policies/bootstrap_approval.json"],
-      "tasks": ["Task 3", "Task 9"],
-      "validation_tests": ["TEST-EVI-004", "TEST-EVI-005", "TEST-EVI-006", "TEST-EVI-007", "TEST-EVI-008", "TEST-EVI-009", "TEST-EVI-010", "TEST-EVI-011", "TEST-EVI-012"],
+      "acceptance_criteria": [
+        "AC-008.1",
+        "AC-008.2",
+        "AC-008.3",
+        "AC-008.4",
+        "AC-008.5",
+        "AC-008.6",
+        "AC-008.7",
+        "AC-008.8",
+        "AC-008.9"
+      ],
+      "design_components": [
+        "verification/checks/evidence.py",
+        "verification/schemas/report.schema.json",
+        "policies/bootstrap_approval.json"
+      ],
+      "tasks": [
+        "Task 3",
+        "Task 10"
+      ],
+      "validation_tests": [
+        "TEST-EVI-004",
+        "TEST-EVI-005",
+        "TEST-EVI-006",
+        "TEST-EVI-007",
+        "TEST-EVI-008",
+        "TEST-EVI-009",
+        "TEST-EVI-010",
+        "TEST-EVI-011",
+        "TEST-EVI-012"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-009",
       "title": "Check Completeness & Accurate Result Classification",
-      "acceptance_criteria": ["AC-009.1", "AC-009.2", "AC-009.3"],
-      "design_components": ["verification/checks/evidence.py", "verification/run.py"],
-      "tasks": ["Task 2", "Task 3", "Task 5"],
-      "validation_tests": ["TEST-EVI-002", "TEST-EVI-003", "TEST-RUN-002"],
+      "acceptance_criteria": [
+        "AC-009.1",
+        "AC-009.2",
+        "AC-009.3"
+      ],
+      "design_components": [
+        "verification/checks/evidence.py",
+        "verification/run.py"
+      ],
+      "tasks": [
+        "Task 2",
+        "Task 3",
+        "Task 5"
+      ],
+      "validation_tests": [
+        "TEST-EVI-002",
+        "TEST-EVI-003",
+        "TEST-RUN-002"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-010",
       "title": "Test Execution Inventory & Structured Reporting",
-      "acceptance_criteria": ["AC-010.1", "AC-010.2", "AC-010.3", "AC-010.4"],
-      "design_components": ["verification/checks/runner.py", "verification/checks/test_adapter.py", "verification/checks/evidence.py"],
-      "tasks": ["Task 2", "Task 3"],
-      "validation_tests": ["TEST-INV-001", "TEST-INV-002", "TEST-INV-003", "TEST-INV-004", "TEST-INV-005", "TEST-INV-006", "TEST-INV-007"],
+      "acceptance_criteria": [
+        "AC-010.1",
+        "AC-010.2",
+        "AC-010.3",
+        "AC-010.4"
+      ],
+      "design_components": [
+        "verification/checks/runner.py",
+        "verification/checks/test_adapter.py",
+        "verification/checks/evidence.py"
+      ],
+      "tasks": [
+        "Task 2",
+        "Task 3"
+      ],
+      "validation_tests": [
+        "TEST-INV-001",
+        "TEST-INV-002",
+        "TEST-INV-003",
+        "TEST-INV-004",
+        "TEST-INV-005",
+        "TEST-INV-006",
+        "TEST-INV-007"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-011",
       "title": "Specification Hygiene & Traceability Verification",
-      "acceptance_criteria": ["AC-011.1", "AC-011.2", "AC-011.3"],
-      "design_components": ["verification/checks/spec_validator.py"],
-      "tasks": ["Task 6"],
-      "validation_tests": ["TEST-MUT-001", "TEST-MUT-002"],
+      "acceptance_criteria": [
+        "AC-011.1",
+        "AC-011.2",
+        "AC-011.3"
+      ],
+      "design_components": [
+        "verification/checks/spec_validator.py"
+      ],
+      "tasks": [
+        "Task 6"
+      ],
+      "validation_tests": [
+        "TEST-MUT-001",
+        "TEST-MUT-002"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-012",
       "title": "Policy Provenance & Protected Verification Assets",
-      "acceptance_criteria": ["AC-012.1", "AC-012.2"],
-      "design_components": ["verification/checks/registry.py", "verification/checks/git_auditor.py"],
-      "tasks": ["Task 1", "Task 4"],
-      "validation_tests": ["TEST-RUN-008", "TEST-EVI-006"],
+      "acceptance_criteria": [
+        "AC-012.1",
+        "AC-012.2"
+      ],
+      "design_components": [
+        "verification/checks/registry.py",
+        "verification/checks/git_auditor.py"
+      ],
+      "tasks": [
+        "Task 1",
+        "Task 4"
+      ],
+      "validation_tests": [
+        "TEST-RUN-008",
+        "TEST-EVI-006"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-013",
       "title": "Isolated Harness Selftest Suite",
-      "acceptance_criteria": ["AC-013.1", "AC-013.2", "AC-013.3"],
-      "design_components": ["verification/selftests/"],
-      "tasks": ["Task 1", "Task 2", "Task 3", "Task 4", "Task 5", "Task 6", "Task 7"],
-      "validation_tests": ["TEST-RUN-001", "TEST-RUN-002", "TEST-RUN-005", "TEST-EVI-001"],
+      "acceptance_criteria": [
+        "AC-013.1",
+        "AC-013.2",
+        "AC-013.3"
+      ],
+      "design_components": [
+        "verification/selftests/"
+      ],
+      "tasks": [
+        "Task 1",
+        "Task 2",
+        "Task 3",
+        "Task 4",
+        "Task 5",
+        "Task 6",
+        "Task 7"
+      ],
+      "validation_tests": [
+        "TEST-RUN-001",
+        "TEST-RUN-002",
+        "TEST-RUN-005",
+        "TEST-EVI-001"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-014",
       "title": "Controlled Validator Mutation Proofs",
-      "acceptance_criteria": ["AC-014.1", "AC-014.2", "AC-014.3"],
-      "design_components": ["verification/selftests/test_mutations.py"],
-      "tasks": ["Task 8"],
-      "validation_tests": ["TEST-MUT-001", "TEST-MUT-002", "TEST-MUT-003", "TEST-MUT-004", "TEST-MUT-005"],
+      "acceptance_criteria": [
+        "AC-014.1",
+        "AC-014.2",
+        "AC-014.3"
+      ],
+      "design_components": [
+        "verification/selftests/test_mutations.py"
+      ],
+      "tasks": [
+        "Task 8"
+      ],
+      "validation_tests": [
+        "TEST-MUT-001",
+        "TEST-MUT-002",
+        "TEST-MUT-003",
+        "TEST-MUT-004",
+        "TEST-MUT-005"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-015",
       "title": "CI Integration & Least-Privilege Trust Boundary",
-      "acceptance_criteria": ["AC-015.1", "AC-015.2", "AC-015.3", "AC-015.4"],
-      "design_components": [".github/workflows/ci.yml"],
-      "tasks": ["Task 10"],
-      "validation_tests": ["TEST-CI-001"],
+      "acceptance_criteria": [
+        "AC-015.1",
+        "AC-015.2",
+        "AC-015.3",
+        "AC-015.4"
+      ],
+      "design_components": [
+        ".github/workflows/ci.yml"
+      ],
+      "tasks": [
+        "Task 9"
+      ],
+      "validation_tests": [
+        "TEST-CI-001"
+      ],
       "status": "PLANNED"
     },
     {
       "id": "REQ-HARN-016",
       "title": "Defect-to-Regression Framework & Anti-Pattern Governance",
-      "acceptance_criteria": ["AC-016.1", "AC-016.2", "AC-016.3", "AC-016.4"],
-      "design_components": ["verification/schemas/defects.schema.json", "verification/schemas/antipatterns.schema.json", "verification/defects.jsonl", "verification/antipatterns.json", "skills/defect-to-regression/SKILL.md"],
-      "tasks": ["Task 7", "Task 9"],
-      "validation_tests": ["TEST-DEF-001", "TEST-ANTI-001"],
+      "acceptance_criteria": [
+        "AC-016.1",
+        "AC-016.2",
+        "AC-016.3",
+        "AC-016.4"
+      ],
+      "design_components": [
+        "verification/schemas/defects.schema.json",
+        "verification/schemas/antipatterns.schema.json",
+        "verification/defects.jsonl",
+        "verification/antipatterns.json",
+        "skills/defect-to-regression/SKILL.md"
+      ],
+      "tasks": [
+        "Task 7",
+        "Task 9"
+      ],
+      "validation_tests": [
+        "TEST-DEF-001",
+        "TEST-ANTI-001"
+      ],
       "status": "PLANNED"
     }
   ]

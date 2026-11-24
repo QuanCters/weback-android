@@ -91,8 +91,8 @@ The verification system must provide a standalone validator (`verification/check
 - **AC-008.5:** Reusing report artifacts from a prior commit or another branch must be strictly rejected.
 - **AC-008.6:** The evidence validator must independently recompute the overall run verdict from actual required check results and exit codes. A report declaring `verdict: PASS` while containing failing, skipped, or timed-out required checks must be rejected as forged (`FORGED_VERDICT_REJECTED`).
 - **AC-008.7:** The evidence validator must reject reports containing inconsistent result status and exit code (e.g. exit code 1 with status PASS, or exit code 0 with status FAIL).
-- **AC-008.8:** Four-tier governance distinction: Requirements distinguish local execution result (runner output), evidence validation result (auditor check), governance authorization (human sign-off), and remote CI status (GitHub runner). A valid local report does NOT constitute merge or release authorization.
-- **AC-008.9:** Bootstrap approval mechanism for FCT-000: Initial verification policy is anchored by a bootstrap authorization record (`policies/bootstrap_approval.json` or signed Lead Maintainer G2 review digest).
+- **AC-008.8:** Four-tier governance distinction: Requirements distinguish local execution result (runner output), evidence validation result (auditor check), remote CI status (GitHub runner), and governance authorization (human sign-off). A valid local report does NOT constitute merge or release authorization. G3 authorization authorizes implementation, not automatic approval of future policies.
+- **AC-008.9:** Initial verification policy is generated as a proposal in `policies/bootstrap_proposal.json` with status `PROPOSED` and `authorized_by: null`. Authoritative candidate evidence acceptance requires an externally established expected SHA, base revision, policy digest, and required-check set provided via CLI flags (`--expected-sha`, `--expected-base-sha`, `--expected-policy-sha256`, `--expected-required-checks`), rather than treating an in-tree candidate file as a self-authorizing trust anchor.
 - **Independent Test Oracle:** Mutate tested SHA in report, forge PASS verdict with failing check, alter log file, or alter checks.json; oracle asserts validator flags each tampering attempt with non-zero exit code.
 
 ---
@@ -108,8 +108,8 @@ All required checks must be accounted for without omission or misclassification.
 
 ### REQ-HARN-010 (MUST): Test Execution Inventory & Structured Reporting
 When a check encapsulates unit, contract, or behavioral tests, test execution counts and outcomes must be parsed via a structured reporting adapter.
-- **AC-010.1:** For checks designated as test suites (`"type": "test_suite"`), the check execution must utilize a structured test runner adapter (`verification/checks/test_adapter.py`) emitting machine-readable metrics.
-- **AC-010.2:** The test summary must capture: `total`, `passed`, `failures`, `errors`, `skipped`, and fail if `total == 0` (`ZERO_TESTS_DISCOVERED`).
+- **AC-010.1:** For checks designated as test suites (`"type": "test_suite"`), the check execution must directly invoke the structured test runner adapter (`verification/checks/test_adapter.py`) rather than relying on console scraping. The adapter executes tests via `unittest.TestRunner` using custom `TestResult` capturing exact counts and outcomes.
+- **AC-010.2:** The test summary must capture: `total`, `passed`, `failures`, `errors`, `skipped`, `expected_failures`, `unexpected_successes`, and fail if `total == 0` (`ZERO_TESTS_DISCOVERED`).
 - **AC-010.3:** Required skipped tests (`skipped > 0` where skipped tests are disallowed) must block the gate.
 - **AC-010.4:** Reports with missing, malformed, or inconsistent test execution metrics relative to child process exit codes must fail closed and block the gate.
 - **Independent Test Oracle:** Run test check against empty test suite, 1-passing, multiple passing, failing suite (10 tests: 8 pass, 2 fail), and disallowed skipped suite; oracle asserts exact count extraction and proper pass/fail classification.
@@ -153,7 +153,7 @@ The harness selftest suite must include controlled mutation tests proving that v
 
 ### REQ-HARN-015 (MUST): CI Integration & Least-Privilege Trust Boundary
 The project must include a minimal, secure GitHub Actions workflow (`.github/workflows/ci.yml`).
-- **AC-015.1:** Workflow must declare minimal permissions: `permissions: { contents: read }`.
+- **AC-015.1:** Workflow must declare minimal permissions structurally validated via YAML parser: `permissions: { contents: read }`. Local structural validation records `STATIC_VALIDATED` status; remote CI status remains `NOT_EXECUTED_REMOTELY` until GitHub Actions executes on live runners.
 - **AC-015.2:** Executes on `pull_request` and `push` to `main` with concurrency cancellation.
 - **AC-015.3:** Verifies candidate SHA matches `github.event.pull_request.head.sha || github.sha`, runs `python3 verification/run.py --lane candidate`, and archives `artifacts/verification/` as build artifacts.
 - **AC-015.4:** Contains zero production secrets, AWS tokens, or signing keys.
@@ -166,5 +166,5 @@ The verification system must establish a standardized machine-readable defect re
 - **AC-016.1:** Defect records must be stored in `verification/defects.jsonl` adhering to schema `verification/schemas/defects.schema.json`.
 - **AC-016.2:** Anti-pattern rules must be stored in `verification/antipatterns.json` adhering to schema `verification/schemas/antipatterns.schema.json`.
 - **AC-016.3:** Anti-pattern rules are categorized by lifecycle state: `PROPOSED`, `ADVISORY`, and `APPROVED_ACTIVE`. Only `APPROVED_ACTIVE` rules with an executable detector, scoped file globs, positive sample, negative sample, and false-positive proof shall execute as blocking gates.
-- **AC-016.4:** Every defect record must be categorized as `HISTORICAL_RE_DEFECT`, `PROPOSED_PREVENTIVE_CHECK`, or `CONFIRMED_APPLICATION_DEFECT`. Unexecuted RED/GREEN evidence fields must be null until executed.
+- **AC-016.4:** Every defect record must be categorized as `HISTORICAL_RE_DEFECT` (historical RE reference discrepancies, not application defects or licensing violation claims), `PROPOSED_PREVENTIVE_CHECK`, or `CONFIRMED_APPLICATION_DEFECT`. Unexecuted RED/GREEN evidence fields must be null until executed.
 - **Independent Test Oracle:** Validate initial seed defects and anti-patterns against their respective JSON schemas using standard Python validator.

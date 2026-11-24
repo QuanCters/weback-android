@@ -3,8 +3,8 @@
 **Change ID:** `FCT-000`  
 **Milestone:** `FCT-000`  
 **Document ID:** `SPEC-RSK-FCT000`  
-**Version:** `1.1.0 (G3 Readiness Revision)`  
-**Status:** `DRAFT (Prepared for Implementation-Readiness Sign-Off)`  
+**Version:** `1.2.0 (Post-G3 Review Revision)`  
+**Status:** `DRAFT (Prepared for Implementation Baseline Sign-Off)`  
 **Assigned Risk Tier:** `T4 — Critical (Verification Trust Boundary & Policy Assets per POL-RISK-01)`  
 
 ---
@@ -30,7 +30,7 @@ graph TD
         T5["T5: Conflating Local Execution with CI Authority"]
         T6["T6: Over-Broad Regex Anti-Patterns (False Positives)"]
         T7["T7: Forged PASS Verdict or Inconsistent Exit Code"]
-        T8["T8: Unanchored Initial Policy Bootstrap"]
+        T8["T8: Candidate-Controlled Self-Authorization Anchor"]
     end
 
     subgraph "Compensating Controls"
@@ -41,7 +41,7 @@ graph TD
         C5["Four-Tier Governance Separation & Distinct CI Runner (Section 4, AC-008.8)"]
         C6["Rule Schema requiring Positive & Negative Samples (AC-016.3)"]
         C7["Independent Verdict Recomputation from Results (AC-008.6, AC-008.7)"]
-        C8["Bootstrap Policy Approval Record (AC-008.9, policies/bootstrap_approval.json)"]
+        C8["External Context Enforcement & Proposed Bootstrap Manifest (AC-008.9)"]
     end
 
     T1 --> C1
@@ -62,10 +62,10 @@ graph TD
 | **THR-002** | **Stale Evidence Reuse & Local Policy Tampering:** An agent submits a prior commit's `report.json`, or modifies `policies/checks.json` to delete checks and matches its own modified hash. | Unverified or unauthorized code merged. | **P0 (Critical)** | Evidence validator compares `tested_sha` against active candidate HEAD SHA and `base_sha` against expected target base. Candidate runner audits git diff of `policies/` against base branch; any policy modification requires explicit human approval. |
 | **THR-003** | **Orphaned Process Zombie Leak:** A command spawns child processes that do not terminate when the parent runner times out, consuming host CPU/RAM. | Build hang, denial of service on host or CI runner. | **P1 (High)** | Process group isolation (`start_new_session=True`), process group tracking (`pgid = proc.pid`), SIGTERM with 0.5s grace escalated to SIGKILL, bounded 2.0s cleanup, and explicit `cleanup_failed: true` recording (`AC-005.2`..`005.4`). |
 | **THR-004** | **Silent Working Tree Mutation:** A check script generates artifacts or alters source files during verification, leaving uncommitted state in candidate branch. | Divergence between tested commit and merged code. | **P1 (High)** | Two-phase git status check: candidate lane strictly checks `git status --porcelain --untracked-files=all` and index bits (`git ls-files -v`) before and after check execution, ignoring only `artifacts/verification/` (`AC-006.1`, `AC-006.2`). |
-| **THR-005** | **Subprocess Sandboxing Misconception:** Believing that `run.py` protects the host against malicious code executed within tests. | False sense of security; potential host modification. | **P2 (Medium)** | Clear architectural disclaimer: `run.py` does not provide an OS sandbox or container boundary. Real containment is delegated to isolated CI runner containers. Descendant processes detaching via `setsid` or in unkillable D-state cannot be guaranteed to terminate; runner records `cleanup_failed` rather than claiming universal containment. |
+| **THR-005** | **Subprocess Sandboxing & CI Conflation Misconception:** Believing that `run.py` protects the host against malicious code, or that local YAML validation means CI passed. | False sense of security; potential host modification or unverified PRs. | **P2 (Medium)** | Clear architectural disclaimer: `run.py` does not provide an OS sandbox or container boundary. Real containment is delegated to isolated CI runner containers. Remote CI status remains `NOT_EXECUTED_REMOTELY` until executed by GitHub Actions. Descendant processes detaching via `setsid` or in unkillable D-state cannot be guaranteed to terminate; runner records `cleanup_failed`. |
 | **THR-006** | **Global Regex Anti-Pattern Bloat:** Discovered defects converted into broad, unchecked global regex blacklists causing widespread false-positive build breaks. | Developer friction, eroded trust in linting. | **P2 (Medium)** | Anti-pattern rules must provide evidence rationale, explicit file scope, positive test sample, negative mutation sample, and false-positive evaluation (`AC-016.3`). Active rules must be in `APPROVED_ACTIVE` state. |
 | **THR-007** | **Forged PASS Verdict or Inconsistent Result Status:** An agent manually edits `report.json` to declare `"verdict": "PASS"` while checks failed, or marks a failing exit code as `PASS`. | Compromised quality gate evaluation. | **P0 (Critical)** | Evidence validator independently recomputes overall verdict from actual required check results and exit codes (`AC-008.6`), rejecting forged verdicts and inconsistent status/code pairs (`AC-008.7`). |
-| **THR-008** | **Unanchored Initial Policy Bootstrap:** During initial repository setup (FCT-000), no base commit exists to diff `policies/checks.json` against, creating an unanchored trust window. | Initial policy bypass or unauthorized check deletion. | **P0 (Critical)** | Initial policy is cryptographically anchored in `policies/bootstrap_approval.json` signed by human authorities (Product Owner and Lead Maintainer), validated by evidence auditor (`AC-008.9`). |
+| **THR-008** | **Candidate-Controlled Self-Authorization Anchor:** An agent generates its own `policies/bootstrap_approval.json` claiming human approval to bypass policy checks. | Self-granted authorization; bypass of Lead Maintainer authority. | **P0 (Critical)** | Candidate files cannot serve as independent trust anchors. Initial bootstrap file is classified as a proposal (`policies/bootstrap_proposal.json` with status `PROPOSED`). Authoritative candidate evidence audit mandates externally supplied expected parameters (`--expected-policy-sha256`, `--expected-required-checks`) bound to human G3 authorization (`AC-008.9`). |
 
 ---
 
@@ -77,10 +77,11 @@ In accordance with `policies/quality-gates.md`, `policies/verification-integrity
    - Under no circumstances shall a waiver be granted for secret exposure, verification tampering, or false `PASS` conversions.
    - A report with `"lane": "fast"` can never satisfy Gate G4 or candidate PR evaluation.
    - A valid local execution report does NOT constitute merge or release authorization.
+   - G3 authorization authorizes implementation, not automatic approval of future policies.
 
 2. **Four-Tier Governance Model:**
    - **Tier 1: Local Execution Result:** Produced by `run.py`; represents execution observations on the developer or agent workstation.
-   - **Tier 2: Evidence Validation Result:** Produced by `evidence.py`; proves structural integrity, log digest authenticity, and tested commit SHA binding.
+   - **Tier 2: Evidence Validation Result:** Produced by `evidence.py`; proves structural integrity, log digest authenticity, and tested commit SHA binding against externally supplied expectations.
    - **Tier 3: Remote CI Status:** Produced by isolated GitHub Actions runner; confirms clean checkout build on independent infrastructure.
    - **Tier 4: Governance Authorization:** Explicit sign-off by designated human authorities (Product Owner for scope/milestones, Lead Maintainer for architecture/policy/merge).
 
