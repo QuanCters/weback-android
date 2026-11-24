@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AntiPatternRegistry",
+  "description": "JSON schema for verification/antipatterns.json",
+  "type": "object",
+  "required": ["schema_version", "rules"],
+  "properties": {
+    "schema_version": { "type": "integer" },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "rule_id",
+          "lifecycle_state",
+          "target_globs",
+          "pattern",
+          "matcher_type",
+          "rationale",
+          "positive_test_sample",
+          "negative_mutation_sample",
+          "false_positive_assessment",
+          "activation_milestone"
+        ],
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "pattern": "^ANTI-\\d{3}$"
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "enum": ["PROPOSED", "ADVISORY", "APPROVED_ACTIVE"]
+          },
+          "target_globs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          },
+          "pattern": { "type": "string" },
+          "matcher_type": {
+            "type": "string",
+            "enum": ["regex", "ast", "exact"]
+          },
+          "rationale": { "type": "string" },
+          "positive_test_sample": { "type": "string" },
+          "negative_mutation_sample": { "type": "string" },
+          "false_positive_assessment": { "type": "string" },
+          "activation_milestone": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
