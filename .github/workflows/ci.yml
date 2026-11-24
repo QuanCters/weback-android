@@ -1,0 +1,49 @@
+name: Verification Harness CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Candidate Verification Lane
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install verification test dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pyyaml==6.0.2
+
+      - name: Run Candidate Verification Lane
+        run: |
+          python3 verification/run.py --lane candidate
+
+      - name: Upload Verification Evidence Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-evidence
+          path: artifacts/verification/
+          if-no-files-found: ignore
