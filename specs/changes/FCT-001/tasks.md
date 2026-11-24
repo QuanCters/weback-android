@@ -6,9 +6,9 @@
 
 **Architecture:** A clean-room Android application module (`:app`) structured into strict package boundaries (`ui`, `domain`, `protocol`, `core`), completely decoupled from legacy proprietary vendor binaries and decompiled packages. Pure Kotlin manual dependency injection via `AppContainer` avoids annotation processing overhead. Verification harness is extended with modular check scripts for Gradle wrapper integrity, Android Lint, JVM unit testing, APK artifact validation, and device smoke testing.
 
-**Tech Stack:** OpenJDK 21 LTS, Android SDK Platform 35 (`compileSdk 35`, `targetSdk 35`, `minSdk 26`), Android Gradle Plugin 8.7.2, Gradle 8.10.2, Kotlin 2.0.21, Jetpack Compose (BOM 2024.10.01), Material 3 1.3.1, Coroutines 1.9.0, Python 3.12+ (standard library only for harness checks).
+**Tech Stack:** Host OpenJDK 21 LTS, Java & Kotlin JVM bytecode compilation target 17, Android SDK Platform 35 (`compileSdk 35`, `targetSdk 35`, `minSdk 31`), Android Gradle Plugin 8.7.2, Gradle 8.10.2, Kotlin 2.1.21, Kotlin Compose compiler plugin 2.1.21, Jetpack Compose (BOM 2024.10.01), Material 3 1.3.1, Coroutines 1.9.0, Python 3.12+ (standard library only for harness checks).
 
-**Spec:** [proposal.md](proposal.md), [requirements.md](requirements.md), [design.md](design.md), [validation.md](validation.md).
+**Spec:** [proposal.md](proposal.md), [requirements.md](requirements.md), [design.md](design.md), [validation.md](validation.md), [risk-assessment.md](risk-assessment.md).
 
 ## Global Constraints
 - Zero proprietary vendor binaries (`libIOTCAPIs.so`, `libAVAPIs.so`) or legacy decompiled package references (`com.yugong.Backome`).
@@ -21,10 +21,10 @@
 
 ## Review Focus
 - **Toolchain Determinism:** Ensure all dependencies in `gradle/libs.versions.toml` are strictly pinned with no dynamic `+` versions.
-- **Wrapper Integrity:** Automated SHA-256 validation of `gradle-wrapper.jar` against the official Gradle 8.10.2 distribution checksum.
+- **Wrapper Integrity:** Automated SHA-256 validation of `gradle-wrapper.jar` (official digest `2db75c40782f...`) and distribution binary ZIP (`31c55713e402...`).
 - **Domain Layer Purity:** Absolute separation of `com.weback.robot.domain` with zero imports from `android.*`.
 - **Security Invariants:** Manifest and `network_security_config.xml` must prohibit cleartext traffic globally.
-- **APK Verification:** Automated inspection verifies package ID `com.weback.robot`, minSdk 26, size > 1 MB, and zero vendor SO binaries.
+- **APK Verification:** Automated inspection verifies package ID `com.weback.robot`, minSdk 31, signature validity, and zero vendor SO binaries via official Android SDK tools (`apkanalyzer`, `apksigner`).
 
 ---
 
@@ -39,10 +39,10 @@
 - Produces: Local Android SDK directory structure (`~/.android/sdk` or `$ANDROID_HOME`) containing `cmdline-tools/latest`, `platforms;android-35`, `build-tools;35.0.0`, `platform-tools`.
 
 - [ ] **Step 1: Author Android SDK Provisioning Script**
-Create `scripts/setup_android_sdk.sh` that downloads official Google Android command-line tools `11076708_latest` (Linux), verifies SHA-256 digest `2d2d50b3f67f3f44c637849ec602b308986c6ca577643037232b768f60e8d969`, installs SDK packages non-interactively accepting licenses, and exports `ANDROID_HOME`.
+Create `scripts/setup_android_sdk.sh` that downloads official Google Android command-line tools `11076708_latest` (Linux) from `https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip`, verifies official published SHA-256 digest `2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258`, installs SDK packages non-interactively accepting licenses, and exports `ANDROID_HOME`.
 
 - [ ] **Step 2: Document Toolchain Provisioning Guide**
-Create `docs/toolchain/ANDROID_SDK_SETUP.md` documenting prerequisite Java 21 environment, headless SDK installation, CI environment variable parity, and KVM hardware acceleration configuration.
+Create `docs/toolchain/ANDROID_SDK_SETUP.md` documenting prerequisite Java 21 environment, bytecode compilation target 17, headless SDK installation, CI environment variable parity, and KVM hardware acceleration configuration.
 
 - [ ] **Step 3: Verify Toolchain Detection**
 Verify that `./scripts/setup_android_sdk.sh --check` correctly detects existing SDK or outputs actionable installation instructions.
@@ -68,9 +68,9 @@ Create `gradle/libs.versions.toml` declaring pinned versions:
 ```toml
 [versions]
 agp = "8.7.2"
-kotlin = "2.0.21"
+kotlin = "2.1.21"
 coreKtx = "1.15.0"
-lifecycleRuntime = "2.8.7"
+lifecycle = "2.8.7"
 activityCompose = "1.9.3"
 composeBom = "2024.10.01"
 material3 = "1.3.1"
@@ -79,8 +79,10 @@ junit = "4.13.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
-androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntime" }
-androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntime" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
@@ -88,6 +90,7 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
@@ -101,7 +104,7 @@ compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "
 Configure `settings.gradle.kts` with `pluginManagement`, `dependencyResolutionManagement` using `FAIL_ON_PROJECT_REPOS`, and `include(":app")`. Configure root `build.gradle.kts` applying plugins with `apply false`.
 
 - [ ] **Step 3: Setup Official Gradle 8.10.2 Wrapper**
-Populate `gradle/wrapper/gradle-wrapper.properties` with HTTPS distribution URL for Gradle 8.10.2. Place verified `gradle-wrapper.jar` matching official SHA-256 `3229ae333d45c8ad0c9d7fe3160a2b005177242e20ff9d997f35b44ec6dbf737`. Make `gradlew` executable (`chmod +x gradlew`).
+Populate `gradle/wrapper/gradle-wrapper.properties` with HTTPS distribution URL for Gradle 8.10.2 and `distributionSha256Sum = 31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26`. Place verified `gradle-wrapper.jar` matching official SHA-256 `2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046`. Make `gradlew` executable (`chmod +x gradlew`).
 
 ---
 
@@ -120,7 +123,7 @@ Populate `gradle/wrapper/gradle-wrapper.properties` with HTTPS distribution URL 
 - Produces: Compiled `:app` module configuration, hardened Android manifest, and network security configuration.
 
 - [ ] **Step 1: Author app/build.gradle.kts**
-Configure `:app` build script with plugins `android-application`, `kotlin-android`, `compose-compiler`. Set `namespace = "com.weback.robot"`, `compileSdk = 35`, `defaultConfig { applicationId = "com.weback.robot"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0-alpha" }`, Compose build features enabled, Java 21 compilation compatibility, and Android Lint options (`abortOnError = true`).
+Configure `:app` build script with plugins `android-application`, `kotlin-android`, `compose-compiler`. Set `namespace = "com.weback.robot"`, `compileSdk = 35`, `defaultConfig { applicationId = "com.weback.robot"; minSdk = 31; targetSdk = 35; versionCode = 1; versionName = "0.1.0-alpha" }`, Compose build features enabled, Java 17 / Kotlin JVM target 17 compilation compatibility, and Android Lint options (`abortOnError = true`).
 
 - [ ] **Step 2: Author Hardened AndroidManifest.xml**
 Create `app/src/main/AndroidManifest.xml` with:
@@ -217,7 +220,7 @@ Verify container instantiation, singleton instance scoping of `RobotTransport`, 
 Using `StandardTestDispatcher`, verify initial `RobotUiState` emission, simulator mode flag, and telemetry presentation.
 
 - [ ] **Step 4: Verify Unit Test Execution**
-Run `./gradlew testDebugUnitTest` and confirm generated JUnit XML reports in `app/build/test-results/testDebugUnitTest/`.
+Run `python3 verification/checks/gradle_test_adapter.py --task testDebugUnitTest --results-dir app/build/test-results/testDebugUnitTest` and confirm generated JUnit XML reports, freshness validation, and emitted structured metrics (`TEST_SUMMARY_JSON:`).
 
 ---
 
@@ -225,26 +228,31 @@ Run `./gradlew testDebugUnitTest` and confirm generated JUnit XML reports in `ap
 
 **Files:**
 - Create: `verification/checks/gradle_wrapper_check.py`
+- Create: `verification/checks/gradle_test_adapter.py`
 - Create: `verification/checks/apk_validator.py`
 - Create: `verification/checks/android_smoke_test.py`
 - Create: `verification/selftests/test_gradle_wrapper_check.py`
+- Create: `verification/selftests/test_gradle_test_adapter.py`
 - Create: `verification/selftests/test_apk_validator.py`
 
 **Interfaces:**
-- Consumes: Python 3 standard library, repository file tree, compiled APK, and ADB device state.
+- Consumes: Python 3 standard library, Android SDK tools (apkanalyzer, apksigner), compiled APK, and ADB device state.
 - Produces: Deterministic exit codes (0 for pass, 1 for fail, 2 for error) and structured log output for verification harness.
 
 - [ ] **Step 1: Implement gradle_wrapper_check.py**
-Inspect `gradle/wrapper/gradle-wrapper.properties` (verifying HTTPS and 8.10.2 version). Compute SHA-256 of `gradle/wrapper/gradle-wrapper.jar` and verify match against official release checksum `3229ae333d45c8ad0c9d7fe3160a2b005177242e20ff9d997f35b44ec6dbf737`.
+Inspect `gradle/wrapper/gradle-wrapper.properties` (verifying HTTPS, Gradle 8.10.2 version, and `distributionSha256Sum` equals `31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26`). Compute SHA-256 of `gradle/wrapper/gradle-wrapper.jar` and verify match against official release checksum `2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046`.
 
-- [ ] **Step 2: Implement apk_validator.py**
-Open `app/build/outputs/apk/debug/app-debug.apk` as ZIP archive. Verify file size > 1 MB. Compute and log SHA-256 digest. Scan ZIP entries under `lib/` and assert zero occurrences of `libIOTCAPIs.so` or `libAVAPIs.so`. Inspect manifest strings for package `com.weback.robot`.
+- [ ] **Step 2: Implement gradle_test_adapter.py**
+Implement `verification/checks/gradle_test_adapter.py` executing Gradle unit tests via subprocess, verifying XML timestamp freshness, validating declared counts against child elements, preventing duplicate test ID counting, rejecting contradictory counts or unapproved skipped tests, preserving failure stack traces, and emitting the structured `TEST_SUMMARY_JSON:` contract.
 
-- [ ] **Step 3: Implement android_smoke_test.py**
-Check `adb devices`. If 0 devices connected, log skip notice and exit 0. If device connected, execute `adb install -r`, start `MainActivity`, verify process is alive via PID check, and confirm 0 fatal exceptions in logcat.
+- [ ] **Step 3: Implement apk_validator.py**
+Implement `verification/checks/apk_validator.py` using official Android SDK tools (`apkanalyzer` for manifest application-id `com.weback.robot`, minSdk `31`, targetSdk `35`, version-name `0.1.0-alpha`; `apksigner verify` for signature). Use Python `zipfile` to verify archive integrity and assert zero occurrences of prohibited vendor binaries (`libIOTCAPIs.so`, `libAVAPIs.so`) in `lib/`. Eliminate arbitrary 1 MB size threshold.
 
-- [ ] **Step 4: Implement Selftests for New Harness Checks**
-Create `test_gradle_wrapper_check.py` and `test_apk_validator.py` in `verification/selftests/`, testing valid inputs, corrupted archives, checksum mismatches, and prohibited binary detection.
+- [ ] **Step 4: Implement android_smoke_test.py**
+Require explicit device serial selection via `WEBACK_TEST_DEVICE_SERIAL` and owner authorization. If unauthorized or absent, record `NOT_RUN` / `SKIPPED (No authorized device)`. When authorized, execute `adb install -r`, start `MainActivity`, verify process survival for 5s via PID check, and confirm zero fatal exceptions in logcat without clearing unrelated device logs.
+
+- [ ] **Step 5: Implement Selftests for New Harness Checks**
+Create `test_gradle_wrapper_check.py`, `test_gradle_test_adapter.py`, and `test_apk_validator.py` in `verification/selftests/`, testing valid inputs, corrupted archives, checksum mismatches, contradictory counts, and prohibited binary detection.
 
 ---
 

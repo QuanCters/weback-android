@@ -58,13 +58,16 @@
       "id": "android-unit-tests",
       "type": "test_suite",
       "argv": [
-        "./gradlew",
+        "python3",
+        "verification/checks/gradle_test_adapter.py",
+        "--task",
         "testDebugUnitTest",
-        "--no-daemon"
+        "--results-dir",
+        "app/build/test-results/testDebugUnitTest"
       ],
       "timeout_seconds": 180,
       "required": true,
-      "description": "Executes JVM unit tests for Android application module and extracts structured JUnit test metrics."
+      "description": "Executes JVM unit tests for Android application module via Gradle test adapter, enforcing XML freshness and extracting structured JUnit metrics."
     },
     {
       "id": "android-build",
@@ -87,7 +90,7 @@
       ],
       "timeout_seconds": 60,
       "required": true,
-      "description": "Verifies debug APK output existence, computes SHA-256 digest, checks package ID com.weback.robot, minSdk, and confirms zero proprietary vendor binaries."
+      "description": "Verifies debug APK existence, SHA-256, archive integrity, manifest attributes via apkanalyzer, signature via apksigner, and confirms zero proprietary vendor binaries."
     },
     {
       "id": "android-smoke-test",
@@ -98,7 +101,7 @@
       ],
       "timeout_seconds": 120,
       "required": false,
-      "description": "Optional environment-gated check performing adb install and activity launch smoke test on connected emulator or authorized physical device."
+      "description": "Optional environment-gated check performing adb install and activity launch smoke test on explicitly authorized device serial. Reports SKIPPED/NOT_RUN if unauthorized or no device."
     }
   ]
 }

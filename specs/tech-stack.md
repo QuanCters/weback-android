@@ -16,14 +16,14 @@ To avoid conflating preliminary proposals with confirmed environments, tooling c
 | Lifecycle State | Description | Current Status / Target |
 | :--- | :--- | :--- |
 | **Actually Installed Toolchain** | Tools and runtimes verified present in the host environment. | Host OpenJDK `21.0.13.1`, Python `3.12.3`, Git `2.43.0`, Linux x86_64. *(Android SDK and Gradle wrapper are NOT yet installed in INIT-001; installation deferred to authorized FCT-001).* |
-| **Proposed Dependency Versions** | Candidate target versions recommended for the application. | JDK 21 LTS, Kotlin `2.0.21`, AGP `8.7.2`, Gradle `8.10.2`, Compose BOM `2024.10.01`, OkHttp `4.12.0`, kotlinx.serialization `1.7.3`. |
-| **Verified Compatibility** | Compatibility matrices validated against official vendor documentation. | Verified per Android/Google release tables: JDK 21 is supported by AGP 8.7+; Kotlin 2.0.21 integrates with Compose Compiler 2.0+. *Full live toolchain compatibility will be verified during FCT-001 against actual build execution results.* |
-| **Pinned Project Configuration** | Finalized versions committed to `gradle/libs.versions.toml` and wrapper properties. | Will be formally locked and pinned in Milestone FCT-001 upon first successful clean build. |
+| **Proposed Dependency Versions** | Candidate target versions recommended for the application. | Host JDK 21 LTS, Java & Kotlin JVM compilation target `17`, Gradle `8.10.2`, AGP `8.7.2`, Kotlin `2.1.21`, Kotlin Compose compiler plugin `2.1.21`, Compose BOM `2024.10.01`, Material 3 `1.3.1`, Coroutines `1.9.0`, OkHttp `4.12.0`, kotlinx.serialization `1.7.3`. |
+| **Verified Compatibility** | Compatibility matrices validated against official vendor documentation. | Verified per Android/Google and Kotlin release tables: AGP 8.7+ supports JDK 21 execution; Kotlin 2.1.21 integrates with Compose Compiler 2.1.21; JVM compilation target is pinned to bytecode level 17 for both Java and Kotlin. |
+| **Pinned Project Configuration** | Finalized versions committed to `gradle/libs.versions.toml` and wrapper properties. | Locked and pinned in Milestone FCT-001. Establishes repeatable build environments; bit-for-bit deterministic APK reproducibility is a separately verified qualification property. |
 
 ### 1.1 Target SDK Floor & Boundaries
 - **`compileSdk`:** `35` (Android 15) — Aligned with modern AndroidX dependencies.
-- **`targetSdk`:** `34` (Android 14) / `35` (Android 15) — Complies with Google Play distribution requirements.
-- **`minSdk`:** `31` (Android 12) — Proposed baseline. Ensures platform-level Scoped Storage, modern Bluetooth permissions (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`), and standard hardware-backed cryptographic primitives. *(Subject to intended physical test-device compatibility verification).*
+- **`targetSdk`:** `35` (Android 15) — Complies with modern Google Play distribution requirements.
+- **`minSdk`:** `31` (Android 12) — Mandated baseline. Ensures platform-level Scoped Storage, modern Bluetooth permissions (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`), and standard hardware-backed cryptographic primitives. Preserved unless the Product Owner separately approves broader legacy Android support.
 - **Application ID:** `com.weback.robot` (Strictly independent and cleanly separated from legacy package `com.yugong.Backome`).
 
 ---
@@ -79,8 +79,9 @@ graph TD
 
 ### 3.1 UI & Presentation
 - **Jetpack Compose (BOM `2024.10.01`):** Declarative, reactive UI replacing 150 legacy XML Activities.
-- **Material 3:** Modern accessible design tokens and standard components.
-- **Kotlin Coroutines (`1.9.0`) & StateFlow:** Structured concurrency and reactive state streams.
+- **Material 3 (`1.3.1`):** Modern accessible design tokens and standard components.
+- **Lifecycle & ViewModel Dependencies (Explicit):** `androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7`, `androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7`, `androidx.lifecycle:lifecycle-runtime-compose:2.8.7`.
+- **Kotlin Coroutines (`1.9.0`) & StateFlow:** Structured concurrency and reactive state streams via `kotlinx-coroutines-core` and `kotlinx-coroutines-android`.
 
 ### 3.2 Networking & Serialization
 - **OkHttp (`4.12.0`):** High-performance HTTP/WebSocket client with robust connection pooling.
@@ -106,7 +107,7 @@ graph TD
 
 | Prohibited Technology | Why Prohibited | Approved Alternative |
 | :--- | :--- | :--- |
-| **ThroughTek Native Libraries (`libIOTCAPIs.so`, etc.)** | Closed-source proprietary binary, licensing violation, security risk. | Excluded from MVP; pure clean-room Kotlin only. |
+| **ThroughTek Native Libraries (`libIOTCAPIs.so`, etc.)** | Closed-source proprietary binary SDK from legacy APK cannot be bundled or redistributed in an open clean-room project without vendor licensing; excluded from MVP. | Excluded from MVP; pure clean-room Kotlin only. |
 | **GreenRobot EventBus** | Global mutable state, untraceable event spaghetti, difficult to test. | Kotlin StateFlow and SharedFlow within ViewModel. |
 | **Gson** | Runtime reflection, silent nullability bugs, slow performance. | `kotlinx.serialization.json`. |
 | **`EncryptedSharedPreferences`** | Deprecated by Google, known concurrency crashes and data corruption. | Android Keystore authenticated solution via approved ADR. |

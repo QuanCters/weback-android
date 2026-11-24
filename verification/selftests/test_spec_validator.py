@@ -241,6 +241,132 @@ class TestSpecValidator(unittest.TestCase):
             errs = validate_all_change_specs(root)
             self.assertEqual(len(errs), 0, errs)
 
+    def test_spec_validator_rejects_unknown_checks_TEST_TRUST_001(self):
+        from verification.checks.spec_validator import validate_all_change_specs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            pol = root / "policies"
+            pol.mkdir()
+            (pol / "checks.json").write_text(json.dumps({"checks": [{"id": "approved-check"}]}))
+
+            specs_dir = root / "specs" / "changes"
+            fct = specs_dir / "FCT-001"
+            fct.mkdir(parents=True)
+            (fct / "requirements.md").write_text("### REQ-FCT1-001\n- **AC-001.1:** Do FCT1\n")
+            (fct / "tasks.md").write_text("### Task 1: Task for FCT1\n")
+            (fct / "validation.md").write_text("`TEST-FCT1-001`: Oracle\n")
+            (fct / "traceability.json").write_text(json.dumps({
+                "requirements": [
+                    {
+                        "requirement_id": "REQ-FCT1-001",
+                        "acceptance_criteria": [
+                            {"ac_id": "AC-001.1", "task_id": "Task 1", "verification_check_id": "unknown-nonexistent-check", "test_oracle": "TEST-FCT1-001", "status": "PLANNED"}
+                        ]
+                    }
+                ]
+            }))
+
+            errs = validate_all_change_specs(root)
+            self.assertTrue(any("Unknown verification_check_id 'unknown-nonexistent-check'" in e for e in errs))
+
+    def test_spec_validator_rejects_arbitrary_json_in_policies_TEST_TRUST_002(self):
+        from verification.checks.spec_validator import validate_all_change_specs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            pol = root / "policies"
+            pol.mkdir()
+            (pol / "checks.json").write_text(json.dumps({"checks": [{"id": "approved-check"}]}))
+            # Arbitrary JSON file in policies must NOT establish check identities
+            (pol / "arbitrary_custom_checks.json").write_text(json.dumps({"checks": [{"id": "arbitrary-rogue-check"}]}))
+
+            specs_dir = root / "specs" / "changes"
+            fct = specs_dir / "FCT-001"
+            fct.mkdir(parents=True)
+            (fct / "requirements.md").write_text("### REQ-FCT1-001\n- **AC-001.1:** Do FCT1\n")
+            (fct / "tasks.md").write_text("### Task 1: Task for FCT1\n")
+            (fct / "validation.md").write_text("`TEST-FCT1-001`: Oracle\n")
+            (fct / "traceability.json").write_text(json.dumps({
+                "requirements": [
+                    {
+                        "requirement_id": "REQ-FCT1-001",
+                        "acceptance_criteria": [
+                            {"ac_id": "AC-001.1", "task_id": "Task 1", "verification_check_id": "arbitrary-rogue-check", "test_oracle": "TEST-FCT1-001", "status": "PLANNED"}
+                        ]
+                    }
+                ]
+            }))
+
+            errs = validate_all_change_specs(root)
+            self.assertTrue(any("Unknown verification_check_id 'arbitrary-rogue-check'" in e for e in errs))
+
+    def test_spec_validator_accepts_planned_references_to_valid_fct001_proposal_TEST_TRUST_003(self):
+        from verification.checks.spec_validator import validate_all_change_specs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            pol = root / "policies"
+            pol.mkdir()
+            (pol / "checks.json").write_text(json.dumps({"checks": [{"id": "approved-check"}]}))
+            # Valid milestone-scoped proposal for FCT-001
+            (pol / "fct001_checks_proposal.json").write_text(json.dumps({
+                "milestone": "FCT-001",
+                "status": "PROPOSED",
+                "checks": [{"id": "proposed-android-check"}]
+            }))
+
+            specs_dir = root / "specs" / "changes"
+            fct = specs_dir / "FCT-001"
+            fct.mkdir(parents=True)
+            (fct / "requirements.md").write_text("### REQ-FCT1-001\n- **AC-001.1:** Do FCT1\n")
+            (fct / "tasks.md").write_text("### Task 1: Task for FCT1\n")
+            (fct / "validation.md").write_text("`TEST-FCT1-001`: Oracle\n")
+            (fct / "traceability.json").write_text(json.dumps({
+                "requirements": [
+                    {
+                        "requirement_id": "REQ-FCT1-001",
+                        "acceptance_criteria": [
+                            {"ac_id": "AC-001.1", "task_id": "Task 1", "verification_check_id": "proposed-android-check", "test_oracle": "TEST-FCT1-001", "status": "PLANNED"}
+                        ]
+                    }
+                ]
+            }))
+
+            errs = validate_all_change_specs(root)
+            self.assertEqual(len(errs), 0, errs)
+
+    def test_spec_validator_rejects_proposed_check_masquerading_as_verified_evidence_TEST_TRUST_004(self):
+        from verification.checks.spec_validator import validate_all_change_specs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            pol = root / "policies"
+            pol.mkdir()
+            (pol / "checks.json").write_text(json.dumps({"checks": [{"id": "approved-check"}]}))
+            (pol / "fct001_checks_proposal.json").write_text(json.dumps({
+                "milestone": "FCT-001",
+                "status": "PROPOSED",
+                "checks": [{"id": "proposed-android-check"}]
+            }))
+
+            specs_dir = root / "specs" / "changes"
+            fct = specs_dir / "FCT-001"
+            fct.mkdir(parents=True)
+            (fct / "requirements.md").write_text("### REQ-FCT1-001\n- **AC-001.1:** Do FCT1\n")
+            (fct / "tasks.md").write_text("### Task 1: Task for FCT1\n")
+            (fct / "validation.md").write_text("`TEST-FCT1-001`: Oracle\n")
+            # AC claims VERIFIED status while pointing to a proposed check
+            (fct / "traceability.json").write_text(json.dumps({
+                "requirements": [
+                    {
+                        "requirement_id": "REQ-FCT1-001",
+                        "acceptance_criteria": [
+                            {"ac_id": "AC-001.1", "task_id": "Task 1", "verification_check_id": "proposed-android-check", "test_oracle": "TEST-FCT1-001", "status": "VERIFIED"}
+                        ]
+                    }
+                ]
+            }))
+
+            errs = validate_all_change_specs(root)
+            self.assertTrue(any("cannot masquerade as approved execution evidence" in e for e in errs))
+
 
 if __name__ == "__main__":
     unittest.main()
