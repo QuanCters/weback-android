@@ -86,6 +86,7 @@ jobs:
       - name: Run Candidate Verification Lane
         env:
           TRANSITION_AUTHORIZATION: ${{ vars.TRANSITION_AUTHORIZATION }}
+          APPROVED_POLICY_SHA256: ${{ vars.APPROVED_POLICY_SHA256 }}
         run: |
           python3 verification/run.py \
             --lane candidate \
