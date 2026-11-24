@@ -1,0 +1,42 @@
+# Build and distribution outputs
+build/
+app/build/
+*.apk
+*.aab
+*.ap_
+output.json
+
+# Local SDK and environment configuration
+local.properties
+.env
+*.local
+.gradle/
+
+# IDE and editor files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Verification harness outputs
+artifacts/verification/
+*.log
+
+# Sensitive security artifacts (must NEVER be committed)
+*.jks
+*.keystore
+*.p12
+*.key
+google-services.json
+
+# Exclude raw reverse-engineering binaries and APKs
+*.so
+*.dex
+*.apk
+WeBack.apk
+WEBack_*.zip
