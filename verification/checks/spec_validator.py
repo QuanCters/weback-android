@@ -134,13 +134,16 @@ def validate_spec_traceability(
     trace_path: Path,
     declared_tasks: Optional[set[str]] = None,
     declared_tests: Optional[set[str]] = None,
-    policy_checks: Optional[set[str]] = None
+    policy_checks: Optional[set[str]] = None,
+    approved_checks: Optional[set[str]] = None,
+    proposed_checks: Optional[set[str]] = None
 ) -> list[str]:
     """
     Validates that:
     1. All REQ-xxx IDs in req_path are in trace_path.
     2. All AC-xxx IDs in req_path are mapped in trace_path with task, check, and test oracle.
     3. If provided, checks, tasks, and test oracles point to declared items.
+    4. Distinguishes approved checks from proposed checks: verified ACs must reference approved checks.
     """
     errors: list[str] = []
     if not req_path.is_file():
@@ -170,7 +173,7 @@ def validate_spec_traceability(
     traced_ac_ids: set[str] = set()
     detailed_ac_ids: set[str] = set()
 
-    def check_mapping(acid: str, task: Optional[str], check: Optional[str], oracle: Optional[str]):
+    def check_mapping(acid: str, task: Optional[str], check: Optional[str], oracle: Optional[str], status: Optional[str] = "PLANNED"):
         if acid in detailed_ac_ids:
             errors.append(f"Duplicate detailed AC mapping for '{acid}' in traceability.json")
         detailed_ac_ids.add(acid)
@@ -178,9 +181,23 @@ def validate_spec_traceability(
         if not task or not check or not oracle:
             errors.append(f"Traceability missing task/check/oracle for {acid}")
             return
-        if policy_checks is not None:
+
+        if approved_checks is not None:
+            valid_planned_checks = approved_checks | (proposed_checks or set())
+            is_verified = (status == "VERIFIED")
+            if is_verified:
+                if check not in approved_checks:
+                    if proposed_checks and check in proposed_checks:
+                        errors.append(f"Proposed check '{check}' cannot masquerade as approved execution evidence for verified acceptance criterion '{acid}'")
+                    else:
+                        errors.append(f"Unknown verification_check_id '{check}' for verified acceptance criterion '{acid}'")
+            else:
+                if check not in valid_planned_checks:
+                    errors.append(f"Unknown verification_check_id '{check}' for {acid}")
+        elif policy_checks is not None:
             if not policy_checks or check not in policy_checks:
                 errors.append(f"Unknown verification_check_id '{check}' for {acid}")
+
         if declared_tasks is not None:
             subtasks = [t.strip().lower() for t in task.split(",") if t.strip()]
             for st in subtasks:
@@ -206,7 +223,8 @@ def validate_spec_traceability(
                     task = ac.get("implementation_task") or ac.get("task_id")
                     check = ac.get("check_id") or ac.get("verification_check_id")
                     oracle = ac.get("validation_test_id") or ac.get("test_oracle")
-                    check_mapping(acid, task, check, oracle)
+                    status = ac.get("status") or "PLANNED"
+                    check_mapping(acid, task, check, oracle, status=status)
 
     # Support requirements list (where acs can be strings or dicts)
     if "requirements" in trace_data:
@@ -225,7 +243,8 @@ def validate_spec_traceability(
                             task = ac.get("task_id") or ac.get("implementation_task")
                             check = ac.get("verification_check_id") or ac.get("check_id")
                             oracle = ac.get("validation_test_id") or ac.get("test_oracle")
-                            check_mapping(acid, task, check, oracle)
+                            status = ac.get("status") or "PLANNED"
+                            check_mapping(acid, task, check, oracle, status=status)
 
     for rid in doc_req_ids:
         if rid not in traced_req_ids:
@@ -273,18 +292,21 @@ def validate_all_change_specs(repo_root: Path) -> list[str]:
     if not change_specs:
         return ["No active change specifications found in specs/changes/"]
 
-    policy_checks: set[str] = set()
-    policy_path = repo_root / "policies" / "checks.json"
-    if policy_path.is_file():
+    approved_checks: set[str] = set()
+    approved_policy_file = repo_root / "policies" / "checks.json"
+    if not approved_policy_file.is_file():
+        errors.append("Active approved policy file not found: policies/checks.json")
+    else:
         try:
-            pdata = json.loads(policy_path.read_text(encoding="utf-8"))
-            for c in pdata.get("checks", []):
-                if "id" in c:
-                    policy_checks.add(c["id"])
-        except Exception:
-            pass
-    if not policy_checks:
-        errors.append("No approved checks discovered in policies/checks.json")
+            adata = json.loads(approved_policy_file.read_text(encoding="utf-8"))
+            for c in adata.get("checks", []):
+                if isinstance(c, dict) and "id" in c and isinstance(c["id"], str):
+                    approved_checks.add(c["id"])
+        except Exception as e:
+            errors.append(f"Failed to parse approved policy file policies/checks.json: {e}")
+
+        if not approved_checks:
+            errors.append("No checks discovered in active approved policy policies/checks.json")
 
     global_req_ids: dict[str, str] = {}
     global_ac_ids: dict[str, str] = {}
@@ -338,11 +360,45 @@ def validate_all_change_specs(repo_root: Path) -> list[str]:
                 errors.append(f"[{spec_name}] Duplicate acceptance criterion ID '{acid}' within requirements.md")
             seen_doc_acs.add(acid)
 
+        # Resolve proposed checks for this change spec from its milestone proposal
+        proposed_checks: set[str] = set()
+        cand_proposal_names = [
+            f"{spec_name.replace('-', '').lower()}_checks_proposal.json",
+            f"{spec_name.lower()}_checks_proposal.json"
+        ]
+        prop_file = None
+        for cname in cand_proposal_names:
+            candidate = repo_root / "policies" / cname
+            if candidate.is_file():
+                prop_file = candidate
+                break
+
+        if prop_file is not None:
+            try:
+                pdata = json.loads(prop_file.read_text(encoding="utf-8"))
+                if not isinstance(pdata, dict):
+                    errors.append(f"[{spec_name}] Proposed policy file '{prop_file.name}' must be a JSON object")
+                elif pdata.get("milestone") != spec_name:
+                    errors.append(f"[{spec_name}] Proposed policy file '{prop_file.name}' declares milestone '{pdata.get('milestone')}', expected '{spec_name}'")
+                elif pdata.get("status") != "PROPOSED":
+                    errors.append(f"[{spec_name}] Proposed policy file '{prop_file.name}' must have status 'PROPOSED'")
+                elif not isinstance(pdata.get("checks"), list) or len(pdata["checks"]) == 0:
+                    errors.append(f"[{spec_name}] Proposed policy file '{prop_file.name}' must contain a non-empty checks list")
+                else:
+                    for c in pdata["checks"]:
+                        if not isinstance(c, dict) or "id" not in c or not isinstance(c["id"], str) or not c["id"].strip():
+                            errors.append(f"[{spec_name}] Proposed policy file '{prop_file.name}' contains invalid check entry: {c}")
+                        else:
+                            proposed_checks.add(c["id"].strip())
+            except Exception as e:
+                errors.append(f"[{spec_name}] Failed to parse proposed policy file '{prop_file.name}': {e}")
+
         spec_errs = validate_spec_traceability(
             req_p, trace_p,
             declared_tasks=declared_tasks if declared_tasks else None,
             declared_tests=declared_tests if declared_tests else None,
-            policy_checks=policy_checks if policy_checks else None
+            approved_checks=approved_checks,
+            proposed_checks=proposed_checks
         )
         for e in spec_errs:
             errors.append(f"[{spec_name}] {e}")
