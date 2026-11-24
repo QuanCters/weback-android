@@ -246,6 +246,10 @@ java.lang.NullPointerException: container was null
     def test_e2e_cli_invocation_without_pythonpath(self):
         clean_env = os.environ.copy()
         clean_env.pop("PYTHONPATH", None)
+        if "ANDROID_HOME" not in clean_env:
+            default_sdk = Path.home() / ".android" / "sdk"
+            if default_sdk.is_dir():
+                clean_env["ANDROID_HOME"] = str(default_sdk)
 
         repo_root = Path(__file__).resolve().parent.parent.parent
         res = subprocess.run(

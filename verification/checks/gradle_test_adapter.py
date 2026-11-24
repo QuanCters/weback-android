@@ -224,12 +224,19 @@ def execute_gradle_task(
                 return 1, f"Cleanup failure: {e}".encode("utf-8"), time.time()
 
     start_time = time.time()
+    task_env = os.environ.copy()
+    if "ANDROID_HOME" not in task_env:
+        default_sdk = Path.home() / ".android" / "sdk"
+        if default_sdk.is_dir():
+            task_env["ANDROID_HOME"] = str(default_sdk)
+
     try:
         proc = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            shell=False
+            shell=False,
+            env=task_env
         )
         return proc.returncode, proc.stdout, start_time
     except FileNotFoundError as e:

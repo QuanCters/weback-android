@@ -83,6 +83,11 @@ def main():
     args = parser.parse_args()
     repo_path = Path(args.repo_dir).resolve()
 
+    if "ANDROID_HOME" not in os.environ:
+        default_sdk = Path.home() / ".android" / "sdk"
+        if default_sdk.is_dir():
+            os.environ["ANDROID_HOME"] = str(default_sdk)
+
     # AC-003.5: Targeted check execution prohibited in candidate lane
     if args.lane == "candidate" and args.check:
         print("Error: Partial check execution is prohibited in candidate lane.", file=sys.stderr)
