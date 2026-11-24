@@ -274,17 +274,18 @@ def validate_all_change_specs(repo_root: Path) -> list[str]:
         return ["No active change specifications found in specs/changes/"]
 
     policy_checks: set[str] = set()
-    policy_path = repo_root / "policies" / "checks.json"
-    if policy_path.is_file():
-        try:
-            pdata = json.loads(policy_path.read_text(encoding="utf-8"))
-            for c in pdata.get("checks", []):
-                if "id" in c:
-                    policy_checks.add(c["id"])
-        except Exception:
-            pass
+    pol_dir = repo_root / "policies"
+    if pol_dir.is_dir():
+        for pfile in sorted(pol_dir.glob("*.json")):
+            try:
+                pdata = json.loads(pfile.read_text(encoding="utf-8"))
+                for c in pdata.get("checks", []):
+                    if "id" in c:
+                        policy_checks.add(c["id"])
+            except Exception:
+                pass
     if not policy_checks:
-        errors.append("No approved checks discovered in policies/checks.json")
+        errors.append("No checks discovered in policies/")
 
     global_req_ids: dict[str, str] = {}
     global_ac_ids: dict[str, str] = {}

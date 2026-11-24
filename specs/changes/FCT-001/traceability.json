@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "change_id": "FCT-001",
+  "milestone": "FCT-001",
+  "title": "Android Foundation & First Runnable APK",
+  "version": "1.0.0",
+  "planned_mapping_coverage": 100.0,
+  "verified_execution_coverage": 0.0,
+  "metrics": {
+    "planned_scenario_count": 18,
+    "discovered_executable_test_count": 0,
+    "executed_test_count": 0,
+    "ac_mapping_coverage_percent": 100.0,
+    "verified_ac_execution_coverage_status": "PLANNED"
+  },
+  "summary": {
+    "total_requirements": 8,
+    "total_acceptance_criteria": 27,
+    "total_acceptance_tests": 18,
+    "total_tasks": 8
+  },
+  "acceptance_criteria": [
+    {
+      "ac_id": "AC-101.1",
+      "requirement_id": "REQ-ANDR-101",
+      "description": "The project must include gradlew, gradlew.bat, and gradle/wrapper/gradle-wrapper.properties configured for Gradle 8.10.2 over HTTPS.",
+      "validation_test_id": "TEST-ANDR-102",
+      "test_oracle": "TEST-ANDR-102: gradle_wrapper_check.py verifies distributionUrl uses HTTPS and Gradle 8.10.2 bin distribution",
+      "implementation_task": "Task 2",
+      "check_id": "gradle-wrapper-validation",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-101.2",
+      "requirement_id": "REQ-ANDR-101",
+      "description": "The binary gradle/wrapper/gradle-wrapper.jar must match the official Gradle 8.10.2 release SHA-256 checksum, verified by automated check gradle-wrapper-validation.",
+      "validation_test_id": "TEST-ANDR-101",
+      "test_oracle": "TEST-ANDR-101: SHA-256(gradle-wrapper.jar) matches official checksum 3229ae333d45c8ad0c9d7fe3160a2b005177242e20ff9d997f35b44ec6dbf737",
+      "implementation_task": "Task 2, Task 7",
+      "check_id": "gradle-wrapper-validation",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-101.3",
+      "requirement_id": "REQ-ANDR-101",
+      "description": "The project must define gradle/libs.versions.toml version catalog pinning AGP 8.7.2, Kotlin 2.0.21, Compose BOM 2024.10.01, Material 3 1.3.1, AndroidX Core KTX 1.15.0, and Lifecycle 2.8.7 with exact version numbers.",
+      "validation_test_id": "TEST-ANDR-103",
+      "test_oracle": "TEST-ANDR-103: Static inspection of gradle/libs.versions.toml confirms all dependencies have exact pinned versions (zero dynamic + versions)",
+      "implementation_task": "Task 2",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-101.4",
+      "requirement_id": "REQ-ANDR-101",
+      "description": "The build must execute successfully against OpenJDK 21 LTS without requiring third-party build daemons or deprecated Gradle APIs.",
+      "validation_test_id": "TEST-ANDR-116",
+      "test_oracle": "TEST-ANDR-116: ./gradlew assembleDebug executes under OpenJDK 21 LTS and exits with code 0",
+      "implementation_task": "Task 1, Task 8",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-102.1",
+      "requirement_id": "REQ-ANDR-102",
+      "description": "Root settings.gradle.kts must include :app as the single application module and configure plugin repositories (google(), mavenCentral()).",
+      "validation_test_id": "TEST-ANDR-104",
+      "test_oracle": "TEST-ANDR-104: Inspection of settings.gradle.kts confirms :app module inclusion and clean repository declaration",
+      "implementation_task": "Task 2",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-102.2",
+      "requirement_id": "REQ-ANDR-102",
+      "description": "Module app/build.gradle.kts must set namespace = 'com.weback.robot' and applicationId = 'com.weback.robot'.",
+      "validation_test_id": "TEST-ANDR-104",
+      "test_oracle": "TEST-ANDR-104: apk_validator.py and build inspection verify applicationId equals com.weback.robot",
+      "implementation_task": "Task 3",
+      "check_id": "apk-validation",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-102.3",
+      "requirement_id": "REQ-ANDR-102",
+      "description": "The SDK boundaries must be strictly configured as: compileSdk = 35, targetSdk = 35, and minSdk = 26 (Android 8.0 Oreo).",
+      "validation_test_id": "TEST-ANDR-105",
+      "test_oracle": "TEST-ANDR-105: Inspection of app/build.gradle.kts confirms compileSdk 35, targetSdk 35, and minSdk 26",
+      "implementation_task": "Task 3",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-102.4",
+      "requirement_id": "REQ-ANDR-102",
+      "description": "The project must contain zero occurrences of the legacy package name com.yugong.Backome in production application code and zero bundled ThroughTek native binaries (libIOTCAPIs.so, libAVAPIs.so).",
+      "validation_test_id": "TEST-ANDR-106",
+      "test_oracle": "TEST-ANDR-106: apk_validator.py scans lib/ directory in APK archive and confirms 0 occurrences of proprietary SO binaries",
+      "implementation_task": "Task 3, Task 7",
+      "check_id": "apk-validation",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-103.1",
+      "requirement_id": "REQ-ANDR-103",
+      "description": "Compose build feature must be enabled in app/build.gradle.kts with compose = true and org.jetbrains.kotlin.plugin.compose Kotlin plugin.",
+      "validation_test_id": "TEST-ANDR-109",
+      "test_oracle": "TEST-ANDR-109: Inspection of app/build.gradle.kts confirms compose = true and compose compiler plugin applied",
+      "implementation_task": "Task 3, Task 5",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-103.2",
+      "requirement_id": "REQ-ANDR-103",
+      "description": "The application must define a Material 3 design system in com.weback.robot.ui.theme (Theme.kt, Color.kt, Type.kt) with accessible typography, color tokens, and light/dark theme support.",
+      "validation_test_id": "TEST-ANDR-109",
+      "test_oracle": "TEST-ANDR-109: Verification of Theme.kt, Color.kt, Type.kt confirming Material 3 color schemes and typography",
+      "implementation_task": "Task 5",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-103.3",
+      "requirement_id": "REQ-ANDR-103",
+      "description": "The application must define a single launch activity MainActivity extending ComponentActivity that sets content using WeBackTheme.",
+      "validation_test_id": "TEST-ANDR-110",
+      "test_oracle": "TEST-ANDR-110: MainActivity inherits ComponentActivity and invokes setContent { WeBackTheme { ... } }",
+      "implementation_task": "Task 5",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-103.4",
+      "requirement_id": "REQ-ANDR-103",
+      "description": "The application home screen must render DashboardScreen displaying title, version, connection state badge, and mock telemetry card.",
+      "validation_test_id": "TEST-ANDR-110",
+      "test_oracle": "TEST-ANDR-110: DashboardScreen composable renders application title, version string, simulator mode badge, and telemetry card",
+      "implementation_task": "Task 5",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-104.1",
+      "requirement_id": "REQ-ANDR-104",
+      "description": "Source code in app/src/main/java/com/weback/robot/ must be partitioned into four distinct packages: ui, domain, protocol, and core.",
+      "validation_test_id": "TEST-ANDR-111",
+      "test_oracle": "TEST-ANDR-111: Package hierarchy verification confirms separation of concerns into ui, domain, protocol, core packages",
+      "implementation_task": "Task 4",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-104.2",
+      "requirement_id": "REQ-ANDR-104",
+      "description": "Package com.weback.robot.domain must be pure Kotlin and contain zero imports from Android framework packages (android.*).",
+      "validation_test_id": "TEST-ANDR-111",
+      "test_oracle": "TEST-ANDR-111: Static import scan of com/weback/robot/domain confirms 0 occurrences of android.* imports",
+      "implementation_task": "Task 4",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-104.3",
+      "requirement_id": "REQ-ANDR-104",
+      "description": "Dependencies must be provided through pure Kotlin manual dependency injection via com.weback.robot.core.AppContainer with zero annotation-processing or reflection overhead.",
+      "validation_test_id": "TEST-ANDR-112",
+      "test_oracle": "TEST-ANDR-112: AppContainerTest confirms container instantiates RobotTransport and dispatchers without reflection or annotation processing",
+      "implementation_task": "Task 4, Task 6",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-105.1",
+      "requirement_id": "REQ-ANDR-105",
+      "description": "app/src/main/AndroidManifest.xml must set android:usesCleartextTraffic='false' and reference android:networkSecurityConfig='@xml/network_security_config'.",
+      "validation_test_id": "TEST-ANDR-107",
+      "test_oracle": "TEST-ANDR-107: Manifest inspection and Android Lint confirm usesCleartextTraffic is false and network security config is referenced",
+      "implementation_task": "Task 3",
+      "check_id": "android-lint",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-105.2",
+      "requirement_id": "REQ-ANDR-105",
+      "description": "network_security_config.xml must declare <base-config cleartextTrafficPermitted='false' /> globally.",
+      "validation_test_id": "TEST-ANDR-107",
+      "test_oracle": "TEST-ANDR-107: Inspection of network_security_config.xml confirms cleartextTrafficPermitted is false globally",
+      "implementation_task": "Task 3",
+      "check_id": "android-lint",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-105.3",
+      "requirement_id": "REQ-ANDR-105",
+      "description": "The codebase must contain zero hardcoded secrets, test credentials, AWS keys, or Wi-Fi passwords.",
+      "validation_test_id": "TEST-ANDR-108",
+      "test_oracle": "TEST-ANDR-108: Static grep scan across all files in app/ confirms 0 API keys, credentials, or secrets",
+      "implementation_task": "Task 3",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-106.1",
+      "requirement_id": "REQ-ANDR-106",
+      "description": "Unit test suite must execute via ./gradlew testDebugUnitTest and achieve a 100% pass rate.",
+      "validation_test_id": "TEST-ANDR-113",
+      "test_oracle": "TEST-ANDR-113: ./gradlew testDebugUnitTest executes with exit code 0 and reports 100% pass rate",
+      "implementation_task": "Task 6",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-106.2",
+      "requirement_id": "REQ-ANDR-106",
+      "description": "Unit tests must cover RobotStateTest, DashboardViewModelTest, and AppContainerTest.",
+      "validation_test_id": "TEST-ANDR-114",
+      "test_oracle": "TEST-ANDR-114: Unit test execution verifies domain immutability, ViewModel state emission, and container injection",
+      "implementation_task": "Task 6",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-106.3",
+      "requirement_id": "REQ-ANDR-106",
+      "description": "Unit test execution must output machine-readable JUnit XML reports in app/build/test-results/testDebugUnitTest/ parsed by verification harness check android-unit-tests.",
+      "validation_test_id": "TEST-ANDR-113",
+      "test_oracle": "TEST-ANDR-113: XML test result files exist under app/build/test-results/testDebugUnitTest/ and parse cleanly",
+      "implementation_task": "Task 6",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-107.1",
+      "requirement_id": "REQ-ANDR-107",
+      "description": "Android Lint must execute via ./gradlew lintDebug and terminate with exit code 0.",
+      "validation_test_id": "TEST-ANDR-115",
+      "test_oracle": "TEST-ANDR-115: ./gradlew lintDebug executes and returns exit code 0",
+      "implementation_task": "Task 8",
+      "check_id": "android-lint",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-107.2",
+      "requirement_id": "REQ-ANDR-107",
+      "description": "The lint configuration in app/build.gradle.kts must set abortOnError = true and warningsAsErrors = false.",
+      "validation_test_id": "TEST-ANDR-115",
+      "test_oracle": "TEST-ANDR-115: Inspection of app/build.gradle.kts confirms lint { abortOnError = true; warningsAsErrors = false }",
+      "implementation_task": "Task 3, Task 8",
+      "check_id": "android-lint",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-107.3",
+      "requirement_id": "REQ-ANDR-107",
+      "description": "Lint execution must generate structured reports (lint-results-debug.xml and lint-results-debug.html) with zero fatal errors.",
+      "validation_test_id": "TEST-ANDR-115",
+      "test_oracle": "TEST-ANDR-115: lint-results-debug.xml generated with 0 fatal errors",
+      "implementation_task": "Task 8",
+      "check_id": "android-lint",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-108.1",
+      "requirement_id": "REQ-ANDR-108",
+      "description": "./gradlew assembleDebug must compile and package app/build/outputs/apk/debug/app-debug.apk with exit code 0.",
+      "validation_test_id": "TEST-ANDR-116",
+      "test_oracle": "TEST-ANDR-116: ./gradlew assembleDebug executes and returns exit code 0, producing app-debug.apk",
+      "implementation_task": "Task 8",
+      "check_id": "android-build",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-108.2",
+      "requirement_id": "REQ-ANDR-108",
+      "description": "Verification harness check apk-validation must inspect generated APK and verify file existence (> 1 MB), SHA-256 digest, package com.weback.robot, and zero prohibited vendor binaries.",
+      "validation_test_id": "TEST-ANDR-117",
+      "test_oracle": "TEST-ANDR-117: apk_validator.py inspects debug APK archive and returns exit code 0",
+      "implementation_task": "Task 7, Task 8",
+      "check_id": "apk-validation",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-108.3",
+      "requirement_id": "REQ-ANDR-108",
+      "description": "When an authorized connected Android emulator or physical device is detected via ADB, verification harness check android-smoke-test must install app-debug.apk, start MainActivity, and verify process is alive without crashes in logcat. If no device, report SKIPPED without failing.",
+      "validation_test_id": "TEST-ANDR-118",
+      "test_oracle": "TEST-ANDR-118: android_smoke_test.py executes ADB install and launch, confirming RESUMED state and 0 crashes (or reports SKIPPED cleanly)",
+      "implementation_task": "Task 7",
+      "check_id": "android-smoke-test",
+      "status": "PLANNED"
+    }
+  ]
+}
