@@ -76,6 +76,9 @@ class TestCIWorkflow(unittest.TestCase):
         self.assertNotIn("4c7e78ca6c4a73290493fa543aaaa48336a181c3", raw_text)
         # Must not use ls -t or timestamps to select evidence reports
         self.assertNotIn("ls -t", raw_text)
+        # Authoritative policy digest must not silently fall back to candidate-controlled default
+        self.assertIn("vars.APPROVED_POLICY_SHA256", raw_text)
+        self.assertNotIn("|| '4a004", raw_text)
 
         steps = data["jobs"]["verify"]["steps"]
         # Must have context computation step
@@ -90,15 +93,17 @@ class TestCIWorkflow(unittest.TestCase):
         self.assertIn("run_id", c_run)
         self.assertIn("report_path", c_run)
 
-        # Run step must bind --run-id
+        # Run step must bind --run-id and exact event-derived base SHA
         run_step = next(s for s in steps if "run.py" in s.get("run", ""))
         self.assertIn("--run-id", run_step["run"])
+        self.assertIn('--base-ref "${{ steps.context.outputs.base_sha }}"', run_step["run"])
 
         # Audit step must bind --expected-run-id and report path
         audit_step = next((s for s in steps if "evidence.py" in s.get("run", "")), None)
         self.assertIsNotNone(audit_step)
         self.assertIn("--expected-run-id", audit_step["run"])
         self.assertIn("--report", audit_step["run"])
+        self.assertIn('--expected-policy-sha256 "${{ vars.APPROVED_POLICY_SHA256 }}"', audit_step["run"])
 
     def test_ci_event_context_derivation_logic_TEST_CI_003(self):
         # Deterministic simulation of the shell logic in compute context step

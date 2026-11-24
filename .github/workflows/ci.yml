@@ -67,10 +67,10 @@ jobs:
         run: |
           python3 verification/run.py \
             --lane candidate \
-            --base-ref "${{ steps.context.outputs.base_ref }}" \
+            --base-ref "${{ steps.context.outputs.base_sha }}" \
             --run-id "${{ steps.context.outputs.run_id }}"
 
-      - name: Authoritative Evidence Audit (Provisional Candidate Verification)
+      - name: Authoritative Evidence Audit (Approved Policy Enforcement)
         run: |
           REPORT_PATH="${{ steps.context.outputs.report_path }}"
           if [ ! -f "$REPORT_PATH" ]; then
@@ -84,7 +84,7 @@ jobs:
             --expected-run-id "${{ steps.context.outputs.run_id }}" \
             --expected-sha "${{ steps.context.outputs.candidate_sha }}" \
             --expected-base-sha "${{ steps.context.outputs.base_sha }}" \
-            --expected-policy-sha256 "${{ vars.APPROVED_POLICY_SHA256 || '4a004ac8d07178c4164193d827983dfa5a7d86c5245fbcb6df69497e976137fd' }}" \
+            --expected-policy-sha256 "${{ vars.APPROVED_POLICY_SHA256 }}" \
             --expected-required-checks spec-hygiene harness-selftests \
             --policy policies/checks.json
 

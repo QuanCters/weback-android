@@ -132,3 +132,24 @@ The following 10 seed defects establish the initial defect-to-regression databas
 - **False Positive Assessment:** Scoped to verification harness Python scripts.
 - **Activation Milestone:** Milestone FCT-000 (Harness Bootstrap).
 
+---
+
+## 4. Outstanding Non-Blocking Technical Limitations
+
+The following technical boundaries and limitations are recorded as engineering backlog items for subsequent milestones:
+
+### LIM-001: Python Standard-Library Scope & Android Tooling Boundary
+- **Description:** The FCT-000 verification harness runtime strictly uses standard-library Python 3.12 without third-party runner dependencies.
+- **Impact:** Android Gradle build infrastructure, Roborazzi UI snapshot testing, and Android emulator instrumentation are not present in FCT-000.
+- **Resolution Plan:** Milestone FCT-001 (Android Foundation & First Runnable APK) introduces the Gradle wrapper (`gradlew`), AGP, Kotlin 2.0, and synthetic UI test harness.
+
+### LIM-002: Workflow Immutability & Repository Variable Scope
+- **Description:** The GitHub repository variable `APPROVED_POLICY_SHA256` provides an external expectation boundary for authoritative candidate evidence verification. However, repository variables alone do not prevent a candidate-controlled pull request workflow from modifying workflow steps.
+- **Impact:** Candidate-controlled branches could theoretically modify workflow step definitions before merging.
+- **Resolution Plan:** Full branch protection rulesets on `main` and mandatory human maintainer PR code review are recommended to prevent unauthorized workflow mutations.
+
+### LIM-003: Simulator-First Boundary & Deferred Physical Device Verification
+- **Description:** In strict adherence to Constitution Invariant `C-003` (Simulator-First by Default) and `C-004` (Zero Live Robot Credentials in Git), all FCT-000 selftests execute against synthetic fixtures and subprocess testbeds.
+- **Impact:** No automated connections to physical vacuum robots (Tuya SoftAP / BLE) or live AWS/WeBack cloud services are attempted.
+- **Resolution Plan:** Milestone FCT-003+ introduces synthetic device mocks and decoupled mock servers for local integration testing; physical device testing requires separate explicit human authorization.
+
