@@ -59,7 +59,8 @@
       "type": "test_suite",
       "argv": [
         "python3",
-        "verification/checks/gradle_test_adapter.py",
+        "-m",
+        "verification.checks.gradle_test_adapter",
         "--task",
         "testDebugUnitTest",
         "--results-dir",

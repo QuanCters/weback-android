@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import time
@@ -226,6 +227,58 @@ java.lang.NullPointerException: container was null
             # Script that exits 42
             code = run_adapter(Path(td), cmd=[sys.executable, "-c", "import sys; sys.exit(42)"])
             self.assertEqual(code, 42)
+
+    def test_cleanup_failure_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            locked_dir = Path(td) / "results"
+            locked_dir.mkdir()
+            xml_file = locked_dir / "TEST-locked.xml"
+            xml_file.write_text("<testsuite name='s' tests='1'/>", encoding="utf-8")
+            try:
+                os.chmod(locked_dir, 0o555)
+                from verification.checks.gradle_test_adapter import execute_gradle_task
+                code, out, _ = execute_gradle_task(["true"], locked_dir, clean_before=True)
+                self.assertEqual(code, 1)
+                self.assertIn(b"Cleanup failure", out)
+            finally:
+                os.chmod(locked_dir, 0o755)
+
+    def test_e2e_cli_invocation_without_pythonpath(self):
+        clean_env = os.environ.copy()
+        clean_env.pop("PYTHONPATH", None)
+
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        res = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "verification.checks.gradle_test_adapter",
+                "--task",
+                "testDebugUnitTest",
+                "--results-dir",
+                "app/build/test-results/testDebugUnitTest"
+            ],
+            cwd=str(repo_root),
+            env=clean_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        self.assertEqual(res.returncode, 0, f"Adapter CLI failed with stderr: {res.stderr}")
+        self.assertIn(SUMMARY_PREFIX, res.stdout)
+
+        summary_found = False
+        for line in res.stdout.splitlines():
+            if line.startswith(SUMMARY_PREFIX):
+                summary_data = json.loads(line[len(SUMMARY_PREFIX):].strip())
+                self.assertGreaterEqual(summary_data["total"], 7)
+                self.assertGreaterEqual(summary_data["passed"], 7)
+                self.assertEqual(summary_data["failures"], 0)
+                self.assertEqual(summary_data["errors"], 0)
+                self.assertEqual(summary_data["skipped"], 0)
+                summary_found = True
+                break
+        self.assertTrue(summary_found, "SUMMARY_PREFIX line not found in CLI output")
 
 if __name__ == "__main__":
     unittest.main()
