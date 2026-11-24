@@ -108,46 +108,59 @@ def get_base_sha(repo_dir: Optional[Path] = None, base_ref: str = "main") -> str
     Raises ValueError if base_ref cannot be resolved or is invalid.
     """
     cwd = str(repo_dir) if repo_dir else os.getcwd()
-    try:
-        proc = subprocess.run(
-            ["git", "rev-parse", base_ref],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        sha = proc.stdout.strip()
-        if not HEX_SHA40_RE.match(sha):
-            raise ValueError(f"Invalid base SHA resolved for '{base_ref}': '{sha}'")
-        return sha
-    except subprocess.CalledProcessError as e:
-        raise ValueError(f"Failed to resolve base ref '{base_ref}': {e.stderr.strip()}")
+    candidates = [base_ref]
+    if not base_ref.startswith("origin/") and not base_ref.startswith("refs/"):
+        candidates.append(f"origin/{base_ref}")
+
+    last_error = ""
+    for ref in candidates:
+        try:
+            proc = subprocess.run(
+                ["git", "rev-parse", ref],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            sha = proc.stdout.strip()
+            if HEX_SHA40_RE.match(sha):
+                return sha
+            else:
+                last_error = f"Invalid base SHA resolved for '{ref}': '{sha}'"
+        except subprocess.CalledProcessError as e:
+            last_error = e.stderr.strip()
+
+    raise ValueError(f"Failed to resolve base ref '{base_ref}': {last_error}")
 
 def check_policy_modified_from_base(repo_dir: Optional[Path] = None, base_ref: str = "main") -> bool:
     """
     Checks if any file in policies/ differs between base_ref and HEAD.
     """
     cwd = str(repo_dir) if repo_dir else os.getcwd()
-    # Check if base_ref exists
-    try:
-        proc = subprocess.run(
-            ["git", "diff", "--name-only", f"{base_ref}...HEAD", "--", "policies/"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        return len(proc.stdout.strip()) > 0
-    except subprocess.CalledProcessError:
-        # Fallback to direct two-dot diff or compare HEAD
+    candidates = [base_ref]
+    if not base_ref.startswith("origin/") and not base_ref.startswith("refs/"):
+        candidates.append(f"origin/{base_ref}")
+
+    for ref in candidates:
         try:
-            proc2 = subprocess.run(
-                ["git", "diff", "--name-only", base_ref, "HEAD", "--", "policies/"],
+            proc = subprocess.run(
+                ["git", "diff", "--name-only", f"{ref}...HEAD", "--", "policies/"],
                 cwd=cwd,
                 capture_output=True,
                 text=True,
                 check=True
             )
-            return len(proc2.stdout.strip()) > 0
+            return len(proc.stdout.strip()) > 0
         except subprocess.CalledProcessError:
-            return False
+            try:
+                proc2 = subprocess.run(
+                    ["git", "diff", "--name-only", ref, "HEAD", "--", "policies/"],
+                    cwd=cwd,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                return len(proc2.stdout.strip()) > 0
+            except subprocess.CalledProcessError:
+                continue
+    return False
