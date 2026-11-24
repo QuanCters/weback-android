@@ -1017,6 +1017,34 @@ class TestEvidence(unittest.TestCase):
         self.assertEqual(eff_sha2, "f"*64)
         self.assertEqual(eff_reqs2, ["spec-hygiene", "harness-selftests", "android-build"])
 
+    def test_transition_state_policy_file_and_squash_push_TEST_EVI_039(self):
+        """resolve_transition_context accepts policy_file alias and validates post-squash-merge push via tree_sha."""
+        from verification.checks.evidence import resolve_transition_context
+
+        auth = {
+            "candidate_sha": "a"*40,
+            "target_base_sha": "b"*40,
+            "candidate_tree_sha": "c"*40,
+            "canonical_policy_sha256": "d"*64,
+            "policy_file": "policies/checks.json",
+            "required_checks": ["spec-hygiene", "harness-selftests", "android-build"]
+        }
+        eff_sha, eff_reqs, eff_path, _, errs = resolve_transition_context(
+            expected_sha="9"*40,  # squash commit SHA differs from PR head SHA
+            expected_base_sha="b"*40,
+            expected_policy_sha256="0"*64,
+            required_check_ids=["spec-hygiene", "harness-selftests"],
+            policy_path=Path("policies/checks.baseline.json"),
+            transition_auth=auth,
+            event_name="push",
+            expected_tree_sha="c"*40,
+            parent_shas=["b"*40]
+        )
+        self.assertEqual(errs, [])
+        self.assertEqual(eff_sha, "d"*64)
+        self.assertEqual(eff_path, Path("policies/checks.json"))
+        self.assertEqual(eff_reqs, ["spec-hygiene", "harness-selftests", "android-build"])
+
 
 
 

@@ -235,7 +235,10 @@ def resolve_transition_context(
     expected_policy_sha256: Optional[str],
     required_check_ids: Optional[list[str]],
     policy_path: Optional[Path],
-    transition_auth: Optional[dict]
+    transition_auth: Optional[dict],
+    event_name: str = "pull_request",
+    expected_tree_sha: Optional[str] = None,
+    parent_shas: Optional[list[str]] = None
 ) -> tuple[Optional[str], Optional[list[str]], Optional[Path], set[str], list[str]]:
     """
     Evaluates the controlled policy transition state machine.
@@ -248,6 +251,10 @@ def resolve_transition_context(
     if not isinstance(transition_auth, dict):
         return expected_policy_sha256, required_check_ids, policy_path, set(), ["Invalid transition_auth: must be an object"]
 
+    if "base_sha" not in transition_auth and "target_base_sha" in transition_auth:
+        transition_auth = dict(transition_auth)
+        transition_auth["base_sha"] = transition_auth["target_base_sha"]
+
     req_keys = ["candidate_sha", "base_sha", "canonical_policy_sha256", "required_checks"]
     for k in req_keys:
         if k not in transition_auth:
@@ -257,17 +264,22 @@ def resolve_transition_context(
 
     auth_cand = transition_auth.get("candidate_sha")
     auth_base = transition_auth.get("base_sha")
+    auth_tree = transition_auth.get("candidate_tree_sha")
     auth_policy_sha = transition_auth.get("canonical_policy_sha256")
     auth_reqs = transition_auth.get("required_checks")
-    auth_policy_path = transition_auth.get("policy_path")
+    auth_policy_path = transition_auth.get("policy_file") or transition_auth.get("policy_path")
     retired = set(transition_auth.get("retired_policies", []))
 
     if not isinstance(auth_cand, str) or not HEX_SHA40_RE.match(auth_cand):
         errors.append(f"Invalid candidate_sha format in transition_auth: '{auth_cand}'")
     if not isinstance(auth_base, str) or not HEX_SHA40_RE.match(auth_base):
         errors.append(f"Invalid base_sha format in transition_auth: '{auth_base}'")
+    if auth_tree and (not isinstance(auth_tree, str) or not HEX_SHA40_RE.match(auth_tree)):
+        errors.append(f"Invalid candidate_tree_sha format in transition_auth: '{auth_tree}'")
     if not isinstance(auth_policy_sha, str) or not HEX_SHA256_RE.match(auth_policy_sha):
         errors.append(f"Invalid canonical_policy_sha256 format in transition_auth: '{auth_policy_sha}'")
+    elif auth_policy_sha.lower() in {h.lower() for h in retired}:
+        errors.append(f"Transition authorization attempts to activate retired policy digest: '{auth_policy_sha}'")
     if not isinstance(auth_reqs, list) or len(auth_reqs) == 0:
         errors.append("required_checks in transition_auth must be a non-empty list of check IDs")
     else:
@@ -280,17 +292,54 @@ def resolve_transition_context(
     if errors:
         return expected_policy_sha256, required_check_ids, policy_path, set(), errors
 
-    # Strict candidate and base SHA matching against authorized transition tuple
-    if expected_sha != auth_cand:
-        errors.append(
-            f"Candidate SHA does not match authorized transition candidate: "
-            f"expected '{auth_cand}', got '{expected_sha}'"
-        )
-    if expected_base_sha != auth_base:
-        errors.append(
-            f"Base SHA does not match authorized transition target base: "
-            f"expected '{auth_base}', got '{expected_base_sha}'"
-        )
+    # Candidate/push provenance verification against authorized transition tuple
+    if event_name == "pull_request":
+        if expected_sha != auth_cand:
+            errors.append(
+                f"Candidate SHA does not match authorized transition candidate: "
+                f"expected '{auth_cand}', got '{expected_sha}'"
+            )
+        if expected_base_sha != auth_base:
+            errors.append(
+                f"Base SHA does not match authorized transition target base: "
+                f"expected '{auth_base}', got '{expected_base_sha}'"
+            )
+        if auth_tree and expected_tree_sha and expected_tree_sha != auth_tree:
+            errors.append(
+                f"Candidate tree SHA does not match authorized transition tree: "
+                f"expected '{auth_tree}', got '{expected_tree_sha}'"
+            )
+    elif event_name == "push":
+        if auth_tree:
+            if not expected_tree_sha or expected_tree_sha != auth_tree:
+                errors.append(
+                    f"Post-merge tree SHA does not match authorized transition tree: "
+                    f"expected '{auth_tree}', got '{expected_tree_sha}'"
+                )
+            if parent_shas:
+                if auth_base not in parent_shas and expected_base_sha != auth_base:
+                    errors.append(
+                        f"Post-merge base ancestry does not match authorized transition target base: "
+                        f"expected '{auth_base}' in {parent_shas}"
+                    )
+            elif expected_base_sha != auth_base:
+                errors.append(
+                    f"Base SHA does not match authorized transition target base: "
+                    f"expected '{auth_base}', got '{expected_base_sha}'"
+                )
+        else:
+            if expected_sha != auth_cand:
+                errors.append(
+                    f"Candidate SHA does not match authorized transition candidate: "
+                    f"expected '{auth_cand}', got '{expected_sha}'"
+                )
+            if expected_base_sha != auth_base:
+                errors.append(
+                    f"Base SHA does not match authorized transition target base: "
+                    f"expected '{auth_base}', got '{expected_base_sha}'"
+                )
+    else:
+        errors.append(f"Unsupported event context for transition audit: '{event_name}'")
 
     if errors:
         return expected_policy_sha256, required_check_ids, policy_path, set(), errors
@@ -308,7 +357,10 @@ def verify_evidence_report(
     expected_run_id: Optional[str] = None,
     approved_checks: Optional[dict[str, dict]] = None,
     policy_path: Optional[Path] = None,
-    transition_auth: Optional[dict] = None
+    transition_auth: Optional[dict] = None,
+    event_name: str = "pull_request",
+    expected_tree_sha: Optional[str] = None,
+    parent_shas: Optional[list[str]] = None
 ) -> tuple[bool, list[str]]:
     """
     Independent Evidence Auditor.
@@ -331,7 +383,10 @@ def verify_evidence_report(
             expected_policy_sha256=expected_policy_sha256,
             required_check_ids=required_check_ids,
             policy_path=policy_path,
-            transition_auth=transition_auth
+            transition_auth=transition_auth,
+            event_name=event_name,
+            expected_tree_sha=expected_tree_sha,
+            parent_shas=parent_shas
         )
         if t_errs:
             errors.extend(t_errs)
@@ -565,6 +620,9 @@ def main():
     parser.add_argument("--policy", type=str, default=None, help="Path to approved checks policy JSON")
     parser.add_argument("--transition-auth", type=str, default=None, help="JSON string or file path for authorized policy transition grant")
     parser.add_argument("--transition-auth-file", type=str, default=None, help="Path to JSON file containing authorized policy transition grant")
+    parser.add_argument("--event-name", type=str, default="pull_request", help="CI event name (pull_request or push)")
+    parser.add_argument("--expected-tree-sha", type=str, default=None, help="Expected candidate git tree SHA")
+    parser.add_argument("--parent-shas", nargs="*", default=None, help="Expected parent commit SHAs for push ancestry")
     args = parser.parse_args()
 
     # Reject unanchored --audit-latest in candidate mode without explicit expected run id
@@ -638,7 +696,10 @@ def main():
         require_candidate=args.require_candidate,
         expected_run_id=args.expected_run_id,
         policy_path=policy_p,
-        transition_auth=transition_auth_data
+        transition_auth=transition_auth_data,
+        event_name=args.event_name,
+        expected_tree_sha=args.expected_tree_sha,
+        parent_shas=args.parent_shas
     )
 
     if not ok:

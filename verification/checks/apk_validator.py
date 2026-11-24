@@ -54,69 +54,112 @@ def get_android_attr(elem: ET.Element, attr_name: str) -> str | None:
             return v
     return None
 
-def parse_dex_classes(data: bytes) -> list[str]:
+def parse_dex_classes(data: bytes, dex_name: str = "classes.dex") -> list[str]:
     """
     Parses class definitions from a raw DEX binary byte stream.
+    Validates DEX header, declared file size, table offsets and table boundaries.
+    Fails closed with ValueError on corruption, invalid bounds, or missing definitions.
     """
-    if len(data) < 112 or data[:4] != b"dex\n":
-        return []
-    try:
-        string_ids_size, string_ids_off = struct.unpack_from("<II", data, 56)
-        type_ids_size, type_ids_off = struct.unpack_from("<II", data, 64)
-        class_defs_size, class_defs_off = struct.unpack_from("<II", data, 96)
+    if len(data) < 112:
+        raise ValueError(f"Malformed DEX header in '{dex_name}': size {len(data)} is less than minimum header 112 bytes")
 
-        string_offsets = [struct.unpack_from("<I", data, string_ids_off + i * 4)[0] for i in range(string_ids_size)]
+    if not (data.startswith(b"dex\n035\x00") or data.startswith(b"dex\n037\x00") or
+            data.startswith(b"dex\n038\x00") or data.startswith(b"dex\n039\x00") or
+            data.startswith(b"dex\n")):
+        raise ValueError(f"Invalid DEX magic in '{dex_name}': {data[:8]!r}")
 
-        def get_string(idx: int) -> str:
-            off = string_offsets[idx]
-            while data[off] & 0x80:
-                off += 1
+    # Header file_size check at byte 32 (uint32)
+    declared_file_size = struct.unpack_from("<I", data, 32)[0]
+    if declared_file_size != len(data):
+        raise ValueError(
+            f"DEX file size mismatch in '{dex_name}': header declares {declared_file_size} bytes, "
+            f"actual file size is {len(data)} bytes"
+        )
+
+    # String, type, and class_defs offsets and counts
+    string_ids_size, string_ids_off = struct.unpack_from("<II", data, 56)
+    type_ids_size, type_ids_off = struct.unpack_from("<II", data, 64)
+    class_defs_size, class_defs_off = struct.unpack_from("<II", data, 96)
+
+    # Bounds validation against data length
+    if string_ids_size < 0 or string_ids_off < 112 or (string_ids_off + string_ids_size * 4) > len(data):
+        raise ValueError(f"Invalid string_ids table bounds in '{dex_name}': off={string_ids_off}, size={string_ids_size}")
+    if type_ids_size < 0 or type_ids_off < 112 or (type_ids_off + type_ids_size * 4) > len(data):
+        raise ValueError(f"Invalid type_ids table bounds in '{dex_name}': off={type_ids_off}, size={type_ids_size}")
+    if class_defs_size < 0 or class_defs_off < 112 or (class_defs_off + class_defs_size * 32) > len(data):
+        raise ValueError(f"Invalid class_defs table bounds in '{dex_name}': off={class_defs_off}, size={class_defs_size}")
+
+    if class_defs_size == 0:
+        raise ValueError(f"Empty class inventory in '{dex_name}': class_defs_size is 0")
+
+    string_offsets = [struct.unpack_from("<I", data, string_ids_off + i * 4)[0] for i in range(string_ids_size)]
+
+    def get_string(idx: int) -> str:
+        if idx < 0 or idx >= len(string_offsets):
+            raise ValueError(f"String index {idx} out of range (total: {len(string_offsets)}) in '{dex_name}'")
+        off = string_offsets[idx]
+        if off >= len(data):
+            raise ValueError(f"String offset {off} out of file bounds in '{dex_name}'")
+        # Skip UTF-8 length ULEB128
+        while off < len(data) and (data[off] & 0x80):
             off += 1
-            end = data.find(b"\x00", off)
-            return data[off:end].decode("utf-8", errors="replace")
+        off += 1
+        if off >= len(data):
+            raise ValueError(f"String data offset out of bounds in '{dex_name}'")
+        end = data.find(b"\x00", off)
+        if end == -1:
+            raise ValueError(f"Unterminated string data in '{dex_name}' at offset {off}")
+        return data[off:end].decode("utf-8", errors="replace")
 
-        type_string_indices = [struct.unpack_from("<I", data, type_ids_off + i * 4)[0] for i in range(type_ids_size)]
+    type_string_indices = [struct.unpack_from("<I", data, type_ids_off + i * 4)[0] for i in range(type_ids_size)]
 
-        classes = []
-        for i in range(class_defs_size):
-            class_idx = struct.unpack_from("<I", data, class_defs_off + i * 32)[0]
-            str_idx = type_string_indices[class_idx]
-            classes.append(get_string(str_idx))
-        return classes
-    except Exception:
-        return []
+    classes = []
+    for i in range(class_defs_size):
+        class_idx = struct.unpack_from("<I", data, class_defs_off + i * 32)[0]
+        if class_idx >= len(type_string_indices):
+            raise ValueError(f"Class def {i} type index {class_idx} exceeds type table size {len(type_string_indices)} in '{dex_name}'")
+        str_idx = type_string_indices[class_idx]
+        classes.append(get_string(str_idx))
+    return classes
 
 def validate_dex_classes_in_apk(apk_path: Path) -> tuple[bool, list[str]]:
     """
-    Inspects all DEX files in APK archive and asserts absence of prohibited legacy classes.
+    Inspects all DEX files in APK archive and asserts:
+    1. Every DEX file is well-formed with valid header, size, offsets, and bounds.
+    2. Zero prohibited legacy vendor classes exist across all DEX files.
+    3. Required MainActivity class descriptor is present across the DEX class inventory.
     """
     errors: list[str] = []
     try:
         with zipfile.ZipFile(apk_path, "r") as zf:
-            dex_names = [n for n in zf.namelist() if n.endswith(".dex")]
+            dex_names = sorted([n for n in zf.namelist() if n.endswith(".dex")])
             if not dex_names:
                 errors.append("No DEX files found in APK archive")
                 return False, errors
 
             all_classes: list[str] = []
             for dname in dex_names:
-                classes = parse_dex_classes(zf.read(dname))
-                all_classes.extend(classes)
+                try:
+                    classes = parse_dex_classes(zf.read(dname), dex_name=dname)
+                    all_classes.extend(classes)
+                except Exception as e:
+                    errors.append(f"DEX inspection failure in '{dname}': {e}")
 
-            # Check for prohibited legacy vendor classes
-            for cls in all_classes:
-                for prohibited in PROHIBITED_DEX_PACKAGES:
-                    if cls.startswith(prohibited):
-                        errors.append(f"Prohibited legacy vendor DEX class detected: {cls}")
+            if not all_classes:
+                errors.append("Empty or uninspectable class inventory across APK DEX files")
+            else:
+                # Check for prohibited legacy vendor classes
+                for cls in all_classes:
+                    for prohibited in PROHIBITED_DEX_PACKAGES:
+                        if cls.startswith(prohibited):
+                            errors.append(f"Prohibited legacy vendor DEX class detected: {cls}")
 
-            # Verify presence of clean MainActivity class
-            has_main = any(c == "Lcom/weback/robot/MainActivity;" for c in all_classes)
-            if not has_main:
-                # In synthetic unit tests without full dex bytecode, skip only if no weback classes at all
-                if any("weback" in c.lower() for c in all_classes):
-                    errors.append("MainActivity class descriptor 'Lcom/weback/robot/MainActivity;' not found in DEX definitions")
+                # Verify presence of clean MainActivity class
+                has_main = any(c == "Lcom/weback/robot/MainActivity;" for c in all_classes)
+                if not has_main:
+                    errors.append("Required MainActivity class descriptor 'Lcom/weback/robot/MainActivity;' not found in APK DEX inventory")
     except Exception as e:
-        errors.append(f"Failed to inspect DEX classes: {e}")
+        errors.append(f"Failed to inspect APK DEX archive: {e}")
 
     return len(errors) == 0, errors
 
@@ -173,34 +216,48 @@ def validate_manifest_xml_structural(manifest_xml: str) -> tuple[bool, list[str]
             name = get_android_attr(act, "name")
             exported = get_android_attr(act, "exported")
             if name in (REQUIRED_LAUNCHER_ACTIVITY, ".MainActivity", "MainActivity"):
-                has_main_action = False
-                has_launcher_cat = False
-                for ifilter in act.findall("intent-filter"):
-                    for action in ifilter.findall("action"):
-                        if get_android_attr(action, "name") == "android.intent.action.MAIN":
-                            has_main_action = True
-                    for cat in ifilter.findall("category"):
-                        if get_android_attr(cat, "name") == "android.intent.category.LAUNCHER":
-                            has_launcher_cat = True
-
                 if exported != "true":
                     errors.append(f"Launcher activity '{name}' must have exported='true', got '{exported}'")
-                elif not has_main_action:
-                    errors.append(f"Launcher activity '{name}' is missing intent-filter action 'android.intent.action.MAIN'")
-                elif not has_launcher_cat:
-                    errors.append(f"Launcher activity '{name}' is missing intent-filter category 'android.intent.category.LAUNCHER'")
-                else:
+                    continue
+
+                # Require MAIN action and LAUNCHER category within the SAME intent-filter
+                matching_filter = False
+                for ifilter in act.findall("intent-filter"):
+                    has_main_in_filter = any(
+                        get_android_attr(action, "name") == "android.intent.action.MAIN"
+                        for action in ifilter.findall("action")
+                    )
+                    has_launcher_in_filter = any(
+                        get_android_attr(cat, "name") == "android.intent.category.LAUNCHER"
+                        for cat in ifilter.findall("category")
+                    )
+                    if has_main_in_filter and has_launcher_in_filter:
+                        matching_filter = True
+                        break
+
+                if matching_filter:
                     launcher_found = True
                     break
+                else:
+                    errors.append(
+                        f"Launcher activity '{name}' is missing an intent-filter declaring both "
+                        f"action 'android.intent.action.MAIN' and category 'android.intent.category.LAUNCHER' "
+                        f"within the same intent-filter"
+                    )
 
-        if not launcher_found and not any("missing intent-filter" in e or "must have exported" in e for e in errors):
+        if not launcher_found and not any("missing an intent-filter" in e or "must have exported" in e for e in errors):
             errors.append(f"Required launcher activity '{REQUIRED_LAUNCHER_ACTIVITY}' not found in manifest")
 
-    # 6. Prohibited permissions verification
+    # 6. Approved permissions boundary verification (Zero external application permissions authorized for FCT-001)
+    ALLOWED_INTERNAL_PERMISSIONS = {
+        f"{EXPECTED_PACKAGE_ID}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+    }
     for up in root.findall("uses-permission"):
         pname = get_android_attr(up, "name")
         if pname in PROHIBITED_PERMISSIONS:
             errors.append(f"Prohibited application permission detected in manifest: '{pname}'")
+        elif pname not in ALLOWED_INTERNAL_PERMISSIONS:
+            errors.append(f"Unauthorized application permission detected in manifest: '{pname}'. FCT-001 authorizes zero external application permissions.")
 
     return len(errors) == 0, errors
 

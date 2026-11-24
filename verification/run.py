@@ -29,8 +29,14 @@ from verification.checks.git_auditor import (
     check_policy_modified_from_base
 )
 from verification.checks.evidence import generate_evidence_report, compute_sha256_bytes
-
-CANONICAL_POLICY_PATH = "policies/checks.json"
+from verification.checks.transition import (
+    resolve_verification_context,
+    TransitionError,
+    CANONICAL_POLICY_PATH,
+    BASELINE_POLICY_PATH,
+    get_tree_sha,
+    get_commit_parents
+)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -136,25 +142,52 @@ def main():
 
     # AC-003.4: Candidate lane must execute against canonical approved policy
     if args.lane == "candidate":
-        canonical_p = repo_path / CANONICAL_POLICY_PATH
+        try:
+            tree_sha = get_tree_sha(repo_path, tested_sha)
+            parent_shas = get_commit_parents(repo_path, tested_sha)
+        except Exception as e:
+            print(f"Error: Could not resolve candidate tree metadata: {e}", file=sys.stderr)
+            sys.exit(2)
+
+        git_context = {
+            "event_name": "pull_request" if tested_sha != base_sha else "push",
+            "candidate_sha": tested_sha,
+            "base_sha": base_sha,
+            "base_ref": args.base_ref,
+            "tree_sha": tree_sha,
+            "parent_shas": parent_shas,
+            "run_id": args.run_id or "run"
+        }
+        env = dict(os.environ)
+        if args.transition_auth:
+            auth_p = Path(args.transition_auth)
+            if auth_p.is_file():
+                try:
+                    env["TRANSITION_AUTHORIZATION"] = auth_p.read_text(encoding="utf-8")
+                except Exception as e:
+                    print(f"Error: Failed to read transition auth file '{args.transition_auth}': {e}", file=sys.stderr)
+                    sys.exit(2)
+            else:
+                env["TRANSITION_AUTHORIZATION"] = args.transition_auth
+
+        try:
+            resolved = resolve_verification_context(env, git_context, repo_path)
+            effective_canonical = (repo_path / resolved.policy_file).resolve()
+        except TransitionError as te:
+            print(f"Error: Candidate policy resolution failed: {te}", file=sys.stderr)
+            sys.exit(2)
+        except Exception as e:
+            print(f"Error: Unexpected failure resolving candidate policy context: {e}", file=sys.stderr)
+            sys.exit(2)
+
         config_p = Path(args.config)
         if not config_p.is_absolute():
             config_p = repo_path / config_p
 
-        effective_canonical = canonical_p
-        raw_ta = args.transition_auth or os.environ.get("TRANSITION_AUTHORIZATION")
-        if raw_ta:
-            try:
-                import json
-                p = Path(raw_ta)
-                ta_data = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else json.loads(raw_ta)
-                if ta_data.get("candidate_sha") == tested_sha and ta_data.get("base_sha") == base_sha:
-                    t_pol = ta_data.get("policy_path")
-                    if t_pol:
-                        tp = Path(t_pol)
-                        effective_canonical = (repo_path / tp).resolve() if not tp.is_absolute() else tp.resolve()
-            except Exception:
-                pass
+        # If user left --config as default CANONICAL_POLICY_PATH, adopt the resolved policy file
+        if args.config == CANONICAL_POLICY_PATH and config_p.resolve() != effective_canonical:
+            config_p = effective_canonical
+            args.config = str(effective_canonical)
 
         try:
             is_same = (config_p.resolve() == effective_canonical.resolve())

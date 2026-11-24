@@ -67,50 +67,47 @@ jobs:
 
       - name: Compute CI Verification Context
         id: context
+        env:
+          TRANSITION_AUTHORIZATION: ${{ vars.TRANSITION_AUTHORIZATION }}
+          APPROVED_POLICY_SHA256: ${{ vars.APPROVED_POLICY_SHA256 }}
         run: |
-          RUN_ID="ci-${{ github.run_id }}-${{ github.run_attempt }}"
-          REPORT_PATH="artifacts/verification/$RUN_ID/report.json"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            CANDIDATE_SHA="${{ github.event.pull_request.head.sha }}"
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            BASE_REF="${{ github.event.pull_request.base.ref }}"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            CANDIDATE_SHA="${{ github.sha }}"
-            BASE_SHA="${{ github.event.before }}"
-            BASE_REF="${{ github.event.before }}"
-            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
-              BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "$CANDIDATE_SHA")
-              BASE_REF="$BASE_SHA"
-            fi
-          else
-            echo "Error: Unsupported CI event '${{ github.event_name }}'" >&2
-            exit 1
-          fi
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "report_path=$REPORT_PATH" >> "$GITHUB_OUTPUT"
-          echo "candidate_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
-          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
-          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+          # Context resolution for pull_request and push events
+          # Derives candidate_sha, base_sha, base_ref, run_id, report_path, policy_file
+          python3 verification/checks/transition.py resolve-context \
+            --event-name "${{ github.event_name }}" \
+            --pr-head "${{ github.event.pull_request.head.sha }}" \
+            --pr-base "${{ github.event.pull_request.base.sha }}" \
+            --pr-base-ref "${{ github.event.pull_request.base.ref }}" \
+            --push-sha "${{ github.sha }}" \
+            --push-before "${{ github.event.before }}" \
+            --run-id "ci-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --output-github-env "$GITHUB_OUTPUT"
 
       - name: Run Candidate Verification Lane
+        env:
+          TRANSITION_AUTHORIZATION: ${{ vars.TRANSITION_AUTHORIZATION }}
         run: |
           python3 verification/run.py \
             --lane candidate \
+            --config "${{ steps.context.outputs.policy_file }}" \
             --base-ref "${{ steps.context.outputs.base_sha }}" \
             --run-id "${{ steps.context.outputs.run_id }}"
 
       - name: Run Diagnostic Proposed Checks
+        if: steps.context.outputs.is_transition == 'false'
         run: |
           python3 verification/run.py \
             --lane fast \
-            --config policies/fct001_checks_canonical.json \
+            --config policies/checks.json \
             --run-id "${{ steps.context.outputs.run_id }}-diagnostic"
 
       - name: Authoritative Evidence Audit (Approved Policy Enforcement)
+        env:
+          TRANSITION_AUTHORIZATION: ${{ vars.TRANSITION_AUTHORIZATION }}
         run: |
           REPORT_PATH="${{ steps.context.outputs.report_path }}"
           if [ ! -f "$REPORT_PATH" ]; then
-            echo "Error: Expected evidence report not found at $REPORT_PATH" >&2
+            echo "Error: Expected authoritative evidence report not found at $REPORT_PATH" >&2
             exit 1
           fi
           echo "Auditing candidate evidence report: $REPORT_PATH"
@@ -121,19 +118,24 @@ jobs:
             --expected-sha "${{ steps.context.outputs.candidate_sha }}" \
             --expected-base-sha "${{ steps.context.outputs.base_sha }}" \
             --expected-policy-sha256 "${{ vars.APPROVED_POLICY_SHA256 }}" \
-            --expected-required-checks spec-hygiene harness-selftests \
-            --policy policies/checks.json \
-            ${{ vars.TRANSITION_AUTHORIZATION && format('--transition-auth "{0}"', vars.TRANSITION_AUTHORIZATION) || '' }}
+            --expected-required-checks ${{ steps.context.outputs.expected_required_checks }} \
+            --policy "${{ steps.context.outputs.policy_file }}" \
+            --event-name "${{ github.event_name }}" \
+            --expected-tree-sha "${{ steps.context.outputs.tree_sha }}" \
+            --parent-shas ${{ steps.context.outputs.parent_shas }}
 
       - name: Audit Diagnostic Android Evidence Report
+        if: steps.context.outputs.is_transition == 'false'
         run: |
           DIAG_REPORT="artifacts/verification/${{ steps.context.outputs.run_id }}-diagnostic/report.json"
-          if [ -f "$DIAG_REPORT" ]; then
-            echo "Auditing diagnostic FCT-001 evidence report: $DIAG_REPORT"
-            python3 verification/checks/evidence.py \
-              --report "$DIAG_REPORT" \
-              --policy policies/fct001_checks_canonical.json
+          if [ ! -f "$DIAG_REPORT" ]; then
+            echo "Error: Expected diagnostic evidence report not found at $DIAG_REPORT" >&2
+            exit 1
           fi
+          echo "Auditing diagnostic FCT-001 evidence report: $DIAG_REPORT"
+          python3 verification/checks/evidence.py \
+            --report "$DIAG_REPORT" \
+            --policy policies/checks.json
 
       - name: Upload Verification Evidence Artifacts
         if: always()

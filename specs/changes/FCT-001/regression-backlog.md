@@ -53,7 +53,7 @@ In strict accordance with Constitution Invariant `C-009` (Defect-to-Regression L
 - **Requirement / Invariant:** `REQ-HARN-005`
 - **Severity:** `P0`
 - **Affected Module:** `verification/selftests/test_gradle_test_adapter.py`
-- **Evidence:** `test_e2e_cli_invocation_without_pythonpath` invoked live `./gradlew testDebugUnitTest` inside harness selftests, exceeding 60-second execution budget on cold CI runner (timed out at 62.01s in CI run 45439831283).
+- **Evidence:** `test_e2e_cli_invocation_without_pythonpath` invoked live `./gradlew testDebugUnitTest` inside harness selftests, exceeding 60-second execution budget on cold unprimed environment (timed out at 62.01s; historical initial CI run ID reference unavailable/unrecorded).
 - **Reproduction:** Run `python3 verification/checks/test_adapter.py --discover verification/selftests` on clean environment without warm Gradle daemon.
 - **Root Cause:** Baseline verification harness selftests depended on heavy Android toolchain compilation and external network artifact resolution.
 - **Regression Test Reference:** `verification/selftests/test_gradle_test_adapter.py::test_e2e_cli_invocation_without_pythonpath`
@@ -88,4 +88,46 @@ In strict accordance with Constitution Invariant `C-009` (Defect-to-Regression L
 - **Pre-Fix RED Result:** `AssertionError: Substring check accepted non-exported activity and missed DEX inspection`
 - **Post-Fix GREEN Result:** `PASS: Structural XML validation and parse_dex_classes enforce 100% manifest and DEX integrity`
 - **Generalization Decision:** `true`
+- **Review Status:** `RESOLVED`
+
+### DEF-2026-030: DEX Parser Fail-Closed Bounds & Header Validation
+- **Classification:** `CONFIRMED_APPLICATION_DEFECT`
+- **Requirement / Invariant:** `REQ-ANDR-108`
+- **Severity:** `P0`
+- **Affected Module:** `verification/checks/apk_validator.py`
+- **Evidence:** `parse_dex_classes` returned an empty list on malformed DEX or parsing exceptions without failing closed, allowing incomplete class inspection to pass silently.
+- **Reproduction:** Feed truncated DEX header or invalid table offsets to `parse_dex_classes`.
+- **Root Cause:** Broad try/except catching `Exception` and returning empty list instead of raising `ValueError` on corrupt or malformed DEX input.
+- **Regression Test Reference:** `verification/selftests/test_apk_validator.py::test_dex_negative_malformed_header`
+- **Pre-Fix RED Result:** `parse_dex_classes returned [] (silent suppression) and validate_dex_classes_in_apk returned True`
+- **Post-Fix GREEN Result:** `PASS: parse_dex_classes raises ValueError and validate_dex_classes_in_apk fails closed`
+- **Generalization Decision:** `false`
+- **Review Status:** `RESOLVED`
+
+### DEF-2026-031: Launcher Intent-Filter Co-Occurrence Validation
+- **Classification:** `CONFIRMED_APPLICATION_DEFECT`
+- **Requirement / Invariant:** `REQ-ANDR-108`
+- **Severity:** `P1`
+- **Affected Module:** `verification/checks/apk_validator.py`
+- **Evidence:** `validate_manifest_xml_structural` permitted `android.intent.action.MAIN` and `android.intent.category.LAUNCHER` to reside in separate `<intent-filter>` elements of `MainActivity`.
+- **Reproduction:** Feed manifest XML where MAIN action and LAUNCHER category are defined in two distinct `<intent-filter>` children.
+- **Root Cause:** Intent filter validation iterated over filters separately and stored presence in global boolean flags instead of verifying co-occurrence within the exact same filter.
+- **Regression Test Reference:** `verification/selftests/test_apk_validator.py::test_manifest_negative_main_and_launcher_in_separate_filters`
+- **Pre-Fix RED Result:** `validate_manifest_xml_structural returned True (accepted split filters)`
+- **Post-Fix GREEN Result:** `PASS: Rejects manifests where MAIN and LAUNCHER are in separate filters`
+- **Generalization Decision:** `false`
+- **Review Status:** `RESOLVED`
+
+### DEF-2026-032: Runner-to-Auditor Decoupling During Policy Transition
+- **Classification:** `CONFIRMED_APPLICATION_DEFECT`
+- **Requirement / Invariant:** `C-008`
+- **Severity:** `P0`
+- **Affected Module:** `verification/checks/transition.py`
+- **Evidence:** Candidate runner executed 2 baseline checks while authoritative auditor received transition authorization but audited the 2-check report, creating runner-to-auditor decoupling and preventing authoritative acceptance.
+- **Reproduction:** Run CI workflow with transition authorization where candidate lane runs baseline policy and evidence auditor receives transition authorization.
+- **Root Cause:** Candidate runner and evidence auditor did not resolve context through a shared deterministic state machine binding exact policy file, digest, required checks, and report path.
+- **Regression Test Reference:** `verification/selftests/test_transition.py::test_07_candidate_runner_to_auditor_consistency_TEST_TRN_007`
+- **Pre-Fix RED Result:** `Auditor received 2-check report while transition authorization specified 7 checks, or runner executed old checks in candidate lane`
+- **Post-Fix GREEN Result:** `PASS: transition.py resolves unified context for runner and auditor; inconsistency strictly rejected`
+- **Generalization Decision:** `false`
 - **Review Status:** `RESOLVED`
