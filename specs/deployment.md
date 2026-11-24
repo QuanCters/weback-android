@@ -1,34 +1,33 @@
 # Deployment, Build & Environment Policy — WeBack Android
 
 **Document ID:** SPEC-DEP-01  
-**Version:** 1.0.0 (Proposed Baseline)  
+**Version:** 1.1.0 (Proposed Calibrated Baseline)  
 **Effective Date:** 2026-11-24  
 **Author:** Principal Android Architect  
-**Approved by:** Lead Maintainer (Pending Formal Baseline Sign-off)  
+**Governance Authority:** Product Owner & Lead Maintainer  
+**Status:** PROPOSED BASELINE (Awaiting Formal Human Review & Approval)  
 
 ---
 
-## 1. Target Environments
+## 1. Operational Contexts & Target Environments
 
-| Environment | Purpose | Network Access | Credentials Allowed |
+Engineering activities are strictly partitioned across six distinct operational contexts with defined network access rules, trust boundaries, and credential permissions:
+
+| Operational Context | Purpose | Network Access & Enforcement | Credentials Allowed |
 | :--- | :--- | :--- | :--- |
-| **Local Workstation** | Task implementation, fast local verification | Offline / Localhost only | Synthetic test tokens only |
-| **Verification CI** | Pull Request gates, full clean-checkout harness | Isolated / No external network | Ephemeral CI test secrets only |
-| **Android Emulator** | Headless UI tests, orientation, accessibility | Virtual isolated subnet | None |
-| **Controlled Test Device** | Physical compatibility validation (FCT-005) | Local Wi-Fi subnet only | Dedicated test account only |
-| **Production Cloud** | Live end-user operation | Public Internet / AWS IoT | Separate human authorization required |
+| **1. Toolchain Provisioning** | Installation of approved JDK, Android SDKs, and build tooling. | External download permitted strictly from verified vendor domains (Google, Gradle, Maven Central) upon explicit human authorization. | None (Public mirrors with verified checksums). |
+| **2. Trusted Dependency Resolution** | Fetching pinned libraries during build initialization. | Outbound HTTPS to pinned repositories (Maven Central, Google Maven); dependency lockfiles or explicit checksums required. | Repository credentials (read-only) via CI secrets if private; none for public OSS. |
+| **3. Offline Verification** | Fast local verification, test harness execution, contract audits. | Offline by design. Verification runner executes locally without requiring external internet access. *Note: Network isolation must not be claimed unless enforced by active OS sandbox/container/namespace boundaries.* | Synthetic mock tokens and test fixtures only. |
+| **4. Local Simulator Communication** | In-process MockWebServer and simulated robot communication. | Bound strictly to loopback (`127.0.0.1` / localhost). Local mock networking must never weaken production network security. | Ephemeral test keys and dummy JWTs only. |
+| **5. Controlled Physical-Device Validation** | Physical robot compatibility testing (Milestone FCT-005). | Isolated Wi-Fi test VLAN without external route to internal corporate networks or internet. Physical line-of-sight E-Stop mandatory. | Dedicated test robot credentials; real production user credentials prohibited. |
+| **6. Authorized Production Connectivity** | End-to-end cloud validation or live release operations. | Public Internet (AWS IoT Core, AWS Cognito, WeBack cloud) strictly under explicit, prior Product Owner authorization. | Secure ephemeral tokens injected via environment; never persisted to disk unencrypted. |
 
 ---
 
-## 2. Configuration & Secret Management
+## 2. Network Security & Mock Isolation Invariants
 
-### 2.1 The Zero-Secret Rule
-- Under no circumstances shall real user credentials, AWS Cognito Identity IDs, production API keys, or private signing keys be committed to Git or stored in plain text.
-- Configuration parameters must be defined via a template file: `.env.example` containing descriptive variable names and mock values.
-- Actual local development overrides may reside in an untracked `.env` file (enforced via `.gitignore`).
-
-### 2.2 Network Security Configuration
-The Android Network Security Config (`res/xml/network_security_config.xml`) must enforce:
+### 2.1 Production Network Security Configuration
+The application Network Security Config (`res/xml/network_security_config.xml`) must enforce strict transport security by default:
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
@@ -39,31 +38,46 @@ The Android Network Security Config (`res/xml/network_security_config.xml`) must
     </base-config>
 </network-security-config>
 ```
-Cleartext HTTP traffic is disabled globally by default. If a local device provisioning protocol (e.g., SoftAP setup) strictly requires local HTTP on subnet `192.168.4.1`, that exemption must be narrowly scoped to that specific IP and documented in an approved Security ADR.
+
+### 2.2 Local Simulator Network Protections
+1. **No Production Weakening:** Under no circumstances shall development or test fixtures alter `cleartextTrafficPermitted="false"` globally.
+2. **Loopback Scoping:** If local HTTP is required for offline mock servers during debug instrumented testing, the bypass must be strictly scoped to `localhost` or `127.0.0.1` within a dedicated `debug/` build variant manifest, ensuring release builds remain completely non-bypassable.
+3. **SoftAP Scoping:** If local device provisioning (e.g. SoftAP Wi-Fi pairing) requires local HTTP communication with robot gateway `192.168.4.1`, that route must be isolated to a dedicated network domain config, documented in an approved Security ADR, and never permitted across general application traffic.
 
 ---
 
-## 3. Artifact Packaging & Integrity Verification
+## 3. Secret Management, Log Redaction & Evidence Retention
 
-### 3.1 Build Reproducibility
-- All Gradle builds must produce deterministic outputs given identical source commits and toolchains.
-- Every compiled application artifact (`.apk`) must be accompanied by an external SHA-256 sidecar file:
+### 3.1 Zero-Secret Rule
+- No real credentials, production Cognito Identity Pools, AWS access keys, private signing keys, or Wi-Fi PSKs shall ever be committed to Git or stored in cleartext.
+- Configuration templates must reside in `.env.example` with descriptive placeholders. Real local environment values remain untracked in `.env`.
+
+### 3.2 Log Redaction & Scrubbing
+All loggers (logcat, harness stdout, and session capture logs) must implement automated redaction filters:
+- **Redaction Targets:** Bearer tokens, passwords, Wi-Fi SSIDs/passwords, AWS session keys, robot authentication tokens, device serial numbers, and customer PII.
+- **Physical Device Logs:** Hardware validation logs and packet traces captured during physical device testing must be scrubbed prior to archiving. Logs containing unredacted credentials or Wi-Fi passphrases are strictly invalid as public or shared evidence.
+
+### 3.3 Evidence Retention & Access Control
+- Test execution artifacts, verification logs, and coverage reports must be retained under version-controlled evidence paths or signed CI storage.
+- Verification evidence files must include SHA-256 digests of the tested commit SHA and policies to guarantee provenance.
+- Access to raw diagnostic captures containing proprietary device communications is restricted to authorized project maintainers.
+
+---
+
+## 4. Build Repeatability, Traceability & Artifact Verification
+
+### 4.1 Repeatable and Traceable Builds
+- All builds must be fully repeatable: given identical commit SHA, toolchain versions, and configuration, the build process must yield deterministic outputs.
+- Build environments must record toolchain provenance (exact JDK version, Gradle wrapper hash, AGP version).
+
+### 4.2 Artifact Reproducibility
+- Bit-for-bit artifact reproducibility is a separately verified property, audited during release qualification gates.
+- Every compiled application package (`.apk` / `.aab`) must be accompanied by an external SHA-256 sidecar file:
   ```text
   app-debug.apk
   app-debug.apk.sha256
   ```
 
-### 3.2 Signing Key Management
-- **Debug Builds:** Uses the standard reproducible Android debug keystore generated locally by the Gradle plugin.
-- **Release Candidates:** Must be signed in a dedicated, isolated build environment with credentials injected via secure environment variables. Agents and automated PR runners shall never have access to release signing private keys.
-
----
-
-## 4. Controlled Hardware Pilot Procedure (Milestone FCT-005)
-
-Direct interaction with physical hardware is governed by strict safety protocols:
-
-1. **Pre-requisite:** All automated unit, contract, state-machine, and simulated UI tests must achieve 100% PASS on the candidate commit.
-2. **Network Isolation:** Physical robot testing must be conducted on an isolated, dedicated Wi-Fi test VLAN without cross-access to private enterprise networks.
-3. **Emergency Stop (E-Stop):** Testing must be conducted within physical line-of-sight with immediate physical access to the robot's physical power switch.
-4. **Audit Trail:** All outbound WebSocket messages and inbound telemetry frames during the physical pilot must be logged to a local session capture for independent review.
+### 4.3 Signing Key Governance
+- **Debug Builds:** Use the standard reproducible Android debug keystore generated by the Gradle plugin.
+- **Release Candidates:** Must be signed strictly in a dedicated, isolated environment with keys injected via secure CI secret stores. AI Agents and automated PR workflows shall never have access to release signing private keys.

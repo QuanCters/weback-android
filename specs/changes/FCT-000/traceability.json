@@ -1,0 +1,1075 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "change_id": "FCT-000",
+  "milestone": "FCT-000",
+  "title": "Minimum Viable Verification Harness",
+  "version": "2.0.0",
+  "planned_mapping_coverage": 100.0,
+  "verified_execution_coverage": 0.0,
+  "summary": {
+    "total_requirements": 16,
+    "total_acceptance_criteria": 65,
+    "total_acceptance_tests": 50,
+    "total_tasks": 10
+  },
+  "acceptance_criteria": [
+    {
+      "ac_id": "AC-001.1",
+      "requirement_id": "REQ-HARN-001",
+      "description": "The runner must validate policies/checks.json against verification/schemas/checks.schema.json prior to executing any check.",
+      "validation_test_id": "TEST-REG-001",
+      "test_oracle": "registry.load() verifies schema and returns check list; policy hash matches independent hashlib.sha256",
+      "implementation_task": "Task 1",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-001.2",
+      "requirement_id": "REQ-HARN-001",
+      "description": "The registry validator must reject malformed JSON, missing files, empty registries, duplicate id values, non-array argv, empty argv, non-positive timeouts, and invalid data types.",
+      "validation_test_id": "TEST-REG-002",
+      "test_oracle": "Aborts with exit code 2; stderr pinpoints invalid key or syntax error",
+      "implementation_task": "Task 1",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-001.3",
+      "requirement_id": "REQ-HARN-001",
+      "description": "If registry validation fails, the runner must immediately terminate with exit code 2 (Harness Error), emitting actionable schema validation errors to stderr.",
+      "validation_test_id": "TEST-REG-003",
+      "test_oracle": "Exit code is 2; stderr contains actionable diagnostic message",
+      "implementation_task": "Task 1",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-001.4",
+      "requirement_id": "REQ-HARN-001",
+      "description": "At least one mandatory check must exist in the registry. An all-optional registry must be rejected with exit code 2.",
+      "validation_test_id": "TEST-REG-008",
+      "test_oracle": "Aborts with exit code 2; stderr contains 'Registry contains zero required checks'",
+      "implementation_task": "Task 1",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-002.1",
+      "requirement_id": "REQ-HARN-002",
+      "description": "A candidate verification run must execute all enabled required checks present in the active policy registry.",
+      "validation_test_id": "TEST-RUN-001",
+      "test_oracle": "All required checks are dispatched and recorded in candidate execution",
+      "implementation_task": "Task 5",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-002.2",
+      "requirement_id": "REQ-HARN-002",
+      "description": "A failure in an optional check must be recorded with status FAIL in evidence report but must not cause overall candidate run verdict to fail, provided required checks pass.",
+      "validation_test_id": "TEST-RUN-003",
+      "test_oracle": "Overall exit code 0 and verdict PASS while optional check records status FAIL and exit_code 1",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-002.3",
+      "requirement_id": "REQ-HARN-002",
+      "description": "A failure in any required check must cause the overall candidate run verdict to be FAIL and exit with code 1.",
+      "validation_test_id": "TEST-RUN-002",
+      "test_oracle": "Overall exit code 1; overall verdict FAIL",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-002.4",
+      "requirement_id": "REQ-HARN-002",
+      "description": "Missing, unknown, or invalid check selections requested via CLI must fail closed immediately with exit code 2.",
+      "validation_test_id": "TEST-REG-009",
+      "test_oracle": "Aborts with exit code 2; stderr contains 'Unknown check ID'",
+      "implementation_task": "Task 1",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-002.5",
+      "requirement_id": "REQ-HARN-002",
+      "description": "Required check identity, applicability, and completeness must be validated. Candidate execution cannot omit, rename, or downgrade required checks.",
+      "validation_test_id": "TEST-EVI-002",
+      "test_oracle": "Evidence validator flags missing required check and sets overall verdict to FAIL",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-003.1",
+      "requirement_id": "REQ-HARN-003",
+      "description": "Candidate Lane mandates verified clean git checkout before run, executes all required checks, verifies clean post-run, computes digests, and generates candidate report.json.",
+      "validation_test_id": "TEST-RUN-006",
+      "test_oracle": "Aborts on dirty worktree; executes and generates report with lane candidate on clean worktree",
+      "implementation_task": "Task 5",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-003.2",
+      "requirement_id": "REQ-HARN-003",
+      "description": "Fast Local Lane is permitted to run against a dirty working tree, accepts --check to run a single targeted check, and produces a report flagged with lane fast.",
+      "validation_test_id": "TEST-EVI-009",
+      "test_oracle": "Report contains 'lane': 'fast' and succeeds on dirty worktree",
+      "implementation_task": "Task 5",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-003.3",
+      "requirement_id": "REQ-HARN-003",
+      "description": "Any report generated with lane fast is strictly invalid as evidence for Gate G4 or candidate PR evaluation.",
+      "validation_test_id": "TEST-EVI-009",
+      "test_oracle": "Auditor fails with message 'Fast lane report cannot be used for candidate gate evaluation'",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-003.4",
+      "requirement_id": "REQ-HARN-003",
+      "description": "In Candidate Lane, the runner must strictly execute against the approved canonical policy path (policies/checks.json). Alternate --config paths must match canonical digest or be rejected.",
+      "validation_test_id": "TEST-RUN-010",
+      "test_oracle": "Aborts with exit code 2 and 'Alternate configuration not approved for candidate lane'",
+      "implementation_task": "Task 5",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-003.5",
+      "requirement_id": "REQ-HARN-003",
+      "description": "Targeted check execution via --check is strictly prohibited in Candidate Lane and must abort immediately with exit code 2.",
+      "validation_test_id": "TEST-RUN-009",
+      "test_oracle": "Aborts with exit code 2 and 'Partial check execution is prohibited in candidate lane'",
+      "implementation_task": "Task 5",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-004.1",
+      "requirement_id": "REQ-HARN-004",
+      "description": "Commands must be executed strictly by passing argv directly to subprocess.Popen/subprocess.run with shell=False.",
+      "validation_test_id": "TEST-RUN-001",
+      "test_oracle": "Subprocess executes directly without shell interpreter wrapper",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-004.2",
+      "requirement_id": "REQ-HARN-004",
+      "description": "The runner must capture both standard output and standard error into a unified sequential byte stream without buffer deadlocks.",
+      "validation_test_id": "TEST-RUN-014",
+      "test_oracle": "5MB output stream captured completely without hang; length matches byte-for-byte",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-004.3",
+      "requirement_id": "REQ-HARN-004",
+      "description": "The exact integer exit code returned by the child process must be recorded in check result structure separately from synthetic runner status.",
+      "validation_test_id": "TEST-RUN-002",
+      "test_oracle": "CheckResult records exit_code: 1 and status: 'FAIL'",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-004.4",
+      "requirement_id": "REQ-HARN-004",
+      "description": "If target binary cannot be found or executed, the runner must record status ERROR and exit code 127.",
+      "validation_test_id": "TEST-RUN-004",
+      "test_oracle": "Exit code 127; check status ERROR; stderr captures '[EXECUTABLE NOT FOUND]'",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-004.5",
+      "requirement_id": "REQ-HARN-004",
+      "description": "Subprocess creation errors (FileNotFoundError, PermissionError, OSError) must be handled within explicit exception boundaries, preserving OS error codes (127, 126).",
+      "validation_test_id": "TEST-RUN-011",
+      "test_oracle": "PermissionError caught; records status ERROR and exit code 126 with '[PERMISSION DENIED]'",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-005.1",
+      "requirement_id": "REQ-HARN-005",
+      "description": "Each check must execute within its configured timeout_seconds.",
+      "validation_test_id": "TEST-RUN-005",
+      "test_oracle": "Execution terminates within configured timeout + grace period",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-005.2",
+      "requirement_id": "REQ-HARN-005",
+      "description": "On Linux/POSIX systems, the child process must be spawned in its own process group with pgid = proc.pid captured immediately at spawn time.",
+      "validation_test_id": "TEST-RUN-005",
+      "test_oracle": "Runner tracks pgid and issues process group signals via os.killpg",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-005.3",
+      "requirement_id": "REQ-HARN-005",
+      "description": "Timeout cleanup must not depend solely on parent process remaining alive. Inspect remaining processes in pgid, send SIGTERM, wait 0.5s grace, and escalate to SIGKILL.",
+      "validation_test_id": "TEST-RUN-013",
+      "test_oracle": "SIGTERM-resistant child process reaped via SIGKILL escalation",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-005.4",
+      "requirement_id": "REQ-HARN-005",
+      "description": "Total cleanup duration must be bounded (max 2.0s). If descendant processes cannot be terminated, runner explicitly records cleanup_failed: true.",
+      "validation_test_id": "TEST-RUN-013",
+      "test_oracle": "Elapsed cleanup duration bounded < 4.0s total elapsed time",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-005.5",
+      "requirement_id": "REQ-HARN-005",
+      "description": "All partial output captured prior to timeout or termination must be preserved in the log capture.",
+      "validation_test_id": "TEST-RUN-005",
+      "test_oracle": "Partial log output emitted before timeout is retained in CheckResult.output",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-005.6",
+      "requirement_id": "REQ-HARN-005",
+      "description": "A timed-out check must be recorded with status TIMEOUT, exit code 124, and block the candidate gate.",
+      "validation_test_id": "TEST-RUN-005",
+      "test_oracle": "CheckResult records status TIMEOUT and exit code 124; overall verdict FAIL",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-006.1",
+      "requirement_id": "REQ-HARN-006",
+      "description": "Prior to executing checks, candidate lane runs git status --porcelain; aborts with exit code 2 if dirty or assume-unchanged/skip-worktree bits are set.",
+      "validation_test_id": "TEST-RUN-006",
+      "test_oracle": "Aborts immediately prior to running checks; exit code 2; stderr contains 'Working tree is not clean'",
+      "implementation_task": "Task 4",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-006.2",
+      "requirement_id": "REQ-HARN-006",
+      "description": "Following check execution, candidate lane re-runs git status; aborts with exit code 2 if working tree mutated (excluding artifacts/verification/).",
+      "validation_test_id": "TEST-RUN-007",
+      "test_oracle": "Detects mutated file; exits with code 2 and report verdict ERROR",
+      "implementation_task": "Task 4",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-007.1",
+      "requirement_id": "REQ-HARN-007",
+      "description": "For each run, the runner must generate a unique UUIDv4 run_id and write artifacts/verification/<run_id>/report.json.",
+      "validation_test_id": "TEST-EVI-001",
+      "test_oracle": "UUIDv4 format verified; report file exists at expected path",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-007.2",
+      "requirement_id": "REQ-HARN-007",
+      "description": "report.json must record schema_version, run_id, tested_sha, base_sha, policy_sha256, policy_modified_from_base, lane, timestamps, environment, verdict, and checks list.",
+      "validation_test_id": "TEST-EVI-001",
+      "test_oracle": "Validates report.json against report.schema.json",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-007.3",
+      "requirement_id": "REQ-HARN-007",
+      "description": "Complete combined output of each check must be written to <check_id>.log with its SHA-256 digest recorded in report.json.",
+      "validation_test_id": "TEST-EVI-001",
+      "test_oracle": "Log file hash computed independently matches log_sha256 bit-for-bit",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.1",
+      "requirement_id": "REQ-HARN-008",
+      "description": "The validator must verify that report.json conforms structurally to verification/schemas/report.schema.json.",
+      "validation_test_id": "TEST-EVI-004",
+      "test_oracle": "Rejects malformed report missing required keys with schema validation error",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.2",
+      "requirement_id": "REQ-HARN-008",
+      "description": "The validator must reject reports where tested_sha does not match active candidate HEAD SHA or base_sha does not match expected target base.",
+      "validation_test_id": "TEST-EVI-005",
+      "test_oracle": "Rejects report with 'Report tested_sha mismatch'",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.3",
+      "requirement_id": "REQ-HARN-008",
+      "description": "The validator must reject reports where policy_sha256 does not match active checks.json hash or unauthorized policy modification.",
+      "validation_test_id": "TEST-EVI-006",
+      "test_oracle": "Rejects report with 'Policy hash mismatch'",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.4",
+      "requirement_id": "REQ-HARN-008",
+      "description": "The validator must verify that every log file referenced in the report exists on disk and its SHA-256 matches log_sha256.",
+      "validation_test_id": "TEST-EVI-007",
+      "test_oracle": "Detects tampered byte with 'Log integrity violation'",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.5",
+      "requirement_id": "REQ-HARN-008",
+      "description": "Reusing report artifacts from a prior commit or another branch must be strictly rejected.",
+      "validation_test_id": "TEST-EVI-005",
+      "test_oracle": "Rejects stale commit reports against current commit HEAD SHA",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.6",
+      "requirement_id": "REQ-HARN-008",
+      "description": "The evidence validator must independently recompute overall run verdict from actual required check results and exit codes, rejecting forged PASS verdicts.",
+      "validation_test_id": "TEST-EVI-010",
+      "test_oracle": "Recomputed verdict detects discrepancy; rejects with 'Forged PASS verdict rejected'",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.7",
+      "requirement_id": "REQ-HARN-008",
+      "description": "The evidence validator must reject reports containing inconsistent result status and exit code.",
+      "validation_test_id": "TEST-EVI-011",
+      "test_oracle": "Rejects report with 'Inconsistent check status and exit code'",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.8",
+      "requirement_id": "REQ-HARN-008",
+      "description": "Four-tier governance distinction: local execution result, evidence validation result, governance authorization, and remote CI status. A valid local report is not merge authorization.",
+      "validation_test_id": "TEST-EVI-009",
+      "test_oracle": "Fast lane report rejected for candidate evaluation; authorization requires independent human sign-off",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-008.9",
+      "requirement_id": "REQ-HARN-008",
+      "description": "Initial verification policy is generated as a proposal in policies/bootstrap_proposal.json with status PROPOSED and authorized_by: null. Authoritative candidate evidence acceptance requires an externally established expected SHA, base revision, policy digest, and required-check set provided via CLI flags.",
+      "validation_test_id": "TEST-EVI-012",
+      "test_oracle": "Auditor rejects report when expected policy digest does not match external context",
+      "implementation_task": "Task 3, Task 10",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-009.1",
+      "requirement_id": "REQ-HARN-009",
+      "description": "If any required check from policies/checks.json is missing from results list, overall verdict must be FAIL.",
+      "validation_test_id": "TEST-EVI-002",
+      "test_oracle": "Auditor fails with 'Missing result for required check: <id>'",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-009.2",
+      "requirement_id": "REQ-HARN-009",
+      "description": "Duplicate check IDs in results must cause the report to be rejected with exit code 2.",
+      "validation_test_id": "TEST-EVI-003",
+      "test_oracle": "Auditor fails with 'Duplicate check ID in report: <id>'",
+      "implementation_task": "Task 3",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-009.3",
+      "requirement_id": "REQ-HARN-009",
+      "description": "Required checks that yield SKIP, ERROR, NOT_RUN, or TIMEOUT must cause overall verdict to be FAIL while retaining exact individual status.",
+      "validation_test_id": "TEST-RUN-002",
+      "test_oracle": "Status preserved without false PASS conversion; overall verdict is FAIL",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-010.1",
+      "requirement_id": "REQ-HARN-010",
+      "description": "For checks designated as test suites (type: test_suite), check execution must directly invoke structured test runner adapter (test_adapter.py) rather than relying on console scraping.",
+      "validation_test_id": "TEST-INV-004",
+      "test_oracle": "Structured adapter executes tests via unittest.TestRunner capturing exact counts",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-010.2",
+      "requirement_id": "REQ-HARN-010",
+      "description": "Test summary must capture total, passed, failures, errors, skipped, and fail if total == 0 (ZERO_TESTS_DISCOVERED).",
+      "validation_test_id": "TEST-INV-001",
+      "test_oracle": "total == 0 yields status FAIL and diagnostic 'Zero tests discovered'",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-010.3",
+      "requirement_id": "REQ-HARN-010",
+      "description": "Required skipped tests (skipped > 0 where disallowed) must block the gate.",
+      "validation_test_id": "TEST-INV-002",
+      "test_oracle": "skipped > 0 yields status FAIL and diagnostic 'Disallowed skipped tests'",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-010.4",
+      "requirement_id": "REQ-HARN-010",
+      "description": "Reports with missing, malformed, or inconsistent test execution metrics relative to exit codes must fail closed and block the gate.",
+      "validation_test_id": "TEST-INV-007",
+      "test_oracle": "Malformed test summary raises ValueError and records status ERROR",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-011.1",
+      "requirement_id": "REQ-HARN-011",
+      "description": "Verifies that all requirement IDs in specs/changes/ are unique and referenced in traceability.json.",
+      "validation_test_id": "TEST-MUT-002",
+      "test_oracle": "Untraced requirement detected; validator exits with code 1",
+      "implementation_task": "Task 6",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-011.2",
+      "requirement_id": "REQ-HARN-011",
+      "description": "Verifies that all Markdown hyperlinks and image references resolve to existing files or anchors, filtering out external web schemes.",
+      "validation_test_id": "TEST-MUT-001",
+      "test_oracle": "Broken relative link detected; validator exits with code 1",
+      "implementation_task": "Task 6",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-011.3",
+      "requirement_id": "REQ-HARN-011",
+      "description": "Verifies that 100% of MUST acceptance criteria in active change specification map to a planned task, check ID, and validation test oracle.",
+      "validation_test_id": "TEST-MUT-002",
+      "test_oracle": "Validator asserts planned_mapping_coverage == 100.0",
+      "implementation_task": "Task 6",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-012.1",
+      "requirement_id": "REQ-HARN-012",
+      "description": "The runner must record SHA-256 digest of checks.json before and after execution; modification during run fails checkout cleanliness.",
+      "validation_test_id": "TEST-RUN-008",
+      "test_oracle": "Post-run check detects modified policy file; runner exits with code 2",
+      "implementation_task": "Task 4",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-012.2",
+      "requirement_id": "REQ-HARN-012",
+      "description": "Changes to policies/ or verification/ must be flagged as T4 risk assets in review workflows.",
+      "validation_test_id": "TEST-RUN-008",
+      "test_oracle": "check_policy_modified_from_base returns True when policies/ modified",
+      "implementation_task": "Task 4",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-013.1",
+      "requirement_id": "REQ-HARN-013",
+      "description": "Selftests must execute against temporary directories initialized as synthetic Git repositories with an initial empty commit.",
+      "validation_test_id": "TEST-RUN-001",
+      "test_oracle": "setUp initializes ephemeral git repository with user.name and user.email",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-013.2",
+      "requirement_id": "REQ-HARN-013",
+      "description": "Selftests must never invoke the entire verification harness recursively against the root repository.",
+      "validation_test_id": "TEST-RUN-001",
+      "test_oracle": "Selftests execute checks against synthetic fixture directories only",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-013.3",
+      "requirement_id": "REQ-HARN-013",
+      "description": "Selftests must verify negative failure paths: intentional command failure, process timeout, missing binary, dirty repo abort, post-run mutation, and malformed registry.",
+      "validation_test_id": "TEST-RUN-002",
+      "test_oracle": "All negative selftest assertions check exact non-zero exit codes and error substrings",
+      "implementation_task": "Task 2",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-014.1",
+      "requirement_id": "REQ-HARN-014",
+      "description": "Injects synthetic defect into a mock report (tampered log hash) and proves evidence validator catches it.",
+      "validation_test_id": "TEST-MUT-004",
+      "test_oracle": "verify_log_hash returns False when content mutated",
+      "implementation_task": "Task 8",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-014.2",
+      "requirement_id": "REQ-HARN-014",
+      "description": "Injects synthetic broken link into mock spec and proves spec validator catches it.",
+      "validation_test_id": "TEST-MUT-001",
+      "test_oracle": "validate_markdown_text returns non-empty error list identifying broken link",
+      "implementation_task": "Task 8",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-014.3",
+      "requirement_id": "REQ-HARN-014",
+      "description": "Injects untracked file into mock git repo and proves cleanliness guard catches it.",
+      "validation_test_id": "TEST-MUT-003",
+      "test_oracle": "is_clean_checkout returns False and identifies untracked file",
+      "implementation_task": "Task 8",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-015.1",
+      "requirement_id": "REQ-HARN-015",
+      "description": "Workflow must declare minimal permissions structurally validated via YAML parser: permissions: { contents: read }. Local validation records STATIC_VALIDATED; remote execution remains NOT_EXECUTED_REMOTELY until GitHub Actions run.",
+      "validation_test_id": "TEST-CI-001",
+      "test_oracle": "PyYAML parser asserts permissions.contents == 'read' and zero write permissions",
+      "implementation_task": "Task 9",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-015.2",
+      "requirement_id": "REQ-HARN-015",
+      "description": "Workflow executes on pull_request and push to main with concurrency cancellation.",
+      "validation_test_id": "TEST-CI-001",
+      "test_oracle": "YAML parser asserts triggers include pull_request and push to main",
+      "implementation_task": "Task 9",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-015.3",
+      "requirement_id": "REQ-HARN-015",
+      "description": "Verifies candidate SHA matches PR head SHA or push SHA, runs python3 verification/run.py --lane candidate, and archives artifacts/verification/ as build artifacts.",
+      "validation_test_id": "TEST-CI-001",
+      "test_oracle": "YAML parser verifies candidate SHA ref, --lane candidate argument, and upload-artifact action",
+      "implementation_task": "Task 9",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-015.4",
+      "requirement_id": "REQ-HARN-015",
+      "description": "Contains zero production secrets, AWS tokens, or signing keys.",
+      "validation_test_id": "TEST-CI-001",
+      "test_oracle": "Audit confirms zero secrets or tokens in workflow YAML",
+      "implementation_task": "Task 9",
+      "check_id": "harness-selftests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-016.1",
+      "requirement_id": "REQ-HARN-016",
+      "description": "Defect records must be stored in verification/defects.jsonl adhering to schema verification/schemas/defects.schema.json.",
+      "validation_test_id": "TEST-DEF-001",
+      "test_oracle": "validate_defects_registry returns ok == True with 0 errors",
+      "implementation_task": "Task 7",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-016.2",
+      "requirement_id": "REQ-HARN-016",
+      "description": "Anti-pattern rules must be stored in verification/antipatterns.json adhering to schema verification/schemas/antipatterns.schema.json.",
+      "validation_test_id": "TEST-ANTI-001",
+      "test_oracle": "validate_antipattern_registry returns ok == True with 0 errors",
+      "implementation_task": "Task 7",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-016.3",
+      "requirement_id": "REQ-HARN-016",
+      "description": "Anti-pattern rules categorized by lifecycle state (PROPOSED, ADVISORY, APPROVED_ACTIVE). Only APPROVED_ACTIVE rules with dual samples and false-positive proof execute as blocking gates.",
+      "validation_test_id": "TEST-ANTI-001",
+      "test_oracle": "Evaluates positive match and negative non-match for each rule",
+      "implementation_task": "Task 7",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-016.4",
+      "requirement_id": "REQ-HARN-016",
+      "description": "Every defect record must be categorized as HISTORICAL_RE_DEFECT (historical RE reference discrepancies, not application defects or licensing violation claims), PROPOSED_PREVENTIVE_CHECK, or CONFIRMED_APPLICATION_DEFECT. Unexecuted RED/GREEN evidence fields must be null until executed.",
+      "validation_test_id": "TEST-DEF-001",
+      "test_oracle": "Validates classification enum and asserts unexecuted pre_fix_red_result and post_fix_green_result are null",
+      "implementation_task": "Task 7",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-HARN-001",
+      "title": "Declarative Check Registry Validation",
+      "acceptance_criteria": [
+        "AC-001.1",
+        "AC-001.2",
+        "AC-001.3",
+        "AC-001.4"
+      ],
+      "design_components": [
+        "verification/checks/registry.py",
+        "verification/schemas/checks.schema.json",
+        "policies/checks.json"
+      ],
+      "tasks": [
+        "Task 1",
+        "Task 9"
+      ],
+      "validation_tests": [
+        "TEST-REG-001",
+        "TEST-REG-002",
+        "TEST-REG-003",
+        "TEST-REG-004",
+        "TEST-REG-005",
+        "TEST-REG-006",
+        "TEST-REG-007",
+        "TEST-REG-008"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-002",
+      "title": "Required vs. Optional Check Selection & Governance",
+      "acceptance_criteria": [
+        "AC-002.1",
+        "AC-002.2",
+        "AC-002.3",
+        "AC-002.4",
+        "AC-002.5"
+      ],
+      "design_components": [
+        "verification/checks/registry.py",
+        "verification/run.py",
+        "verification/checks/evidence.py"
+      ],
+      "tasks": [
+        "Task 1",
+        "Task 2",
+        "Task 3",
+        "Task 5"
+      ],
+      "validation_tests": [
+        "TEST-RUN-001",
+        "TEST-RUN-002",
+        "TEST-RUN-003",
+        "TEST-REG-009",
+        "TEST-EVI-002"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-003",
+      "title": "Dual-Lane Verification Architecture & Candidate Locking",
+      "acceptance_criteria": [
+        "AC-003.1",
+        "AC-003.2",
+        "AC-003.3",
+        "AC-003.4",
+        "AC-003.5"
+      ],
+      "design_components": [
+        "verification/run.py",
+        "verification/checks/git_auditor.py",
+        "verification/checks/evidence.py"
+      ],
+      "tasks": [
+        "Task 3",
+        "Task 4",
+        "Task 5"
+      ],
+      "validation_tests": [
+        "TEST-RUN-006",
+        "TEST-RUN-009",
+        "TEST-RUN-010",
+        "TEST-EVI-009"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-004",
+      "title": "Subprocess Execution & Exit-Code Preservation",
+      "acceptance_criteria": [
+        "AC-004.1",
+        "AC-004.2",
+        "AC-004.3",
+        "AC-004.4",
+        "AC-004.5"
+      ],
+      "design_components": [
+        "verification/checks/runner.py"
+      ],
+      "tasks": [
+        "Task 2"
+      ],
+      "validation_tests": [
+        "TEST-RUN-001",
+        "TEST-RUN-002",
+        "TEST-RUN-004",
+        "TEST-RUN-011",
+        "TEST-RUN-014"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-005",
+      "title": "Process Group Timeout Management & Tree Cleanup",
+      "acceptance_criteria": [
+        "AC-005.1",
+        "AC-005.2",
+        "AC-005.3",
+        "AC-005.4",
+        "AC-005.5",
+        "AC-005.6"
+      ],
+      "design_components": [
+        "verification/checks/runner.py"
+      ],
+      "tasks": [
+        "Task 2"
+      ],
+      "validation_tests": [
+        "TEST-RUN-005",
+        "TEST-RUN-012",
+        "TEST-RUN-013"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-006",
+      "title": "Clean Candidate Checkout Verification",
+      "acceptance_criteria": [
+        "AC-006.1",
+        "AC-006.2"
+      ],
+      "design_components": [
+        "verification/checks/git_auditor.py",
+        "verification/run.py"
+      ],
+      "tasks": [
+        "Task 4",
+        "Task 5"
+      ],
+      "validation_tests": [
+        "TEST-RUN-006",
+        "TEST-RUN-007",
+        "TEST-MUT-003"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-007",
+      "title": "Cryptographic Evidence Generation & Provenance",
+      "acceptance_criteria": [
+        "AC-007.1",
+        "AC-007.2",
+        "AC-007.3"
+      ],
+      "design_components": [
+        "verification/checks/evidence.py",
+        "verification/schemas/report.schema.json"
+      ],
+      "tasks": [
+        "Task 3"
+      ],
+      "validation_tests": [
+        "TEST-EVI-001"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-008",
+      "title": "Evidence Validation, Recomputed Verdict & Trust Boundaries",
+      "acceptance_criteria": [
+        "AC-008.1",
+        "AC-008.2",
+        "AC-008.3",
+        "AC-008.4",
+        "AC-008.5",
+        "AC-008.6",
+        "AC-008.7",
+        "AC-008.8",
+        "AC-008.9"
+      ],
+      "design_components": [
+        "verification/checks/evidence.py",
+        "verification/schemas/report.schema.json",
+        "policies/bootstrap_approval.json"
+      ],
+      "tasks": [
+        "Task 3",
+        "Task 10"
+      ],
+      "validation_tests": [
+        "TEST-EVI-004",
+        "TEST-EVI-005",
+        "TEST-EVI-006",
+        "TEST-EVI-007",
+        "TEST-EVI-008",
+        "TEST-EVI-009",
+        "TEST-EVI-010",
+        "TEST-EVI-011",
+        "TEST-EVI-012"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-009",
+      "title": "Check Completeness & Accurate Result Classification",
+      "acceptance_criteria": [
+        "AC-009.1",
+        "AC-009.2",
+        "AC-009.3"
+      ],
+      "design_components": [
+        "verification/checks/evidence.py",
+        "verification/run.py"
+      ],
+      "tasks": [
+        "Task 2",
+        "Task 3",
+        "Task 5"
+      ],
+      "validation_tests": [
+        "TEST-EVI-002",
+        "TEST-EVI-003",
+        "TEST-RUN-002"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-010",
+      "title": "Test Execution Inventory & Structured Reporting",
+      "acceptance_criteria": [
+        "AC-010.1",
+        "AC-010.2",
+        "AC-010.3",
+        "AC-010.4"
+      ],
+      "design_components": [
+        "verification/checks/runner.py",
+        "verification/checks/test_adapter.py",
+        "verification/checks/evidence.py"
+      ],
+      "tasks": [
+        "Task 2",
+        "Task 3"
+      ],
+      "validation_tests": [
+        "TEST-INV-001",
+        "TEST-INV-002",
+        "TEST-INV-003",
+        "TEST-INV-004",
+        "TEST-INV-005",
+        "TEST-INV-006",
+        "TEST-INV-007"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-011",
+      "title": "Specification Hygiene & Traceability Verification",
+      "acceptance_criteria": [
+        "AC-011.1",
+        "AC-011.2",
+        "AC-011.3"
+      ],
+      "design_components": [
+        "verification/checks/spec_validator.py"
+      ],
+      "tasks": [
+        "Task 6"
+      ],
+      "validation_tests": [
+        "TEST-MUT-001",
+        "TEST-MUT-002"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-012",
+      "title": "Policy Provenance & Protected Verification Assets",
+      "acceptance_criteria": [
+        "AC-012.1",
+        "AC-012.2"
+      ],
+      "design_components": [
+        "verification/checks/registry.py",
+        "verification/checks/git_auditor.py"
+      ],
+      "tasks": [
+        "Task 1",
+        "Task 4"
+      ],
+      "validation_tests": [
+        "TEST-RUN-008",
+        "TEST-EVI-006"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-013",
+      "title": "Isolated Harness Selftest Suite",
+      "acceptance_criteria": [
+        "AC-013.1",
+        "AC-013.2",
+        "AC-013.3"
+      ],
+      "design_components": [
+        "verification/selftests/"
+      ],
+      "tasks": [
+        "Task 1",
+        "Task 2",
+        "Task 3",
+        "Task 4",
+        "Task 5",
+        "Task 6",
+        "Task 7"
+      ],
+      "validation_tests": [
+        "TEST-RUN-001",
+        "TEST-RUN-002",
+        "TEST-RUN-005",
+        "TEST-EVI-001"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-014",
+      "title": "Controlled Validator Mutation Proofs",
+      "acceptance_criteria": [
+        "AC-014.1",
+        "AC-014.2",
+        "AC-014.3"
+      ],
+      "design_components": [
+        "verification/selftests/test_mutations.py"
+      ],
+      "tasks": [
+        "Task 8"
+      ],
+      "validation_tests": [
+        "TEST-MUT-001",
+        "TEST-MUT-002",
+        "TEST-MUT-003",
+        "TEST-MUT-004",
+        "TEST-MUT-005"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-015",
+      "title": "CI Integration & Least-Privilege Trust Boundary",
+      "acceptance_criteria": [
+        "AC-015.1",
+        "AC-015.2",
+        "AC-015.3",
+        "AC-015.4"
+      ],
+      "design_components": [
+        ".github/workflows/ci.yml"
+      ],
+      "tasks": [
+        "Task 9"
+      ],
+      "validation_tests": [
+        "TEST-CI-001"
+      ],
+      "status": "PLANNED"
+    },
+    {
+      "id": "REQ-HARN-016",
+      "title": "Defect-to-Regression Framework & Anti-Pattern Governance",
+      "acceptance_criteria": [
+        "AC-016.1",
+        "AC-016.2",
+        "AC-016.3",
+        "AC-016.4"
+      ],
+      "design_components": [
+        "verification/schemas/defects.schema.json",
+        "verification/schemas/antipatterns.schema.json",
+        "verification/defects.jsonl",
+        "verification/antipatterns.json",
+        "skills/defect-to-regression/SKILL.md"
+      ],
+      "tasks": [
+        "Task 7",
+        "Task 9"
+      ],
+      "validation_tests": [
+        "TEST-DEF-001",
+        "TEST-ANTI-001"
+      ],
+      "status": "PLANNED"
+    }
+  ]
+}
