@@ -4,6 +4,7 @@ Standard-library only, shell=False, start_new_session=True.
 """
 from dataclasses import dataclass
 import os
+import select
 import signal
 import subprocess
 import threading
@@ -118,16 +119,38 @@ def execute_check(check: CheckDefinition) -> CheckResult:
 
     pgid = proc.pid
     output_chunks: list[bytes] = []
+    stop_event = threading.Event()
 
     def reader():
-        while True:
-            try:
-                chunk = proc.stdout.read(65536)
-                if not chunk:
-                    break
-                output_chunks.append(chunk)
-            except Exception:
-                break
+        try:
+            fd = proc.stdout.fileno()
+            poller = select.poll()
+            poller.register(fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+            while not stop_event.is_set():
+                events = poller.poll(100)
+                if not events:
+                    continue
+                for _, ev in events:
+                    if ev & select.POLLIN:
+                        try:
+                            chunk = os.read(fd, 65536)
+                            if not chunk:
+                                return
+                            output_chunks.append(chunk)
+                        except OSError:
+                            return
+                    if ev & (select.POLLHUP | select.POLLERR):
+                        try:
+                            while True:
+                                chunk = os.read(fd, 65536)
+                                if not chunk:
+                                    break
+                                output_chunks.append(chunk)
+                        except OSError:
+                            pass
+                        return
+        except Exception:
+            pass
 
     reader_thread = threading.Thread(target=reader, daemon=True)
     reader_thread.start()
@@ -156,13 +179,22 @@ def execute_check(check: CheckDefinition) -> CheckResult:
         if not clean:
             cleanup_failed = True
 
-    # Wait for reader thread to finish reading EOF
+    # Wait for reader thread to finish reading EOF with bounded timeout
     reader_thread.join(timeout=1.0)
-    if proc.stdout:
-        try:
-            proc.stdout.close()
-        except Exception:
-            pass
+    if reader_thread.is_alive():
+        stop_event.set()
+        if proc.stdout:
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
+        reader_thread.join(timeout=0.5)
+    else:
+        if proc.stdout:
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
 
     try:
         proc.wait(timeout=0.5)

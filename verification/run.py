@@ -68,6 +68,12 @@ def main():
         help="Git base reference for candidate diff evaluation"
     )
     parser.add_argument(
+        "--run-id",
+        type=str,
+        default=None,
+        help="Run identifier (safe alphanumeric, '-', '_', '.' only)"
+    )
+    parser.add_argument(
         "--repo-dir",
         type=str,
         default=".",
@@ -81,6 +87,28 @@ def main():
     if args.lane == "candidate" and args.check:
         print("Error: Partial check execution is prohibited in candidate lane.", file=sys.stderr)
         sys.exit(2)
+
+    # Candidate lane output directory integrity
+    if args.lane == "candidate":
+        out_p = Path(args.output_dir)
+        if ".." in out_p.parts:
+            print("Error: Path traversal in --output-dir is prohibited in candidate lane.", file=sys.stderr)
+            sys.exit(2)
+
+        resolved_out = (repo_path / out_p).resolve() if not out_p.is_absolute() else out_p.resolve()
+        canonical_evidence_dir = (repo_path / "artifacts/verification").resolve()
+
+        try:
+            resolved_out.relative_to(repo_path)
+            # If inside repo, it MUST be strictly under (or equal to) artifacts/verification
+            try:
+                resolved_out.relative_to(canonical_evidence_dir)
+            except ValueError:
+                print(f"Error: Candidate lane output directory must be within '{canonical_evidence_dir}' or external, got '{resolved_out}'", file=sys.stderr)
+                sys.exit(2)
+        except ValueError:
+            # External directory outside repo is allowed as safe external location
+            pass
 
     # AC-003.4: Candidate lane must execute against canonical approved policy
     if args.lane == "candidate":
@@ -152,7 +180,14 @@ def main():
             check.cwd = repo_path
 
     # Execute checks
-    run_id = str(uuid.uuid4())
+    if args.run_id:
+        import re
+        if not re.match(r"^[a-zA-Z0-9_\-\.]+$", args.run_id) or ".." in args.run_id:
+            print(f"Error: Invalid run-id format: {args.run_id}", file=sys.stderr)
+            sys.exit(2)
+        run_id = args.run_id
+    else:
+        run_id = str(uuid.uuid4())
     started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     out_dir = Path(args.output_dir)
     if not out_dir.is_absolute():
@@ -189,12 +224,8 @@ def main():
 
     # AC-006.2: Post-run cleanliness check in candidate lane
     if args.lane == "candidate":
-        # Ignore artifacts directory
-        try:
-            rel_art = str(out_dir.relative_to(repo_path)) + "/"
-        except ValueError:
-            rel_art = "artifacts/verification/"
-        clean, details = is_clean_checkout(repo_path, ignored_prefixes=[rel_art])
+        # Cleanliness exclusion must NEVER be derived from arbitrary user input
+        clean, details = is_clean_checkout(repo_path, ignored_prefixes=["artifacts/verification/"])
         if not clean:
             print(f"Error: Repository mutated during execution:\n{details}", file=sys.stderr)
             sys.exit(2)

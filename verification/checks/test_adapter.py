@@ -137,17 +137,24 @@ def validate_test_summary_integrity(summary: dict, exit_code: int) -> tuple[bool
 def extract_test_summary_from_output(output: bytes) -> Optional[dict[str, int]]:
     """
     Searches output bytes for TEST_SUMMARY_JSON: marker and parses the dictionary.
+    Rejects duplicate or conflicting markers (fail closed).
     """
     text = output.decode("utf-8", errors="replace")
+    found_summaries: list[dict[str, int]] = []
     for line in text.splitlines():
         if line.startswith(SUMMARY_PREFIX):
             payload = line[len(SUMMARY_PREFIX):].strip()
             try:
                 data = json.loads(payload)
                 if isinstance(data, dict):
-                    return data
+                    found_summaries.append(data)
+                else:
+                    return None
             except json.JSONDecodeError:
                 return None
+    if len(found_summaries) == 1:
+        return found_summaries[0]
+    # Zero or multiple (>1) markers strictly rejected
     return None
 
 def run_synthetic_suite(suite_path: Path) -> StructuredTestResult:

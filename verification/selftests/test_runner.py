@@ -102,6 +102,32 @@ class TestRunnerExecution(unittest.TestCase):
             self.assertTrue(res.cleanup_failed)
             self.assertEqual(res.status, "FAIL")
 
+    def test_detached_grandchild_pipe_open_does_not_hang_runner_TEST_RUN_024(self):
+        # Grandchild in separate session holds inherited stdout pipe open, parent exits immediately
+        script = (
+            "import subprocess, sys\n"
+            "subprocess.Popen(['sleep', '10'], stdout=sys.stdout, start_new_session=True)\n"
+            "sys.exit(0)\n"
+        )
+        c = CheckDefinition(id="c_detached", argv=["python3", "-c", script], required=True, timeout_seconds=5)
+        t0 = time.monotonic()
+        res = execute_check(c)
+        elapsed = time.monotonic() - t0
+        self.assertLess(elapsed, 3.0, f"Runner hung on open pipe from detached grandchild: elapsed {elapsed}s")
+        self.assertEqual(res.exit_code, 0)
+
+    def test_partial_output_retained_on_timeout_TEST_RUN_025(self):
+        script = (
+            "import sys, time\n"
+            "sys.stdout.write('PARTIAL_OUTPUT_PREFIX\\n')\n"
+            "sys.stdout.flush()\n"
+            "time.sleep(10)\n"
+        )
+        c = CheckDefinition(id="c_partial", argv=["python3", "-c", script], required=True, timeout_seconds=1)
+        res = execute_check(c)
+        self.assertEqual(res.status, "TIMEOUT")
+        self.assertIn(b"PARTIAL_OUTPUT_PREFIX", res.output)
+
 
 if __name__ == "__main__":
     unittest.main()

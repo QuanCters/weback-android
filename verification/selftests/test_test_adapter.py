@@ -163,6 +163,28 @@ class SampleFailingSuite(unittest.TestCase):
             self.assertIn("test_explicit_failure", res.diagnostic)
             self.assertIn("explicit_math_mismatch", res.diagnostic)
 
+    def test_duplicate_or_conflicting_summary_markers_rejected_TEST_INV_012(self):
+        from verification.checks.test_adapter import extract_test_summary_from_output
+        # 1. Single valid summary -> parsed
+        out_single = b"prefix\nTEST_SUMMARY_JSON: {\"total\": 5, \"passed\": 5, \"failures\": 0, \"errors\": 0, \"skipped\": 0}\nsuffix\n"
+        res = extract_test_summary_from_output(out_single)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["total"], 5)
+
+        # 2. Duplicate summary markers -> rejected (returns None)
+        out_dup = (
+            b"TEST_SUMMARY_JSON: {\"total\": 5, \"passed\": 5, \"failures\": 0, \"errors\": 0, \"skipped\": 0}\n"
+            b"TEST_SUMMARY_JSON: {\"total\": 5, \"passed\": 5, \"failures\": 0, \"errors\": 0, \"skipped\": 0}\n"
+        )
+        self.assertIsNone(extract_test_summary_from_output(out_dup))
+
+        # 3. Conflicting summary markers -> rejected (returns None)
+        out_conflict = (
+            b"TEST_SUMMARY_JSON: {\"total\": 5, \"passed\": 5, \"failures\": 0, \"errors\": 0, \"skipped\": 0}\n"
+            b"TEST_SUMMARY_JSON: {\"total\": 10, \"passed\": 8, \"failures\": 2, \"errors\": 0, \"skipped\": 0}\n"
+        )
+        self.assertIsNone(extract_test_summary_from_output(out_conflict))
+
 
 if __name__ == "__main__":
     unittest.main()

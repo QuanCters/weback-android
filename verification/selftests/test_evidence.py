@@ -652,6 +652,133 @@ class TestEvidence(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("Unexpected unapproved check ID in report: unapproved-check", "".join(errs))
 
+    def test_candidate_missing_approved_policy_definitions_TEST_EVI_028(self):
+        results = [CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        # In candidate mode, omitting approved policy definitions must fail closed
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            require_candidate=True
+        )
+        self.assertFalse(ok)
+        self.assertIn("Missing required approved policy definitions in candidate mode", "".join(errs))
+
+    def test_candidate_required_check_subset_rejected_TEST_EVI_029(self):
+        results = [
+            CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n"),
+            CheckResult(id="c2", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")
+        ]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        approved_checks = {
+            "c1": {"type": "command", "required": True},
+            "c2": {"type": "command", "required": True}
+        }
+        # expected_required_checks only specifies ['c1'] (subset)
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            require_candidate=True,
+            approved_checks=approved_checks
+        )
+        self.assertFalse(ok)
+        self.assertIn("Expected required checks set does not match approved policy required checks", "".join(errs))
+
+    def test_candidate_conflicting_approved_definitions_TEST_EVI_030(self):
+        results = [CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        policy_file = self.out_dir / "policy.json"
+        policy_file.write_text(json.dumps({
+            "checks": [{"id": "c1", "type": "command", "required": True, "argv": ["true"], "timeout_seconds": 10}]
+        }))
+        import hashlib
+        p_sha = hashlib.sha256(policy_file.read_bytes()).hexdigest()
+
+        # Conflicting approved_checks says c1 is test_suite
+        conflicting_approved = {
+            "c1": {"type": "test_suite", "required": True}
+        }
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256=p_sha,
+            required_check_ids=["c1"],
+            require_candidate=True,
+            approved_checks=conflicting_approved,
+            policy_path=policy_file
+        )
+        self.assertFalse(ok)
+        self.assertIn("Conflicting approved_checks and policy definitions", "".join(errs))
+
+    def test_candidate_valid_approved_policy_and_complete_evidence_TEST_EVI_031(self):
+        results = [
+            CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"cmd ok\n"),
+            CheckResult(
+                id="c2",
+                status="PASS",
+                exit_code=0,
+                duration_seconds=0.2,
+                output=b"suite ok\n",
+                test_summary={"total": 5, "passed": 5, "failures": 0, "errors": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0}
+            )
+        ]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        approved_checks = {
+            "c1": {"type": "command", "required": True},
+            "c2": {"type": "test_suite", "required": True}
+        }
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1", "c2"],
+            require_candidate=True,
+            approved_checks=approved_checks
+        )
+        self.assertTrue(ok, errs)
+
+
+
 
 
 if __name__ == "__main__":

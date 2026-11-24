@@ -67,5 +67,77 @@ class TestCIWorkflow(unittest.TestCase):
         self.assertNotIn("AWS_ACCESS_KEY_ID", raw_text)
         self.assertNotIn("SIGNING_KEY", raw_text)
 
+    def test_ci_workflow_no_hardcoded_sha_and_exact_run_binding_TEST_CI_002(self):
+        wf_path = Path(".github/workflows/ci.yml")
+        raw_text = wf_path.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw_text)
+
+        # Must not contain hardcoded commit SHAs
+        self.assertNotIn("4c7e78ca6c4a73290493fa543aaaa48336a181c3", raw_text)
+        # Must not use ls -t or timestamps to select evidence reports
+        self.assertNotIn("ls -t", raw_text)
+
+        steps = data["jobs"]["verify"]["steps"]
+        # Must have context computation step
+        context_step = next((s for s in steps if s.get("id") == "context"), None)
+        self.assertIsNotNone(context_step, "Workflow must have a step with id 'context' computing run provenance")
+        c_run = context_step.get("run", "")
+        self.assertIn("pull_request", c_run)
+        self.assertIn("push", c_run)
+        self.assertIn("candidate_sha", c_run)
+        self.assertIn("base_sha", c_run)
+        self.assertIn("base_ref", c_run)
+        self.assertIn("run_id", c_run)
+        self.assertIn("report_path", c_run)
+
+        # Run step must bind --run-id
+        run_step = next(s for s in steps if "run.py" in s.get("run", ""))
+        self.assertIn("--run-id", run_step["run"])
+
+        # Audit step must bind --expected-run-id and report path
+        audit_step = next((s for s in steps if "evidence.py" in s.get("run", "")), None)
+        self.assertIsNotNone(audit_step)
+        self.assertIn("--expected-run-id", audit_step["run"])
+        self.assertIn("--report", audit_step["run"])
+
+    def test_ci_event_context_derivation_logic_TEST_CI_003(self):
+        # Deterministic simulation of the shell logic in compute context step
+        def derive_context(event_name: str, pr_head: str, pr_base: str, pr_base_ref: str,
+                           push_sha: str, push_before: str, fallback_head_parent: str):
+            if event_name == "pull_request":
+                return {
+                    "candidate_sha": pr_head,
+                    "base_sha": pr_base,
+                    "base_ref": pr_base_ref
+                }
+            elif event_name == "push":
+                base_sha = push_before
+                if not base_sha or base_sha == "0" * 40:
+                    base_sha = fallback_head_parent or push_sha
+                return {
+                    "candidate_sha": push_sha,
+                    "base_sha": base_sha,
+                    "base_ref": base_sha
+                }
+            raise ValueError(f"Unsupported event: {event_name}")
+
+        # PR event
+        pr_ctx = derive_context("pull_request", "head123", "base456", "main", "", "", "")
+        self.assertEqual(pr_ctx["candidate_sha"], "head123")
+        self.assertEqual(pr_ctx["base_sha"], "base456")
+        self.assertEqual(pr_ctx["base_ref"], "main")
+
+        # Push event normal
+        push_ctx = derive_context("push", "", "", "", "pushsha789", "beforesha111", "")
+        self.assertEqual(push_ctx["candidate_sha"], "pushsha789")
+        self.assertEqual(push_ctx["base_sha"], "beforesha111")
+        self.assertEqual(push_ctx["base_ref"], "beforesha111")
+
+        # Push event with zero before (e.g., initial or recreated ref)
+        push_zero_ctx = derive_context("push", "", "", "", "pushsha789", "0"*40, "parentsha222")
+        self.assertEqual(push_zero_ctx["candidate_sha"], "pushsha789")
+        self.assertEqual(push_zero_ctx["base_sha"], "parentsha222")
+        self.assertEqual(push_zero_ctx["base_ref"], "parentsha222")
+
 if __name__ == "__main__":
     unittest.main()

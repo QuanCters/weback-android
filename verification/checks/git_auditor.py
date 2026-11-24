@@ -38,19 +38,20 @@ def is_clean_checkout(repo_dir: Optional[Path] = None, ignored_prefixes: Optiona
 
     dirty_entries = []
     for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line:
+        if not line.strip():
             continue
-        # Format is XY PATH or XY "PATH"
-        parts = line.split(maxsplit=1)
-        if len(parts) >= 2:
-            rel_path = parts[1].strip('"')
-            # Check if path starts with any ignored prefix
-            if any(rel_path.startswith(p) for p in prefixes):
-                continue
-            dirty_entries.append(line)
-        else:
-            dirty_entries.append(line)
+        # Format is XY PATH or XY "PATH", or XY ORIG -> DEST
+        status_code = line[:2]
+        rel_path_part = line[2:].strip().strip('"')
+        if " -> " in rel_path_part:
+            rel_path_part = rel_path_part.split(" -> ")[-1].strip('"')
+
+        # ONLY untracked files ('??') are eligible to be ignored by prefixes.
+        # Any tracked file modification/staging/deletion must cause dirty failure!
+        if status_code == "??" and any(rel_path_part.startswith(p) for p in prefixes):
+            continue
+
+        dirty_entries.append(line.strip())
 
     if dirty_entries:
         return False, f"Working tree is not clean. Uncommitted/untracked files:\n  " + "\n  ".join(dirty_entries)

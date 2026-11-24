@@ -268,14 +268,31 @@ def verify_evidence_report(
         if not required_check_ids or len(required_check_ids) == 0:
             errors.append("Missing required context: required_check_ids (must be a non-empty list of check IDs)")
 
+        if policy_path is None and approved_checks is None:
+            errors.append("Missing required approved policy definitions in candidate mode")
+
     # 2. Policy resolution if provided
-    loaded_approved = dict(approved_checks) if approved_checks else None
+    loaded_approved = None
+    p_checks = None
     if policy_path:
         p_checks, p_errs = load_approved_checks_from_policy(policy_path, expected_policy_sha256)
         if p_errs:
             errors.extend(p_errs)
-        elif p_checks and loaded_approved is None:
+        else:
             loaded_approved = p_checks
+
+    if approved_checks is not None:
+        if p_checks is not None and approved_checks != p_checks:
+            errors.append("Conflicting approved_checks and policy definitions")
+        if loaded_approved is None:
+            loaded_approved = dict(approved_checks)
+
+    # In candidate mode, verify expected required checks set matches approved policy required checks exactly
+    if require_candidate and loaded_approved and required_check_ids:
+        approved_required = {cid for cid, defn in loaded_approved.items() if defn.get("required")}
+        expected_set = set(required_check_ids)
+        if expected_set != approved_required:
+            errors.append(f"Expected required checks set does not match approved policy required checks (expected: {sorted(expected_set)}, approved: {sorted(approved_required)})")
 
     if not report_path.is_file():
         return False, [f"Report file not found: {report_path}"] + errors
@@ -382,12 +399,10 @@ def verify_evidence_report(
                         if expected_log_hash != actual_log_hash:
                             errors.append(f"Log integrity violation in {log_name}: expected {expected_log_hash}, found {actual_log_hash}")
 
-        # Check type distinction (from approved checks if present, or test_summary in report)
+        # Check type distinction (strictly resolved from approved checks; never infer from untrusted report fields)
         check_type = "command"
         if loaded_approved and cid in loaded_approved:
             check_type = loaded_approved[cid].get("type", "command")
-        elif "test_summary" in c and c["test_summary"] is not None:
-            check_type = "test_suite"
 
         if check_type == "test_suite":
             ts = c.get("test_summary")
@@ -458,6 +473,10 @@ def main():
     # Reject unanchored --audit-latest in candidate mode without explicit expected run id
     if args.require_candidate and args.audit_latest and not args.expected_run_id:
         print("Error: --audit-latest cannot be used as an authoritative run selector without explicit --expected-run-id binding.", file=sys.stderr)
+        sys.exit(2)
+
+    if args.require_candidate and not args.policy:
+        print("Error: --policy is required in candidate mode.", file=sys.stderr)
         sys.exit(2)
 
     report_path: Optional[Path] = None

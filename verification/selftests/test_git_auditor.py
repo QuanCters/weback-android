@@ -100,6 +100,22 @@ class TestGitAuditor(unittest.TestCase):
             self.assertEqual(len(sha1), 40)
             self.assertEqual(len(sha2), 40)
 
+    def test_tracked_file_modification_under_ignored_prefix_not_ignored_TEST_RUN_021(self):
+        # Even if a file is under an ignored prefix, if it is a tracked file that is modified, it must fail clean checkout!
+        art_dir = self.repo / "artifacts" / "verification"
+        art_dir.mkdir(parents=True)
+        tracked_file = art_dir / "tracked_in_artifacts.txt"
+        tracked_file.write_text("initial version")
+        subprocess.run(["git", "add", "artifacts/verification/tracked_in_artifacts.txt"], cwd=self.repo, check=True)
+        subprocess.run(["git", "commit", "-m", "commit tracked artifact"], cwd=self.repo, check=True)
+
+        # Now modify the tracked file
+        tracked_file.write_text("modified version")
+
+        clean, details = is_clean_checkout(self.repo, ignored_prefixes=["artifacts/verification/"])
+        self.assertFalse(clean, "Tracked file modification must NOT be ignored even under ignored_prefixes")
+        self.assertIn("tracked_in_artifacts.txt", details)
+
 
 if __name__ == "__main__":
     unittest.main()

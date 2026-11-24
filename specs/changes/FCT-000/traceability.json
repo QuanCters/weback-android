@@ -3,13 +3,20 @@
   "change_id": "FCT-000",
   "milestone": "FCT-000",
   "title": "Minimum Viable Verification Harness",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "planned_mapping_coverage": 100.0,
-  "verified_execution_coverage": 100.0,
+  "verified_execution_coverage": "PROVISIONAL_PENDING_POLICY_APPROVAL",
+  "metrics": {
+    "planned_scenario_count": 73,
+    "discovered_executable_test_count": 105,
+    "executed_test_count": 105,
+    "ac_mapping_coverage_percent": 100.0,
+    "verified_ac_execution_coverage_status": "PROVISIONAL_PENDING_POLICY_APPROVAL"
+  },
   "summary": {
     "total_requirements": 16,
     "total_acceptance_criteria": 65,
-    "total_acceptance_tests": 50,
+    "total_acceptance_tests": 73,
     "total_tasks": 10
   },
   "acceptance_criteria": [
