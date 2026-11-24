@@ -13,6 +13,12 @@ import platform
 import sys
 import uuid
 from typing import Optional
+
+# Ensure root repository is importable
+repo_root = Path(__file__).resolve().parent.parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
 from verification.checks.runner import CheckResult
 
 REPORT_SCHEMA_VERSION = 1
