@@ -1,0 +1,14 @@
+{
+  "milestone": "FCT-000",
+  "proposed_policy_path": "policies/checks.json",
+  "proposed_policy_sha256": "4a004ac8d07178c4164193d827983dfa5a7d86c5245fbcb6df69497e976137fd",
+  "required_check_ids": [
+    "spec-hygiene",
+    "harness-selftests"
+  ],
+  "status": "APPROVED",
+  "authorized_by": "Product Owner and Lead Maintainer (Human)",
+  "authorization_date": "2026-11-24",
+  "governance_gate": "INITIAL_POLICY_APPROVAL",
+  "notes": "Initial checks policy officially approved by Product Owner and Lead Maintainer for FCT-000 closeout. Approved SHA-256 digest: 4a004ac8d07178c4164193d827983dfa5a7d86c5245fbcb6df69497e976137fd with required checks [spec-hygiene, harness-selftests]."
+}

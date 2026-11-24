@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "rules": [
+    {
+      "rule_id": "ANTI-001",
+      "lifecycle_state": "PROPOSED",
+      "target_globs": ["app/src/main/res/xml/network_security_config.xml"],
+      "pattern": "<base-config\\b[^>]*cleartextTrafficPermitted\\s*=\\s*[\"']true[\"']",
+      "matcher_type": "regex",
+      "rationale": "Cleartext traffic leaks device credentials and authentication tokens (SEC-01).",
+      "positive_test_sample": "<network-security-config><base-config cleartextTrafficPermitted=\"true\"></base-config></network-security-config>",
+      "negative_mutation_sample": "<network-security-config><base-config cleartextTrafficPermitted=\"false\"></base-config></network-security-config>",
+      "false_positive_assessment": "Scoped <domain-config> tags for loopback (127.0.0.1) or SoftAP (192.168.4.1) do not match <base-config>.",
+      "activation_milestone": "Milestone FCT-001 (Android Foundation)"
+    },
+    {
+      "rule_id": "ANTI-002",
+      "lifecycle_state": "PROPOSED",
+      "target_globs": ["app/src/main/java/**/*.kt"],
+      "pattern": "androidx\\.security\\.crypto\\.EncryptedSharedPreferences",
+      "matcher_type": "regex",
+      "rationale": "Google has deprecated EncryptedSharedPreferences due to deadlock bugs and data loss.",
+      "positive_test_sample": "import androidx.security.crypto.EncryptedSharedPreferences",
+      "negative_mutation_sample": "import com.weback.robot.security.KeystoreTokenStorage",
+      "false_positive_assessment": "None; library is banned in its entirety.",
+      "activation_milestone": "Milestone FCT-001 (Android Foundation)"
+    },
+    {
+      "rule_id": "ANTI-003",
+      "lifecycle_state": "PROPOSED",
+      "target_globs": ["app/src/main/java/**/*.kt"],
+      "pattern": "org\\.greenrobot\\.eventbus\\.EventBus|EventBus\\.(getDefault|builder)",
+      "matcher_type": "regex",
+      "rationale": "EventBus creates untraceable global state spaghetti and breaks clean MVI state machines.",
+      "positive_test_sample": "EventBus.getDefault().post(UpdateEvent())",
+      "negative_mutation_sample": "viewModel.eventChannel.send(UpdateEvent)",
+      "false_positive_assessment": "Specific to package and default invocation patterns.",
+      "activation_milestone": "Milestone FCT-001 (Android Foundation)"
+    },
+    {
+      "rule_id": "ANTI-004",
+      "lifecycle_state": "PROPOSED",
+      "target_globs": ["verification/checks/**/*.py"],
+      "pattern": "status\\s*=\\s*[\"']PASS[\"'].*exit_code\\s*=\\s*[1-9]",
+      "matcher_type": "regex",
+      "rationale": "Forbids code from assigning status = 'PASS' when a check command returned a non-zero exit code.",
+      "positive_test_sample": "return CheckResult(status=\"PASS\", exit_code=1)",
+      "negative_mutation_sample": "return CheckResult(status=\"FAIL\", exit_code=1)",
+      "false_positive_assessment": "Scoped strictly to check runner result constructors.",
+      "activation_milestone": "Milestone FCT-000 (Harness Bootstrap)"
+    },
+    {
+      "rule_id": "ANTI-005",
+      "lifecycle_state": "PROPOSED",
+      "target_globs": ["specs/**/*.md", "policies/**/*.md", "docs/**/*.md"],
+      "pattern": "\\]\\(file:///(?:home|Users)/[^)]+\\)",
+      "matcher_type": "regex",
+      "rationale": "Hardcoded workstation filesystem paths break portability across different CI runners and developer machines.",
+      "positive_test_sample": "[link](file:///home/user/workspace/doc.md)",
+      "negative_mutation_sample": "[link](../../doc.md)",
+      "false_positive_assessment": "Scoped strictly to markdown link destinations starting with file:///home or file:///Users.",
+      "activation_milestone": "Milestone FCT-000 (Harness Bootstrap)"
+    },
+    {
+      "rule_id": "ANTI-006",
+      "lifecycle_state": "PROPOSED",
+      "target_globs": [".github/workflows/**/*.yml"],
+      "pattern": "continue-on-error\\s*:\\s*true",
+      "matcher_type": "regex",
+      "rationale": "continue-on-error on mandatory verification suppresses test and check failures in CI.",
+      "positive_test_sample": "run: python3 verification/run.py\ncontinue-on-error: true",
+      "negative_mutation_sample": "run: python3 verification/run.py\ncontinue-on-error: false",
+      "false_positive_assessment": "Scoped to workflow YAML files.",
+      "activation_milestone": "Milestone FCT-000 (Harness Bootstrap)"
+    },
+    {
+      "rule_id": "ANTI-007",
+      "lifecycle_state": "PROPOSED",
+      "target_globs": ["verification/**/*.py"],
+      "pattern": "[\"']0{40}[\"']",
+      "matcher_type": "regex",
+      "rationale": "Fallback to 0*40 SHA masks unresolvable commit revisions and circumvents candidate revision binding.",
+      "positive_test_sample": "tested_sha = \"0000000000000000000000000000000000000000\"",
+      "negative_mutation_sample": "raise ValueError(\"Could not resolve SHA\")",
+      "false_positive_assessment": "Scoped to verification harness Python scripts.",
+      "activation_milestone": "Milestone FCT-000 (Harness Bootstrap)"
+    }
+  ]
+}

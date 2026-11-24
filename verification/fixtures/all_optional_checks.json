@@ -1,0 +1,16 @@
+{
+  "checks": [
+    {
+      "id": "opt1",
+      "argv": ["python3", "-c", "exit(0)"],
+      "required": false,
+      "timeout_seconds": 10
+    },
+    {
+      "id": "opt2",
+      "argv": ["python3", "-c", "exit(0)"],
+      "required": false,
+      "timeout_seconds": 10
+    }
+  ]
+}

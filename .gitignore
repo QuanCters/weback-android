@@ -40,3 +40,4 @@ google-services.json
 *.apk
 WeBack.apk
 WEBack_*.zip
+__pycache__/

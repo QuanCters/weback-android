@@ -1,0 +1,20 @@
+{
+  "checks": [
+    {
+      "id": "spec-hygiene",
+      "argv": ["python3", "verification/checks/spec_validator.py"],
+      "required": true,
+      "timeout_seconds": 30,
+      "type": "command",
+      "description": "Validates markdown links and traceability"
+    },
+    {
+      "id": "unit-tests",
+      "argv": ["python3", "-m", "unittest", "discover"],
+      "required": false,
+      "timeout_seconds": 60,
+      "type": "test_suite",
+      "description": "Optional unit test suite"
+    }
+  ]
+}

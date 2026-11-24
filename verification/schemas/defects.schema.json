@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DefectRecord",
+  "description": "JSON schema for individual defect record in verification/defects.jsonl",
+  "type": "object",
+  "required": [
+    "defect_id",
+    "classification",
+    "requirement_or_invariant_id",
+    "severity",
+    "affected_module",
+    "evidence",
+    "reproduction",
+    "root_cause",
+    "regression_test_ref",
+    "pre_fix_red_result",
+    "post_fix_green_result",
+    "generalization_decision",
+    "proposed_antipattern_rule_id",
+    "review_status"
+  ],
+  "properties": {
+    "defect_id": {
+      "type": "string",
+      "pattern": "^DEF-\\d{4}-\\d{3}$"
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "PROPOSED_PREVENTIVE_CHECK",
+        "HISTORICAL_RE_DEFECT",
+        "CONFIRMED_APPLICATION_DEFECT"
+      ]
+    },
+    "requirement_or_invariant_id": { "type": "string" },
+    "severity": {
+      "type": "string",
+      "enum": ["P0", "P1", "P2", "P3"]
+    },
+    "affected_module": { "type": "string" },
+    "evidence": { "type": "string" },
+    "reproduction": { "type": "string" },
+    "root_cause": { "type": "string" },
+    "regression_test_ref": {
+      "type": ["string", "null"]
+    },
+    "pre_fix_red_result": {
+      "type": ["object", "string", "null"]
+    },
+    "post_fix_green_result": {
+      "type": ["object", "string", "null"]
+    },
+    "generalization_decision": {
+      "type": ["string", "boolean"]
+    },
+    "proposed_antipattern_rule_id": {
+      "type": ["string", "null"]
+    },
+    "review_status": {
+      "type": "string",
+      "enum": [
+        "PROPOSED",
+        "CONFIRMED",
+        "IN_FIX",
+        "RESOLVED",
+        "VERIFIED",
+        "PERMANENT_PROTECTION",
+        "APPROVED"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

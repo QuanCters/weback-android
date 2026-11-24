@@ -281,14 +281,23 @@ Every verification execution generates a structured report `artifacts/verificati
 }
 ```
 
-### 4.1 Independent Verdict Recomputation Rules
-The evidence validator (`verification/checks/evidence.py`) never trusts the report's self-declared `verdict` field alone:
-1. **Recompute Verdict:** Evaluates every required check in `checks`:
+### 4.1 Independent Verdict Recomputation & Authoritative Candidate Acceptance
+The evidence validator (`verification/checks/evidence.py`) never trusts the report's self-declared fields alone:
+1. **Authoritative Candidate Context Requirement:** In candidate mode (`--require-candidate`), all contextual expectations must be provided externally and validated fail-closed:
+   - `expected_sha`: 40-character hex commit SHA of candidate HEAD.
+   - `expected_base_sha`: 40-character hex commit SHA of target base ref.
+   - `expected_policy_sha256`: 64-character hex SHA-256 digest of approved checks policy.
+   - `required_check_ids`: Non-empty array of check IDs that must be present and passed.
+   - `expected_run_id`: Exact execution run ID binding when `--audit-latest` is invoked.
+2. **Approved Policy Check Type Distinction:** Check types (`command` vs `test_suite`) are resolved against approved check policy definitions rather than trusting report fields alone. Any check defined as `test_suite` in approved policy must contain a structurally valid `test_summary` with strict integer metrics (`total > 0`, non-negative, non-boolean).
+3. **Log Directory Containment & Symlink Guards:** All referenced `log_file` entries must reside strictly within the designated evidence report directory. Paths containing directory traversal (`..`), absolute paths, or symbolic links are rejected fail-closed.
+4. **Recompute Verdict:** Evaluates every required check in `checks`:
    - If any required check has `status != "PASS"` or `exit_code != 0`, the recomputed verdict is strictly `FAIL`.
-   - If any required test suite reports `total == 0` or `skipped > 0`, the recomputed verdict is strictly `FAIL`.
+   - If any required test suite reports `total == 0` or `skipped > 0` or `errors > 0` or `failures > 0`, the recomputed verdict is strictly `FAIL`.
    - If any check reports `cleanup_failed == true`, the recomputed verdict is `FAIL`.
-2. **Forged Verdict Rejection:** If the report's self-declared `verdict == "PASS"` but the recomputed verdict is `FAIL`, the report is rejected as forged (`FORGED_VERDICT_REJECTED`) with exit code 2.
-3. **Inconsistent Status Check:** If any check reports `exit_code != 0` but `status == "PASS"`, or `exit_code == 0` but `status == "FAIL"`, the report is rejected as corrupt (`INCONSISTENT_CHECK_STATUS`) with exit code 2.
+5. **Forged Verdict Rejection:** If the report's self-declared `verdict == "PASS"` but the recomputed verdict is `FAIL`, the report is rejected as forged (`FORGED_VERDICT_REJECTED`) with exit code 1.
+6. **Inconsistent Status Check:** If any check reports `exit_code != 0` but `status == "PASS"`, or `exit_code == 0` but `status in ("FAIL", "ERROR", "TIMEOUT")`, the report is rejected as corrupt (`INCONSISTENT_CHECK_STATUS`) with exit code 1.
+7. **Candidate Acceptance Separation:** A structurally valid report with `verdict == "FAIL"` may satisfy diagnostic evaluation (`require_candidate=False`), but candidate acceptance (`require_candidate=True`) strictly rejects non-PASS verdicts.
 
 ### 4.2 Four-Tier Governance Boundary
 ```text
@@ -434,3 +443,13 @@ jobs:
 > 2. Remote CI execution remains `NOT_EXECUTED_REMOTELY` until GitHub Actions executes the workflow on an active PR runner.
 > 3. Branch protection rulesets remain `PENDING_HUMAN_CONFIGURATION` on GitHub.
 > 4. The verification runner and evidence validator provide local execution provenance; authoritative merge authorization requires passing remote CI and explicit human sign-off.
+
+---
+
+## 7. Approved Implementation Clarifications (IC-001 through IC-004)
+
+In accordance with human governance authorization directive FCT-000:
+1. **IC-001 (CI Validation Dependency Boundary):** The core runner and check execution modules (`verification/run.py`, `verification/checks/`) are strictly dependency-free (Python 3.12 standard library only). For CI structural workflow validation (`verification/selftests/test_ci.py`), `pyyaml==6.0.2` is explicitly pinned as a verification-only test dependency, properly accounting for GitHub Actions YAML 1.1 triggers (`on` key semantics).
+2. **IC-002 (Authoritative Evidence Context):** Authoritative candidate evidence validation requires explicit external parameters: `--expected-sha`, `--expected-base-sha`, `--expected-policy-sha256`, and `--expected-required-checks`. Expected values originate from an approved governance context rather than being copied from candidate-generated reports or self-authorizing proposal manifests. Missing or mismatched context fails closed.
+3. **IC-003 (Structured Test Inventory Integrity):** The structured unittest adapter (`verification/checks/test_adapter.py`) is directly integrated as the CLI test runner in the registered `harness-selftests` policy check. Negative tests explicitly verify zero discovered tests, disallowed skips, unapproved expected failures, unexpected successes, count inconsistencies, and exit-code contradictions.
+4. **IC-004 (Specification Synchronization):** These authorized clarifications are synchronized across design, validation, tasks, and traceability without changing product scope or weakening quality gates.

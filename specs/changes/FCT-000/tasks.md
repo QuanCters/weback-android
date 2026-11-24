@@ -41,7 +41,7 @@
 - Consumes: JSON file path (`policies/checks.json`).
 - Produces: `CheckDefinition` dataclass (`id: str`, `argv: list[str]`, `required: bool`, `timeout_seconds: int`, `type: str = "command"`, `description: str = ""`), `CheckRegistry` dataclass containing `checks: list[CheckDefinition]`, `policy_sha256: str`, and method `load_and_validate_registry(path: str) -> CheckRegistry`.
 
-- [ ] **Step 1: Write failing tests for Category 1 Registry Validation (`TEST-REG-001` through `TEST-REG-009`)**
+- [x] **Step 1: Write failing tests for Category 1 Registry Validation (`TEST-REG-001` through `TEST-REG-009`)**
 ```python
 # verification/selftests/test_registry.py
 import unittest
@@ -127,18 +127,18 @@ class TestRegistryValidation(unittest.TestCase):
         self.assertIn("Unknown check ID: non_existent_check", str(ctx.exception))
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 Run: `python3 -m unittest verification/selftests/test_registry.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'verification.checks.registry'`
 
-- [ ] **Step 3: Implement `registry.py` and `checks.schema.json`**
+- [x] **Step 3: Implement `registry.py` and `checks.schema.json`**
 Implement standard-library structural validator checking keys, non-empty list, positive timeout, array of strings for `argv`, at least one check with `required: true`, and unique check IDs. Implement `validate_check_selection`. Compute SHA-256 of raw registry bytes.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `python3 -m unittest verification/selftests/test_registry.py -v`
 Expected: PASS with 9/9 tests passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add verification/schemas/checks.schema.json verification/checks/registry.py verification/selftests/test_registry.py
 git commit -m "feat(verification): implement declarative check registry validator and schemas (TEST-REG-001..009)"
@@ -159,7 +159,7 @@ git commit -m "feat(verification): implement declarative check registry validato
 - Produces: `CheckResult` dataclass (`id: str`, `status: str`, `exit_code: int`, `duration_seconds: float`, `output: bytes`, `test_summary: Optional[dict[str, int]] = None`, `cleanup_failed: bool = False`).
 - Produces: `StructuredTestResult` and `run_unittest_suite(test_module_or_pattern: str) -> StructuredTestResult`.
 
-- [ ] **Step 1: Write failing tests for Category 2 Runner & Category 4 Inventory (`TEST-RUN-001`..`005`, `TEST-RUN-011`..`014`, `TEST-INV-001`..`007`)**
+- [x] **Step 1: Write failing tests for Category 2 Runner & Category 4 Inventory (`TEST-RUN-001`..`005`, `TEST-RUN-011`..`014`, `TEST-INV-001`..`007`)**
 ```python
 # verification/selftests/test_runner.py
 import unittest
@@ -340,20 +340,20 @@ class SyntheticSuite(unittest.TestCase):
             parse_test_summary({"malformed": True})
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 Run: `python3 -m unittest verification/selftests/test_runner.py verification/selftests/test_test_adapter.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement `runner.py` and `test_adapter.py`**
+- [x] **Step 3: Implement `runner.py` and `test_adapter.py`**
 Implement `execute_check` using `subprocess.Popen` with `start_new_session=True`. Track `pgid = proc.pid`. Catch `FileNotFoundError` (exit code 127), `PermissionError` (exit code 126), and `OSError`.
 On `TimeoutExpired`, send `SIGTERM` to `pgid`, wait 0.5s grace, inspect process group, escalate to `SIGKILL`. Drain pipes with `communicate(timeout=1.0)` and preserve partial output. Bounded cleanup duration max 2.0s; record `cleanup_failed: true` if kill fails.
 Implement `test_adapter.py` using Python `unittest.TextTestRunner` with custom `TestResult` capturing exact counts: `total`, `passed`, `failures`, `errors`, `skipped`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 Run: `python3 -m unittest verification/selftests/test_runner.py verification/selftests/test_test_adapter.py -v`
 Expected: PASS with all tests passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add verification/checks/runner.py verification/checks/test_adapter.py verification/selftests/test_runner.py verification/selftests/test_test_adapter.py
 git commit -m "feat(verification): implement subprocess execution engine, process-group timeout manager, and structured test adapter (TEST-RUN-001..005, TEST-RUN-011..014, TEST-INV-001..007)"
@@ -372,7 +372,7 @@ git commit -m "feat(verification): implement subprocess execution engine, proces
 - Consumes: `list[CheckResult]`, `tested_sha: str`, `base_sha: str`, `policy_sha256: str`, `policy_modified_from_base: bool`, `lane: str`, `output_dir: Path`.
 - Produces: Writes `report.json` and `<check_id>.log` files; provides `verify_evidence_report(report_path: Path, expected_sha: Optional[str] = None, expected_base_sha: Optional[str] = None, expected_policy_sha256: Optional[str] = None, required_check_ids: Optional[list[str]] = None, require_candidate: bool = False, bootstrap_approval_path: Optional[Path] = None) -> tuple[bool, list[str]]`.
 
-- [ ] **Step 1: Write failing tests for Category 3 Evidence Integrity (`TEST-EVI-001` through `TEST-EVI-012`)**
+- [x] **Step 1: Write failing tests for Category 3 Evidence Integrity (`TEST-EVI-001` through `TEST-EVI-012`)**
 ```python
 # verification/selftests/test_evidence.py
 import unittest
@@ -484,19 +484,19 @@ class TestEvidence(unittest.TestCase):
         self.assertIn("Policy hash mismatch against expected context", "".join(errs))
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 Run: `python3 -m unittest verification/selftests/test_evidence.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'verification.checks.evidence'`
 
-- [ ] **Step 3: Implement `evidence.py` and `report.schema.json`**
+- [x] **Step 3: Implement `evidence.py` and `report.schema.json`**
 Implement evidence generation: generate UUIDv4 `run_id`, write individual `.log` files, compute SHA-256 digests, and write `report.json` with `tested_sha`, `base_sha`, `test_summary`, `policy_modified_from_base`, and check entries.
 Implement `verify_evidence_report` auditing structural keys, SHA matches, duplicate check detection, log hash integrity, independent verdict recomputation (rejecting forged PASS), status/code consistency, and bootstrap approval verification.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `python3 -m unittest verification/selftests/test_evidence.py -v`
 Expected: PASS with 12/12 tests passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add verification/schemas/report.schema.json verification/checks/evidence.py verification/selftests/test_evidence.py
 git commit -m "feat(verification): implement evidence generator, cryptographic hasher, and trust validator (TEST-EVI-001..012)"
@@ -514,7 +514,7 @@ git commit -m "feat(verification): implement evidence generator, cryptographic h
 - Consumes: Target repository directory (`cwd: Path`), `ignored_prefixes: list[str] = ["artifacts/verification/"]`.
 - Produces: `is_clean_checkout(repo_dir: Path, ignored_prefixes: list[str]) -> tuple[bool, str]`, `get_head_sha(repo_dir: Path) -> str`, `get_base_sha(repo_dir: Path, base_ref: str = "main") -> str`, `check_policy_modified_from_base(repo_dir: Path, base_ref: str = "main") -> bool`.
 
-- [ ] **Step 1: Write failing tests (`TEST-RUN-006`, `TEST-RUN-007`, `TEST-RUN-008`, `TEST-MUT-003`)**
+- [x] **Step 1: Write failing tests (`TEST-RUN-006`, `TEST-RUN-007`, `TEST-RUN-008`, `TEST-MUT-003`)**
 ```python
 # verification/selftests/test_git_auditor.py
 import unittest
@@ -573,18 +573,18 @@ class TestGitAuditor(unittest.TestCase):
         self.assertTrue(modified)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 Run: `python3 -m unittest verification/selftests/test_git_auditor.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'verification.checks.git_auditor'`
 
-- [ ] **Step 3: Implement `git_auditor.py`**
+- [x] **Step 3: Implement `git_auditor.py`**
 Implement `git status --porcelain --untracked-files=all` parser with prefix filtering. Implement `git ls-files -v` check looking for `h` or `S` bits. Implement `git rev-parse HEAD`. Implement base-branch policy diff inspection via `git diff --name-only <base_ref>...HEAD -- policies/`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `python3 -m unittest verification/selftests/test_git_auditor.py -v`
 Expected: PASS with 4/4 tests passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add verification/checks/git_auditor.py verification/selftests/test_git_auditor.py
 git commit -m "feat(verification): implement git checkout cleanliness auditor, assume-unchanged guard, and base policy diff detector"
@@ -602,7 +602,7 @@ git commit -m "feat(verification): implement git checkout cleanliness auditor, a
 - Consumes: CLI args (`--lane {candidate,fast}`, `--check <id>`, `--report-dir <path>`, `--config <path>`, `--base-ref <ref>`).
 - Produces: Process exit code (0 = PASS, 1 = FAIL, 2 = ERROR).
 
-- [ ] **Step 1: Write failing tests (`TEST-RUN-009`, `TEST-RUN-010`, CLI help and lane checks)**
+- [x] **Step 1: Write failing tests (`TEST-RUN-009`, `TEST-RUN-010`, CLI help and lane checks)**
 ```python
 # verification/selftests/test_cli.py
 import unittest
@@ -632,11 +632,11 @@ class TestCliRunner(unittest.TestCase):
             self.assertIn("Alternate configuration not approved for candidate lane", res.stderr)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 Run: `python3 -m unittest verification/selftests/test_cli.py -v`
 Expected: FAIL with `FileNotFoundError: verification/run.py`
 
-- [ ] **Step 3: Implement `verification/run.py`**
+- [x] **Step 3: Implement `verification/run.py`**
 Orchestrate CLI argument parsing (`argparse`).
 In candidate lane:
 - Reject `--check` (exit 2).
@@ -650,11 +650,11 @@ In candidate lane:
 In fast lane:
 - Permit dirty checkout and targeted checks via `--check`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `python3 -m unittest verification/selftests/test_cli.py -v`
 Expected: PASS with 3/3 tests passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add verification/run.py verification/selftests/test_cli.py
 git commit -m "feat(verification): implement main CLI runner, lane orchestrator, and candidate policy locking (TEST-RUN-009, TEST-RUN-010)"
@@ -672,7 +672,7 @@ git commit -m "feat(verification): implement main CLI runner, lane orchestrator,
 - Consumes: Documentation roots (`specs/`, `policies/`, `docs/`, `traceability.json`).
 - Produces: `validate_markdown_links(root: Path) -> list[str]`, `validate_spec_traceability(req_path: Path, trace_path: Path) -> list[str]`.
 
-- [ ] **Step 1: Write failing tests (`TEST-MUT-001`, `TEST-MUT-002`)**
+- [x] **Step 1: Write failing tests (`TEST-MUT-001`, `TEST-MUT-002`)**
 ```python
 # verification/selftests/test_spec_validator.py
 import unittest
@@ -708,18 +708,18 @@ class TestSpecValidator(unittest.TestCase):
             self.assertIn("REQ-HARN-001", errs[0])
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 Run: `python3 -m unittest verification/selftests/test_spec_validator.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'verification.checks.spec_validator'`
 
-- [ ] **Step 3: Implement `spec_validator.py`**
+- [x] **Step 3: Implement `spec_validator.py`**
 Implement regex link parser ignoring `^https?://` and `^mailto:`. Implement anchor slugification (lowercase, strip non-alphanumeric except hyphen, replace space with hyphen). Implement requirement ID scanner and cross-referencer against `traceability.json`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `python3 -m unittest verification/selftests/test_spec_validator.py -v`
 Expected: PASS with 3/3 tests passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add verification/checks/spec_validator.py verification/selftests/test_spec_validator.py
 git commit -m "feat(verification): implement markdown link, anchor, and spec traceability validator (TEST-MUT-001, TEST-MUT-002)"
@@ -741,7 +741,7 @@ git commit -m "feat(verification): implement markdown link, anchor, and spec tra
 - Consumes: `defects.jsonl`, `antipatterns.json`.
 - Produces: `validate_defects_registry(path: Path) -> tuple[bool, list[str]]`, `validate_antipattern_registry(path: Path) -> tuple[bool, list[str]]`, `scan_antipatterns(patterns_path: Path, repo_root: Path) -> list[str]`.
 
-- [ ] **Step 1: Write failing tests (`TEST-DEF-001`, `TEST-ANTI-001`)**
+- [x] **Step 1: Write failing tests (`TEST-DEF-001`, `TEST-ANTI-001`)**
 ```python
 # verification/selftests/test_defects.py
 import unittest
@@ -758,22 +758,22 @@ class TestDefectGovernance(unittest.TestCase):
         self.assertTrue(ok, errs)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 Run: `python3 -m unittest verification/selftests/test_defects.py -v`
 Expected: FAIL with `FileNotFoundError: verification/defects.jsonl`
 
-- [ ] **Step 3: Implement schemas, seed catalogs, and validator logic**
+- [x] **Step 3: Implement schemas, seed catalogs, and validator logic**
 Author `defects.schema.json` with 13 mandatory fields, classification enum (`HISTORICAL_RE_DEFECT`, `PROPOSED_PREVENTIVE_CHECK`, `CONFIRMED_APPLICATION_DEFECT`), and lifecycle status enum (`PROPOSED`, `CONFIRMED`, `IN_FIX`, `RESOLVED`, `VERIFIED`, `PERMANENT_PROTECTION`).
 Author `antipatterns.schema.json` with `lifecycle_state` (`PROPOSED`, `ADVISORY`, `APPROVED_ACTIVE`), scoped file globs, positive sample, negative sample, and false-positive evaluation.
 Author `verification/defects.jsonl` with audited seed items (DEF-001..010) with null execution evidence and PROPOSED status.
 Author `verification/antipatterns.json` with audited seed items (`ANTI-001`..`004`).
 In `spec_validator.py`, add validator that asserts each pattern matches `positive_test_sample` and does NOT match `negative_mutation_sample`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `python3 -m unittest verification/selftests/test_defects.py -v`
 Expected: PASS with 2/2 tests passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add verification/schemas/defects.schema.json verification/schemas/antipatterns.schema.json verification/defects.jsonl verification/antipatterns.json skills/defect-to-regression/SKILL.md verification/selftests/test_defects.py
 git commit -m "feat(verification): implement defect-to-regression schemas, seed catalog, and anti-pattern engine (TEST-DEF-001, TEST-ANTI-001)"
@@ -790,7 +790,7 @@ git commit -m "feat(verification): implement defect-to-regression schemas, seed 
 - Consumes: Mutated fixtures.
 - Produces: Proves all validators catch injected mutations.
 
-- [ ] **Step 1: Write all Category 5 Mutation Tests (`TEST-MUT-001` through `TEST-MUT-005`)**
+- [x] **Step 1: Write all Category 5 Mutation Tests (`TEST-MUT-001` through `TEST-MUT-005`)**
 ```python
 # verification/selftests/test_mutations.py
 import unittest
@@ -829,11 +829,11 @@ class TestControlledMutations(unittest.TestCase):
                 load_and_validate_registry(str(p))
 ```
 
-- [ ] **Step 2: Run mutation tests and verify they pass**
+- [x] **Step 2: Run mutation tests and verify they pass**
 Run: `python3 -m unittest verification/selftests/test_mutations.py -v`
 Expected: PASS with 4/4 tests passing.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 ```bash
 git add verification/selftests/test_mutations.py
 git commit -m "test(verification): add controlled mutation test suite (TEST-MUT-001..005)"
@@ -851,7 +851,7 @@ git commit -m "test(verification): add controlled mutation test suite (TEST-MUT-
 - Consumes: GitHub Actions YAML configuration file.
 - Produces: `TEST-CI-001` test asserting structural AST, dictionary permissions, concurrency, checkout ref, candidate lane invocation, and disclaimer documentation.
 
-- [ ] **Step 1: Write failing test `TEST-CI-001` with PyYAML structural validation**
+- [x] **Step 1: Write failing test `TEST-CI-001` with PyYAML structural validation**
 ```python
 # verification/selftests/test_ci.py
 import unittest
@@ -892,18 +892,18 @@ class TestCIWorkflow(unittest.TestCase):
         self.assertIn("--lane candidate", run_step["run"])
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 Run: `python3 -m unittest verification/selftests/test_ci.py -v`
 Expected: FAIL with `AssertionError: CI workflow file must exist`
 
-- [ ] **Step 3: Implement `.github/workflows/ci.yml`**
+- [x] **Step 3: Implement `.github/workflows/ci.yml`**
 Author minimal CI workflow with `contents: read` permissions, concurrency grouping with `cancel-in-progress: true`, checking out `${{ github.event.pull_request.head.sha || github.sha }}`, invoking `python3 verification/run.py --lane candidate`, and uploading `artifacts/verification/`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `python3 -m unittest verification/selftests/test_ci.py -v`
 Expected: PASS with 1/1 tests passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add .github/workflows/ci.yml verification/selftests/test_ci.py
 git commit -m "ci: add GitHub Actions verification harness workflow and structural validator (TEST-CI-001)"
@@ -921,7 +921,7 @@ git commit -m "ci: add GitHub Actions verification harness workflow and structur
 - Consumes: All completed checks from Tasks 1–9.
 - Produces: Proposed check catalog (with `harness-selftests` invoking structured `test_adapter.py`) and bootstrap proposal manifest.
 
-- [ ] **Step 1: Write proposed `policies/checks.json` and `policies/bootstrap_proposal.json`**
+- [x] **Step 1: Write proposed `policies/checks.json` and `policies/bootstrap_proposal.json`**
 ```json
 // policies/checks.json
 {
@@ -963,23 +963,23 @@ git commit -m "ci: add GitHub Actions verification harness workflow and structur
 }
 ```
 
-- [ ] **Step 2: Run verification runner in Fast Lane against active checks**
+- [x] **Step 2: Run verification runner in Fast Lane against active checks**
 Run: `python3 verification/run.py --lane fast`
 Expected: PASS with 100% checks passing.
 
-- [ ] **Step 3: Commit the complete candidate working tree**
+- [x] **Step 3: Commit the complete candidate working tree**
 ```bash
 git add policies/checks.json policies/bootstrap_proposal.json
 git commit -m "feat(policy): propose initial checks.json and bootstrap proposal manifest"
 ```
 
-- [ ] **Step 4: Execute Candidate Verification Run on clean checkout**
+- [x] **Step 4: Execute Candidate Verification Run on clean checkout**
 Run: `python3 verification/run.py --lane candidate`
 Expected: PASS (Exit code 0, candidate report generated with tested HEAD SHA).
 
-- [ ] **Step 5: Run Independent Evidence Audit with expected policy context**
+- [x] **Step 5: Run Independent Evidence Audit with expected policy context**
 Run: `python3 verification/checks/evidence.py --audit-latest --require-candidate`
 Expected: PASS (Exit code 0, all cryptographic log hashes verified, verdict recomputed, status consistent).
 
-- [ ] **Step 6: Hand-off for Gate G4 Review**
+- [x] **Step 6: Hand-off for Gate G4 Review**
 Stop and present evidence report and policy digest to Product Owner and Lead Maintainer for formal review.

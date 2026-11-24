@@ -55,6 +55,11 @@ In accordance with Constitution Invariant `C-004` (Independent Test Oracles) and
 | `TEST-RUN-012` | Parent Exit With Surviving Descendants | Python parent creates background grandchild worker and immediately exits 0 | 0 | `PASS` | Runner detects process group `pgid = proc.pid`, waits for child, terminates remaining background group workers without hanging. |
 | `TEST-RUN-013` | SIGTERM-Resistant Child Escalation | Python script traps `SIGTERM` with `signal.signal(signal.SIGTERM, signal.SIG_IGN)` and sleeps | 1 | `FAIL` | Runner sends `SIGTERM`, detects process remains alive after 0.5s, sends `SIGKILL`, cleanly reaps process within bounded 2.0s cleanup. |
 | `TEST-RUN-014` | Large Output Buffer Handling | Python command generates 5MB of stdout data without deadlock | 0 | `PASS` | Output captured completely without pipe buffer deadlocks; byte size matches generated size bit-for-bit. |
+| `TEST-RUN-015` | Subprocess Group Cleanup Failure | Process group fails termination upon normal parent exit | 1 | `FAIL` | Runner records `cleanup_failed = True` and sets check status to `FAIL`; monotonic clock prevents time skips. |
+| `TEST-RUN-016` | Non-Existent Base Ref Rejection | `get_base_sha` called with unresolvable git reference | 2 | `ERROR` | Raises explicit `ValueError` rather than falling back to `0*40` or candidate HEAD SHA. |
+| `TEST-RUN-017` | Invalid HEAD Ref Rejection | `get_head_sha` called in non-git directory or uninitialized ref | 2 | `ERROR` | Raises explicit `ValueError` rather than falling back to `0*40` SHA. |
+| `TEST-RUN-018` | Dual Repo Working Directory Propagation | Multi-repository testbed verifying cwd context | 0 | `PASS` | Runner binds check execution directory to target repo path without cross-repository contamination. |
+| `TEST-RUN-019` | Candidate Unresolvable Base Ref Rejection | Candidate lane invoked with unresolvable `--base-ref` | 2 | `ERROR` | Runner aborts immediately with exit code 2: `"Could not resolve base SHA"`. |
 
 ---
 
@@ -74,6 +79,17 @@ In accordance with Constitution Invariant `C-004` (Independent Test Oracles) and
 | `TEST-EVI-010` | Forged PASS Verdict Rejection | Report declares `"verdict": "PASS"` but contains a check with `exit_code: 1` | 2 | `ERROR` | Auditor recomputes verdict from checks; detects discrepancy; aborts with `"Forged PASS verdict rejected"`. |
 | `TEST-EVI-011` | Inconsistent Status and Exit Code | Check result records `status: "PASS"` but `exit_code: 1` | 2 | `ERROR` | Auditor detects status/code mismatch; aborts with `"Inconsistent check status and exit code"`. |
 | `TEST-EVI-012` | Rejection of Mismatched External Policy Context | Candidate verification audit provided with mismatched `--expected-policy-sha256` | 2 | `ERROR` | Auditor detects policy hash mismatch against external expectation; aborts with `"Policy hash mismatch against expected context"`. |
+| `TEST-EVI-013` | Mandatory Candidate Context Enforcement | Candidate evidence audit invoked with missing context parameters | 1 | `FAIL` | Auditor fails closed if `expected_sha`, `expected_base_sha`, `expected_policy_sha256`, or `required_check_ids` missing. |
+| `TEST-EVI-014` | SHA and Digest Format Validation | Expected candidate SHA or policy digest not matching hex length/format | 1 | `FAIL` | Auditor fails closed with `"Invalid SHA format"` or `"Invalid SHA-256 digest format"`. |
+| `TEST-EVI-015` | Explicit Run ID Binding Verification | Evidence report audited with mismatched `--expected-run-id` | 1 | `FAIL` | Auditor aborts with `"Report run_id mismatch"`. |
+| `TEST-EVI-016` | Zero Executed Checks Rejection | Report contains empty `checks: []` array | 1 | `FAIL` | Auditor aborts with `"Report contains zero checks"`. |
+| `TEST-EVI-021` | Log Path Traversal Rejection | Report references log file containing `../` path traversal | 1 | `FAIL` | Auditor detects traversal escaping evidence directory; aborts with `"Log path traversal detected"`. |
+| `TEST-EVI-022` | Unsafe Symlink Log Rejection | Report references log file that is a symbolic link | 1 | `FAIL` | Auditor detects unsafe symlink reference; aborts with `"Unsafe symlink log reference detected"`. |
+| `TEST-EVI-023` | Cleanup Failed Flag Rejection | Report contains check with `cleanup_failed = True` | 1 | `FAIL` | Auditor rejects candidate gate evaluation; reports `"cleanup_failed=true"`. |
+| `TEST-EVI-024` | Unknown Check Status Rejection | Report contains check with unknown status like `UNKNOWN_STATUS` | 2 | `ERROR` | Schema and auditor reject unknown statuses outside `PASS`, `FAIL`, `ERROR`, `TIMEOUT`. |
+| `TEST-EVI-025` | Candidate Lane Non-PASS Verdict Rejection | Report has structurally valid FAIL verdict in candidate lane | 1 | `FAIL` | Candidate acceptance rejects candidate with `"Candidate acceptance rejected: verdict is FAIL"`. |
+| `TEST-EVI-026` | Test Suite Check Missing Test Summary | Approved check defined as `test_suite` lacks `test_summary` | 1 | `FAIL` | Auditor rejects with `"Missing required test_summary for test_suite check"`. |
+| `TEST-EVI-027` | Unexpected Unapproved Check ID Rejection | Report contains check ID not defined in approved policy | 1 | `FAIL` | Auditor aborts with `"Unexpected unapproved check ID in report"`. |
 
 ---
 
@@ -88,6 +104,11 @@ In accordance with Constitution Invariant `C-004` (Independent Test Oracles) and
 | `TEST-INV-005` | Test Suite With Assertion Failure | Test suite with 1 `self.assertEqual(1, 2)` failure | 1 | `FAIL` | Adapter records `failures: 1, total: 1`; exit code 1; status `FAIL`. |
 | `TEST-INV-006` | Test Suite With Runtime Error | Test suite with 1 test raising `ZeroDivisionError` | 1 | `FAIL` | Adapter records `errors: 1, total: 1`; exit code 1; status `FAIL`. |
 | `TEST-INV-007` | Malformed Test Summary Report | Test check emits unparseable non-JSON summary | 2 | `ERROR` | Check wrapper fails to parse structured summary; records status `ERROR`, exit code 2. |
+| `TEST-INV-008` | Unapproved Expected Failures | Test suite summary with `expected_failures: 1` when `allow_expected_failures=False` | 1 | `FAIL` | Adapter records `expected_failures = 1`; check status marked `FAIL` with diagnostic `"Unapproved expected failures"`. |
+| `TEST-INV-009` | Unexpected Successes Detection | Test suite summary with `unexpected_successes: 1` | 1 | `FAIL` | Adapter records `unexpected_successes = 1`; check status marked `FAIL` with diagnostic `"Unexpected successes"`. |
+| `TEST-INV-010` | Inconsistent Execution Counts | Test summary where `total != sum(passed + failures + errors + skipped + ...)` | 1 | `FAIL` | Integrity validator fails with diagnostic `"Inconsistent execution counts"`. |
+| `TEST-INV-011` | Exit Code Contradiction Rejection | Report with exit code 0 and failures > 0, or exit code 1 with all passed | 1 | `FAIL` | Integrity validator fails with diagnostic `"Exit-code contradiction"`. |
+| `TEST-INV-012` | Structured CLI Discover Invocation | `python3 verification/checks/test_adapter.py --discover ...` CLI invocation | 0 | `PASS` | Adapter executes discovered tests, emits `TEST_SUMMARY_JSON:`, and exits with code 0. |
 
 ---
 
@@ -109,9 +130,11 @@ To prove that verification checks actively detect defects rather than behaving a
 
 | Test ID | Scenario Description | Test Fixture / Input | Expected Exit Code | Expected Verdict / Status | Independent Test Oracle Assertion |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `TEST-CI-001` | CI Workflow Structural Validation & Least Privilege | `.github/workflows/ci.yml` file content | 0 | `PASS` | Structured PyYAML parser asserts: top-level triggers, permissions dict strictly equals `{'contents': 'read'}`, concurrency group configured with `cancel-in-progress: true`, candidate checkout ref pins candidate SHA, runner invoked with `--lane candidate`, and artifact upload step present. Records disclaimer that remote CI execution remains unexecuted until run on GitHub Actions. |
+| `TEST-CI-001` | CI Workflow Structural Validation & Least Privilege | `.github/workflows/ci.yml` file content | 0 | `PASS` | Structured PyYAML parser asserts: top-level triggers, permissions dict strictly equals `{'contents': 'read'}`, concurrency group configured with `cancel-in-progress: true`, candidate checkout ref pins candidate SHA, runner invoked with `--lane candidate`, explicit evidence audit step present and asserting candidate context, no continue-on-error, no exit code suppression, and artifact upload step present with `if: always()`. |
 | `TEST-DEF-001` | Defect Registry Schema Conformance & Provenance | `verification/defects.jsonl` lines | 0 | `PASS` | All 13 mandatory schema fields present, valid UUIDs, valid severity levels, unexecuted RED/GREEN fields are null, and provenance type is valid enum. |
 | `TEST-ANTI-001` | Anti-Pattern Rule Schema & Dual-Sample Verification | `verification/antipatterns.json` entries | 0 | `PASS` | Evaluates each rule against its `positive_test_sample` (must match) and `negative_mutation_sample` (must NOT match); verifies rules with status `APPROVED_ACTIVE` have test coverage. |
+| `TEST-SPEC-001` | Cross-Specification ID Collision Detection | Multi-spec directory testbed with colliding REQ or AC IDs | 1 | `FAIL` | Validator detects duplicate requirement ID or AC ID across specs; aborts with `"Duplicate requirement ID"` or `"Duplicate acceptance criteria ID"`. |
+| `TEST-SPEC-002` | Markdown Link Root Escape Traversal Guard | Markdown document with link resolving outside repository root | 1 | `FAIL` | Validator detects link traversal escaping root; aborts with `"Referenced path escapes repository root"`. |
 
 ---
 

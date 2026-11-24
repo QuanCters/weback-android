@@ -1,0 +1,10 @@
+{
+  "checks": [
+    {
+      "id": "bad",
+      "argv": "not_an_array",
+      "required": true,
+      "timeout_seconds": -1
+    }
+  ]
+}
