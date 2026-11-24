@@ -88,6 +88,11 @@ In accordance with Constitution Invariant `C-004` (Independent Test Oracles) and
 | `TEST-INV-005` | Test Suite With Assertion Failure | Test suite with 1 `self.assertEqual(1, 2)` failure | 1 | `FAIL` | Adapter records `failures: 1, total: 1`; exit code 1; status `FAIL`. |
 | `TEST-INV-006` | Test Suite With Runtime Error | Test suite with 1 test raising `ZeroDivisionError` | 1 | `FAIL` | Adapter records `errors: 1, total: 1`; exit code 1; status `FAIL`. |
 | `TEST-INV-007` | Malformed Test Summary Report | Test check emits unparseable non-JSON summary | 2 | `ERROR` | Check wrapper fails to parse structured summary; records status `ERROR`, exit code 2. |
+| `TEST-INV-008` | Unapproved Expected Failures | Test suite summary with `expected_failures: 1` when `allow_expected_failures=False` | 1 | `FAIL` | Adapter records `expected_failures = 1`; check status marked `FAIL` with diagnostic `"Unapproved expected failures"`. |
+| `TEST-INV-009` | Unexpected Successes Detection | Test suite summary with `unexpected_successes: 1` | 1 | `FAIL` | Adapter records `unexpected_successes = 1`; check status marked `FAIL` with diagnostic `"Unexpected successes"`. |
+| `TEST-INV-010` | Inconsistent Execution Counts | Test summary where `total != sum(passed + failures + errors + skipped + ...)` | 1 | `FAIL` | Integrity validator fails with diagnostic `"Inconsistent execution counts"`. |
+| `TEST-INV-011` | Exit Code Contradiction Rejection | Report with exit code 0 and failures > 0, or exit code 1 with all passed | 1 | `FAIL` | Integrity validator fails with diagnostic `"Exit-code contradiction"`. |
+| `TEST-INV-012` | Structured CLI Discover Invocation | `python3 verification/checks/test_adapter.py --discover ...` CLI invocation | 0 | `PASS` | Adapter executes discovered tests, emits `TEST_SUMMARY_JSON:`, and exits with code 0. |
 
 ---
 

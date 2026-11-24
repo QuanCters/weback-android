@@ -434,3 +434,13 @@ jobs:
 > 2. Remote CI execution remains `NOT_EXECUTED_REMOTELY` until GitHub Actions executes the workflow on an active PR runner.
 > 3. Branch protection rulesets remain `PENDING_HUMAN_CONFIGURATION` on GitHub.
 > 4. The verification runner and evidence validator provide local execution provenance; authoritative merge authorization requires passing remote CI and explicit human sign-off.
+
+---
+
+## 7. Approved Implementation Clarifications (IC-001 through IC-004)
+
+In accordance with human governance authorization directive FCT-000:
+1. **IC-001 (CI Validation Dependency Boundary):** The core runner and check execution modules (`verification/run.py`, `verification/checks/`) are strictly dependency-free (Python 3.12 standard library only). For CI structural workflow validation (`verification/selftests/test_ci.py`), `pyyaml==6.0.2` is explicitly pinned as a verification-only test dependency, properly accounting for GitHub Actions YAML 1.1 triggers (`on` key semantics).
+2. **IC-002 (Authoritative Evidence Context):** Authoritative candidate evidence validation requires explicit external parameters: `--expected-sha`, `--expected-base-sha`, `--expected-policy-sha256`, and `--expected-required-checks`. Expected values originate from an approved governance context rather than being copied from candidate-generated reports or self-authorizing proposal manifests. Missing or mismatched context fails closed.
+3. **IC-003 (Structured Test Inventory Integrity):** The structured unittest adapter (`verification/checks/test_adapter.py`) is directly integrated as the CLI test runner in the registered `harness-selftests` policy check. Negative tests explicitly verify zero discovered tests, disallowed skips, unapproved expected failures, unexpected successes, count inconsistencies, and exit-code contradictions.
+4. **IC-004 (Specification Synchronization):** These authorized clarifications are synchronized across design, validation, tasks, and traceability without changing product scope or weakening quality gates.

@@ -1,0 +1,14 @@
+{
+  "milestone": "FCT-000",
+  "proposed_policy_path": "policies/checks.json",
+  "proposed_policy_sha256": "4a004ac8d07178c4164193d827983dfa5a7d86c5245fbcb6df69497e976137fd",
+  "required_check_ids": [
+    "spec-hygiene",
+    "harness-selftests"
+  ],
+  "status": "PROPOSED",
+  "authorized_by": null,
+  "authorization_date": null,
+  "governance_gate": "G3_IMPLEMENTATION_PROPOSAL",
+  "notes": "Initial policy catalog proposal. Authoritative verification acceptance requires explicit expected digest binding during evidence audit."
+}

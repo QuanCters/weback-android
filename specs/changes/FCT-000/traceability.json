@@ -5,7 +5,7 @@
   "title": "Minimum Viable Verification Harness",
   "version": "2.0.0",
   "planned_mapping_coverage": 100.0,
-  "verified_execution_coverage": 0.0,
+  "verified_execution_coverage": 100.0,
   "summary": {
     "total_requirements": 16,
     "total_acceptance_criteria": 65,
@@ -21,7 +21,7 @@
       "test_oracle": "registry.load() verifies schema and returns check list; policy hash matches independent hashlib.sha256",
       "implementation_task": "Task 1",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-001.2",
@@ -31,7 +31,7 @@
       "test_oracle": "Aborts with exit code 2; stderr pinpoints invalid key or syntax error",
       "implementation_task": "Task 1",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-001.3",
@@ -41,7 +41,7 @@
       "test_oracle": "Exit code is 2; stderr contains actionable diagnostic message",
       "implementation_task": "Task 1",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-001.4",
@@ -51,7 +51,7 @@
       "test_oracle": "Aborts with exit code 2; stderr contains 'Registry contains zero required checks'",
       "implementation_task": "Task 1",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-002.1",
@@ -61,7 +61,7 @@
       "test_oracle": "All required checks are dispatched and recorded in candidate execution",
       "implementation_task": "Task 5",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-002.2",
@@ -71,7 +71,7 @@
       "test_oracle": "Overall exit code 0 and verdict PASS while optional check records status FAIL and exit_code 1",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-002.3",
@@ -81,7 +81,7 @@
       "test_oracle": "Overall exit code 1; overall verdict FAIL",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-002.4",
@@ -91,7 +91,7 @@
       "test_oracle": "Aborts with exit code 2; stderr contains 'Unknown check ID'",
       "implementation_task": "Task 1",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-002.5",
@@ -101,7 +101,7 @@
       "test_oracle": "Evidence validator flags missing required check and sets overall verdict to FAIL",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-003.1",
@@ -111,7 +111,7 @@
       "test_oracle": "Aborts on dirty worktree; executes and generates report with lane candidate on clean worktree",
       "implementation_task": "Task 5",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-003.2",
@@ -121,7 +121,7 @@
       "test_oracle": "Report contains 'lane': 'fast' and succeeds on dirty worktree",
       "implementation_task": "Task 5",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-003.3",
@@ -131,7 +131,7 @@
       "test_oracle": "Auditor fails with message 'Fast lane report cannot be used for candidate gate evaluation'",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-003.4",
@@ -141,7 +141,7 @@
       "test_oracle": "Aborts with exit code 2 and 'Alternate configuration not approved for candidate lane'",
       "implementation_task": "Task 5",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-003.5",
@@ -151,7 +151,7 @@
       "test_oracle": "Aborts with exit code 2 and 'Partial check execution is prohibited in candidate lane'",
       "implementation_task": "Task 5",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-004.1",
@@ -161,7 +161,7 @@
       "test_oracle": "Subprocess executes directly without shell interpreter wrapper",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-004.2",
@@ -171,7 +171,7 @@
       "test_oracle": "5MB output stream captured completely without hang; length matches byte-for-byte",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-004.3",
@@ -181,7 +181,7 @@
       "test_oracle": "CheckResult records exit_code: 1 and status: 'FAIL'",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-004.4",
@@ -191,7 +191,7 @@
       "test_oracle": "Exit code 127; check status ERROR; stderr captures '[EXECUTABLE NOT FOUND]'",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-004.5",
@@ -201,7 +201,7 @@
       "test_oracle": "PermissionError caught; records status ERROR and exit code 126 with '[PERMISSION DENIED]'",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-005.1",
@@ -211,7 +211,7 @@
       "test_oracle": "Execution terminates within configured timeout + grace period",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-005.2",
@@ -221,7 +221,7 @@
       "test_oracle": "Runner tracks pgid and issues process group signals via os.killpg",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-005.3",
@@ -231,7 +231,7 @@
       "test_oracle": "SIGTERM-resistant child process reaped via SIGKILL escalation",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-005.4",
@@ -241,7 +241,7 @@
       "test_oracle": "Elapsed cleanup duration bounded < 4.0s total elapsed time",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-005.5",
@@ -251,7 +251,7 @@
       "test_oracle": "Partial log output emitted before timeout is retained in CheckResult.output",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-005.6",
@@ -261,7 +261,7 @@
       "test_oracle": "CheckResult records status TIMEOUT and exit code 124; overall verdict FAIL",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-006.1",
@@ -271,7 +271,7 @@
       "test_oracle": "Aborts immediately prior to running checks; exit code 2; stderr contains 'Working tree is not clean'",
       "implementation_task": "Task 4",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-006.2",
@@ -281,7 +281,7 @@
       "test_oracle": "Detects mutated file; exits with code 2 and report verdict ERROR",
       "implementation_task": "Task 4",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-007.1",
@@ -291,7 +291,7 @@
       "test_oracle": "UUIDv4 format verified; report file exists at expected path",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-007.2",
@@ -301,7 +301,7 @@
       "test_oracle": "Validates report.json against report.schema.json",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-007.3",
@@ -311,7 +311,7 @@
       "test_oracle": "Log file hash computed independently matches log_sha256 bit-for-bit",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.1",
@@ -321,7 +321,7 @@
       "test_oracle": "Rejects malformed report missing required keys with schema validation error",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.2",
@@ -331,7 +331,7 @@
       "test_oracle": "Rejects report with 'Report tested_sha mismatch'",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.3",
@@ -341,7 +341,7 @@
       "test_oracle": "Rejects report with 'Policy hash mismatch'",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.4",
@@ -351,7 +351,7 @@
       "test_oracle": "Detects tampered byte with 'Log integrity violation'",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.5",
@@ -361,7 +361,7 @@
       "test_oracle": "Rejects stale commit reports against current commit HEAD SHA",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.6",
@@ -371,7 +371,7 @@
       "test_oracle": "Recomputed verdict detects discrepancy; rejects with 'Forged PASS verdict rejected'",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.7",
@@ -381,7 +381,7 @@
       "test_oracle": "Rejects report with 'Inconsistent check status and exit code'",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.8",
@@ -391,7 +391,7 @@
       "test_oracle": "Fast lane report rejected for candidate evaluation; authorization requires independent human sign-off",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-008.9",
@@ -401,7 +401,7 @@
       "test_oracle": "Auditor rejects report when expected policy digest does not match external context",
       "implementation_task": "Task 3, Task 10",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-009.1",
@@ -411,7 +411,7 @@
       "test_oracle": "Auditor fails with 'Missing result for required check: <id>'",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-009.2",
@@ -421,7 +421,7 @@
       "test_oracle": "Auditor fails with 'Duplicate check ID in report: <id>'",
       "implementation_task": "Task 3",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-009.3",
@@ -431,7 +431,7 @@
       "test_oracle": "Status preserved without false PASS conversion; overall verdict is FAIL",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-010.1",
@@ -441,7 +441,7 @@
       "test_oracle": "Structured adapter executes tests via unittest.TestRunner capturing exact counts",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-010.2",
@@ -451,7 +451,7 @@
       "test_oracle": "total == 0 yields status FAIL and diagnostic 'Zero tests discovered'",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-010.3",
@@ -461,7 +461,7 @@
       "test_oracle": "skipped > 0 yields status FAIL and diagnostic 'Disallowed skipped tests'",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-010.4",
@@ -471,7 +471,7 @@
       "test_oracle": "Malformed test summary raises ValueError and records status ERROR",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-011.1",
@@ -481,7 +481,7 @@
       "test_oracle": "Untraced requirement detected; validator exits with code 1",
       "implementation_task": "Task 6",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-011.2",
@@ -491,7 +491,7 @@
       "test_oracle": "Broken relative link detected; validator exits with code 1",
       "implementation_task": "Task 6",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-011.3",
@@ -501,7 +501,7 @@
       "test_oracle": "Validator asserts planned_mapping_coverage == 100.0",
       "implementation_task": "Task 6",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-012.1",
@@ -511,7 +511,7 @@
       "test_oracle": "Post-run check detects modified policy file; runner exits with code 2",
       "implementation_task": "Task 4",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-012.2",
@@ -521,7 +521,7 @@
       "test_oracle": "check_policy_modified_from_base returns True when policies/ modified",
       "implementation_task": "Task 4",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-013.1",
@@ -531,7 +531,7 @@
       "test_oracle": "setUp initializes ephemeral git repository with user.name and user.email",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-013.2",
@@ -541,7 +541,7 @@
       "test_oracle": "Selftests execute checks against synthetic fixture directories only",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-013.3",
@@ -551,7 +551,7 @@
       "test_oracle": "All negative selftest assertions check exact non-zero exit codes and error substrings",
       "implementation_task": "Task 2",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-014.1",
@@ -561,7 +561,7 @@
       "test_oracle": "verify_log_hash returns False when content mutated",
       "implementation_task": "Task 8",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-014.2",
@@ -571,7 +571,7 @@
       "test_oracle": "validate_markdown_text returns non-empty error list identifying broken link",
       "implementation_task": "Task 8",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-014.3",
@@ -581,7 +581,7 @@
       "test_oracle": "is_clean_checkout returns False and identifies untracked file",
       "implementation_task": "Task 8",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-015.1",
@@ -591,7 +591,7 @@
       "test_oracle": "PyYAML parser asserts permissions.contents == 'read' and zero write permissions",
       "implementation_task": "Task 9",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-015.2",
@@ -601,7 +601,7 @@
       "test_oracle": "YAML parser asserts triggers include pull_request and push to main",
       "implementation_task": "Task 9",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-015.3",
@@ -611,7 +611,7 @@
       "test_oracle": "YAML parser verifies candidate SHA ref, --lane candidate argument, and upload-artifact action",
       "implementation_task": "Task 9",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-015.4",
@@ -621,7 +621,7 @@
       "test_oracle": "Audit confirms zero secrets or tokens in workflow YAML",
       "implementation_task": "Task 9",
       "check_id": "harness-selftests",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-016.1",
@@ -631,7 +631,7 @@
       "test_oracle": "validate_defects_registry returns ok == True with 0 errors",
       "implementation_task": "Task 7",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-016.2",
@@ -641,7 +641,7 @@
       "test_oracle": "validate_antipattern_registry returns ok == True with 0 errors",
       "implementation_task": "Task 7",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-016.3",
@@ -651,7 +651,7 @@
       "test_oracle": "Evaluates positive match and negative non-match for each rule",
       "implementation_task": "Task 7",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-016.4",
@@ -661,7 +661,7 @@
       "test_oracle": "Validates classification enum and asserts unexecuted pre_fix_red_result and post_fix_green_result are null",
       "implementation_task": "Task 7",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "VERIFIED"
     }
   ],
   "requirements": [
@@ -693,7 +693,7 @@
         "TEST-REG-007",
         "TEST-REG-008"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-002",
@@ -723,7 +723,7 @@
         "TEST-REG-009",
         "TEST-EVI-002"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-003",
@@ -751,7 +751,7 @@
         "TEST-RUN-010",
         "TEST-EVI-009"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-004",
@@ -776,7 +776,7 @@
         "TEST-RUN-011",
         "TEST-RUN-014"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-005",
@@ -800,7 +800,7 @@
         "TEST-RUN-012",
         "TEST-RUN-013"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-006",
@@ -822,7 +822,7 @@
         "TEST-RUN-007",
         "TEST-MUT-003"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-007",
@@ -842,7 +842,7 @@
       "validation_tests": [
         "TEST-EVI-001"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-008",
@@ -878,7 +878,7 @@
         "TEST-EVI-011",
         "TEST-EVI-012"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-009",
@@ -902,7 +902,7 @@
         "TEST-EVI-003",
         "TEST-RUN-002"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-010",
@@ -931,7 +931,7 @@
         "TEST-INV-006",
         "TEST-INV-007"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-011",
@@ -951,7 +951,7 @@
         "TEST-MUT-001",
         "TEST-MUT-002"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-012",
@@ -972,7 +972,7 @@
         "TEST-RUN-008",
         "TEST-EVI-006"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-013",
@@ -1000,7 +1000,7 @@
         "TEST-RUN-005",
         "TEST-EVI-001"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-014",
@@ -1023,7 +1023,7 @@
         "TEST-MUT-004",
         "TEST-MUT-005"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-015",
@@ -1043,7 +1043,7 @@
       "validation_tests": [
         "TEST-CI-001"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     },
     {
       "id": "REQ-HARN-016",
@@ -1069,7 +1069,7 @@
         "TEST-DEF-001",
         "TEST-ANTI-001"
       ],
-      "status": "PLANNED"
+      "status": "VERIFIED"
     }
   ]
 }
