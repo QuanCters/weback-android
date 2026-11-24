@@ -1,0 +1,16 @@
+{
+  "checks": [
+    {
+      "id": "dup",
+      "argv": ["python3"],
+      "required": true,
+      "timeout_seconds": 5
+    },
+    {
+      "id": "dup",
+      "argv": ["python3"],
+      "required": false,
+      "timeout_seconds": 5
+    }
+  ]
+}

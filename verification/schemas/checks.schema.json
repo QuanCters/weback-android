@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CheckRegistry",
+  "description": "Schema for verification checks registry policies/checks.json",
+  "type": "object",
+  "required": ["checks"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer" },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "argv", "required", "timeout_seconds"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "argv": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          },
+          "required": { "type": "boolean" },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": ["command", "test_suite"]
+          },
+          "description": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
