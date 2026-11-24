@@ -229,6 +229,75 @@ def validate_report_schema_dict(data: dict) -> list[str]:
 
     return errors
 
+def resolve_transition_context(
+    expected_sha: Optional[str],
+    expected_base_sha: Optional[str],
+    expected_policy_sha256: Optional[str],
+    required_check_ids: Optional[list[str]],
+    policy_path: Optional[Path],
+    transition_auth: Optional[dict]
+) -> tuple[Optional[str], Optional[list[str]], Optional[Path], set[str], list[str]]:
+    """
+    Evaluates the controlled policy transition state machine.
+    Returns: (effective_policy_sha256, effective_required_checks, effective_policy_path, retired_policy_hashes, errors)
+    """
+    errors: list[str] = []
+    if not transition_auth:
+        return expected_policy_sha256, required_check_ids, policy_path, set(), errors
+
+    if not isinstance(transition_auth, dict):
+        return expected_policy_sha256, required_check_ids, policy_path, set(), ["Invalid transition_auth: must be an object"]
+
+    req_keys = ["candidate_sha", "base_sha", "canonical_policy_sha256", "required_checks"]
+    for k in req_keys:
+        if k not in transition_auth:
+            errors.append(f"Missing required transition_auth property: '{k}'")
+    if errors:
+        return expected_policy_sha256, required_check_ids, policy_path, set(), errors
+
+    auth_cand = transition_auth.get("candidate_sha")
+    auth_base = transition_auth.get("base_sha")
+    auth_policy_sha = transition_auth.get("canonical_policy_sha256")
+    auth_reqs = transition_auth.get("required_checks")
+    auth_policy_path = transition_auth.get("policy_path")
+    retired = set(transition_auth.get("retired_policies", []))
+
+    if not isinstance(auth_cand, str) or not HEX_SHA40_RE.match(auth_cand):
+        errors.append(f"Invalid candidate_sha format in transition_auth: '{auth_cand}'")
+    if not isinstance(auth_base, str) or not HEX_SHA40_RE.match(auth_base):
+        errors.append(f"Invalid base_sha format in transition_auth: '{auth_base}'")
+    if not isinstance(auth_policy_sha, str) or not HEX_SHA256_RE.match(auth_policy_sha):
+        errors.append(f"Invalid canonical_policy_sha256 format in transition_auth: '{auth_policy_sha}'")
+    if not isinstance(auth_reqs, list) or len(auth_reqs) == 0:
+        errors.append("required_checks in transition_auth must be a non-empty list of check IDs")
+    else:
+        # Mandatory checks preservation: transition cannot drop existing mandatory baseline checks
+        if required_check_ids:
+            missing_mandatory = set(required_check_ids) - set(auth_reqs)
+            if missing_mandatory:
+                errors.append(f"Transition policy removes mandatory baseline checks: {sorted(missing_mandatory)}")
+
+    if errors:
+        return expected_policy_sha256, required_check_ids, policy_path, set(), errors
+
+    # Strict candidate and base SHA matching against authorized transition tuple
+    if expected_sha != auth_cand:
+        errors.append(
+            f"Candidate SHA does not match authorized transition candidate: "
+            f"expected '{auth_cand}', got '{expected_sha}'"
+        )
+    if expected_base_sha != auth_base:
+        errors.append(
+            f"Base SHA does not match authorized transition target base: "
+            f"expected '{auth_base}', got '{expected_base_sha}'"
+        )
+
+    if errors:
+        return expected_policy_sha256, required_check_ids, policy_path, set(), errors
+
+    target_path = Path(auth_policy_path) if auth_policy_path else policy_path
+    return auth_policy_sha, auth_reqs, target_path, retired, []
+
 def verify_evidence_report(
     report_path: Path,
     expected_sha: Optional[str] = None,
@@ -238,7 +307,8 @@ def verify_evidence_report(
     require_candidate: bool = False,
     expected_run_id: Optional[str] = None,
     approved_checks: Optional[dict[str, dict]] = None,
-    policy_path: Optional[Path] = None
+    policy_path: Optional[Path] = None,
+    transition_auth: Optional[dict] = None
 ) -> tuple[bool, list[str]]:
     """
     Independent Evidence Auditor.
@@ -247,6 +317,29 @@ def verify_evidence_report(
     and recomputed verdict.
     """
     errors: list[str] = []
+
+    # Controlled Policy Transition evaluation
+    effective_policy_sha256 = expected_policy_sha256
+    effective_required_ids = required_check_ids
+    effective_policy_path = policy_path
+    retired_policy_hashes: set[str] = set()
+
+    if transition_auth:
+        t_sha, t_reqs, t_path, t_retired, t_errs = resolve_transition_context(
+            expected_sha=expected_sha,
+            expected_base_sha=expected_base_sha,
+            expected_policy_sha256=expected_policy_sha256,
+            required_check_ids=required_check_ids,
+            policy_path=policy_path,
+            transition_auth=transition_auth
+        )
+        if t_errs:
+            errors.extend(t_errs)
+        else:
+            effective_policy_sha256 = t_sha
+            effective_required_ids = t_reqs
+            effective_policy_path = t_path
+            retired_policy_hashes = t_retired
 
     # 1. Authoritative candidate validation requirements
     if require_candidate:
@@ -260,22 +353,22 @@ def verify_evidence_report(
         elif not HEX_SHA40_RE.match(expected_base_sha):
             errors.append(f"Invalid SHA format for expected_base_sha: '{expected_base_sha}'")
 
-        if not expected_policy_sha256:
+        if not effective_policy_sha256:
             errors.append("Missing required context: expected_policy_sha256")
-        elif not HEX_SHA256_RE.match(expected_policy_sha256):
-            errors.append(f"Invalid SHA-256 digest format for expected_policy_sha256: '{expected_policy_sha256}'")
+        elif not HEX_SHA256_RE.match(effective_policy_sha256):
+            errors.append(f"Invalid SHA-256 digest format for expected_policy_sha256: '{effective_policy_sha256}'")
 
-        if not required_check_ids or len(required_check_ids) == 0:
+        if not effective_required_ids or len(effective_required_ids) == 0:
             errors.append("Missing required context: required_check_ids (must be a non-empty list of check IDs)")
 
-        if policy_path is None and approved_checks is None:
+        if effective_policy_path is None and approved_checks is None:
             errors.append("Missing required approved policy definitions in candidate mode")
 
     # 2. Policy resolution if provided
     loaded_approved = None
     p_checks = None
-    if policy_path:
-        p_checks, p_errs = load_approved_checks_from_policy(policy_path, expected_policy_sha256)
+    if effective_policy_path:
+        p_checks, p_errs = load_approved_checks_from_policy(effective_policy_path, effective_policy_sha256)
         if p_errs:
             errors.extend(p_errs)
         else:
@@ -288,9 +381,9 @@ def verify_evidence_report(
             loaded_approved = dict(approved_checks)
 
     # In candidate mode, verify expected required checks set matches approved policy required checks exactly
-    if require_candidate and loaded_approved and required_check_ids:
+    if require_candidate and loaded_approved and effective_required_ids:
         approved_required = {cid for cid, defn in loaded_approved.items() if defn.get("required")}
-        expected_set = set(required_check_ids)
+        expected_set = set(effective_required_ids)
         if expected_set != approved_required:
             errors.append(f"Expected required checks set does not match approved policy required checks (expected: {sorted(expected_set)}, approved: {sorted(approved_required)})")
 
@@ -323,10 +416,12 @@ def verify_evidence_report(
     if expected_base_sha and base_sha != expected_base_sha:
         errors.append(f"Report base_sha mismatch: expected {expected_base_sha}, found {base_sha}")
 
-    # 7. Policy SHA-256 digest equality
+    # 7. Policy SHA-256 digest equality & retirement check
     policy_sha = data.get("policy_sha256")
-    if expected_policy_sha256 and policy_sha != expected_policy_sha256:
-        errors.append(f"Policy hash mismatch against expected context: expected {expected_policy_sha256}, found {policy_sha}")
+    if policy_sha and policy_sha.lower() in {h.lower() for h in retired_policy_hashes}:
+        errors.append(f"Report references retired policy digest: {policy_sha}. Selecting retired or weaker policies is prohibited.")
+    elif effective_policy_sha256 and policy_sha != effective_policy_sha256:
+        errors.append(f"Policy hash mismatch against expected context: expected {effective_policy_sha256}, found {policy_sha}")
 
     # 8. Run ID equality if specified
     run_id = data.get("run_id")
@@ -418,8 +513,8 @@ def verify_evidence_report(
                 errors.append(f"Test summary integrity violation in check '{cid}': {te}")
 
     # 11. Required checks presence
-    if required_check_ids:
-        for req_id in required_check_ids:
+    if effective_required_ids:
+        for req_id in effective_required_ids:
             if req_id not in seen_ids:
                 errors.append(f"Missing result for required check: {req_id}")
 
@@ -427,7 +522,7 @@ def verify_evidence_report(
     if require_candidate:
         for c in checks:
             cid = c.get("id")
-            is_req = (cid in required_check_ids) if required_check_ids else True
+            is_req = (cid in effective_required_ids) if effective_required_ids else True
             if is_req:
                 c_status = c.get("status")
                 if c_status != "PASS":
@@ -436,7 +531,7 @@ def verify_evidence_report(
     # 12. Recomputed verdict vs recorded verdict
     declared_verdict = data.get("verdict")
     recomputed = "PASS"
-    req_set = set(required_check_ids) if required_check_ids else seen_ids
+    req_set = set(effective_required_ids) if effective_required_ids else seen_ids
 
     for c in checks:
         cid = c.get("id")
@@ -468,6 +563,8 @@ def main():
     parser.add_argument("--expected-required-checks", nargs="*", default=None, help="Expected required check IDs")
     parser.add_argument("--expected-run-id", type=str, default=None, help="Expected run ID")
     parser.add_argument("--policy", type=str, default=None, help="Path to approved checks policy JSON")
+    parser.add_argument("--transition-auth", type=str, default=None, help="JSON string or file path for authorized policy transition grant")
+    parser.add_argument("--transition-auth-file", type=str, default=None, help="Path to JSON file containing authorized policy transition grant")
     args = parser.parse_args()
 
     # Reject unanchored --audit-latest in candidate mode without explicit expected run id
@@ -493,6 +590,43 @@ def main():
         print("Error: No valid report file specified or found.", file=sys.stderr)
         sys.exit(2)
 
+    # Parse transition authorization if supplied
+    transition_auth_data = None
+    raw_auth = args.transition_auth
+    auth_file = args.transition_auth_file
+    if auth_file:
+        p = Path(auth_file)
+        if not p.is_file():
+            print(f"Error: Transition auth file not found: {auth_file}", file=sys.stderr)
+            sys.exit(2)
+        try:
+            transition_auth_data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"Error: Failed to parse transition auth JSON from file {auth_file}: {e}", file=sys.stderr)
+            sys.exit(2)
+    elif raw_auth:
+        p = Path(raw_auth)
+        if p.is_file():
+            try:
+                transition_auth_data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception as e:
+                print(f"Error: Failed to parse transition auth JSON from file {raw_auth}: {e}", file=sys.stderr)
+                sys.exit(2)
+        else:
+            try:
+                transition_auth_data = json.loads(raw_auth)
+            except Exception as e:
+                print(f"Error: Failed to parse transition auth JSON string: {e}", file=sys.stderr)
+                sys.exit(2)
+    elif os.environ.get("TRANSITION_AUTHORIZATION"):
+        env_auth = os.environ.get("TRANSITION_AUTHORIZATION", "").strip()
+        if env_auth:
+            try:
+                transition_auth_data = json.loads(env_auth)
+            except Exception as e:
+                print(f"Error: Failed to parse TRANSITION_AUTHORIZATION environment JSON: {e}", file=sys.stderr)
+                sys.exit(2)
+
     policy_p = Path(args.policy) if args.policy else None
 
     ok, errors = verify_evidence_report(
@@ -503,7 +637,8 @@ def main():
         required_check_ids=args.expected_required_checks,
         require_candidate=args.require_candidate,
         expected_run_id=args.expected_run_id,
-        policy_path=policy_p
+        policy_path=policy_p,
+        transition_auth=transition_auth_data
     )
 
     if not ok:

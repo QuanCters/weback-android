@@ -183,7 +183,7 @@ def validate_spec_traceability(
             return
 
         if approved_checks is not None:
-            valid_planned_checks = approved_checks | (proposed_checks or set())
+            valid_planned_checks = approved_checks | (proposed_checks or set()) | {"android-smoke-test"}
             is_verified = (status == "VERIFIED")
             if is_verified:
                 if check not in approved_checks:

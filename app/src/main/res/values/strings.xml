@@ -3,7 +3,6 @@
     <string name="app_name">WeBack Robot Control</string>
     <string name="app_version">v0.1.0-alpha (FCT-001 Foundation)</string>
     <string name="simulator_badge">Simulator Mode (Offline)</string>
-    <string name="robot_name">WeBack Simulator Robot</string>
     <string name="telemetry_title">Robot Telemetry</string>
     <string name="telemetry_battery">Battery</string>
     <string name="telemetry_status">Status</string>

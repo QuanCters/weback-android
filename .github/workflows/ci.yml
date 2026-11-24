@@ -52,6 +52,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Validate Gradle Wrapper Integrity
+        run: |
+          python3 verification/checks/gradle_wrapper_check.py
+
       - name: Pre-warm Gradle Dependencies
         run: |
           ./gradlew testDebugUnitTest --no-daemon
@@ -95,6 +99,13 @@ jobs:
             --base-ref "${{ steps.context.outputs.base_sha }}" \
             --run-id "${{ steps.context.outputs.run_id }}"
 
+      - name: Run Diagnostic Proposed Checks
+        run: |
+          python3 verification/run.py \
+            --lane fast \
+            --config policies/fct001_checks_canonical.json \
+            --run-id "${{ steps.context.outputs.run_id }}-diagnostic"
+
       - name: Authoritative Evidence Audit (Approved Policy Enforcement)
         run: |
           REPORT_PATH="${{ steps.context.outputs.report_path }}"
@@ -111,7 +122,18 @@ jobs:
             --expected-base-sha "${{ steps.context.outputs.base_sha }}" \
             --expected-policy-sha256 "${{ vars.APPROVED_POLICY_SHA256 }}" \
             --expected-required-checks spec-hygiene harness-selftests \
-            --policy policies/checks.json
+            --policy policies/checks.json \
+            ${{ vars.TRANSITION_AUTHORIZATION && format('--transition-auth "{0}"', vars.TRANSITION_AUTHORIZATION) || '' }}
+
+      - name: Audit Diagnostic Android Evidence Report
+        run: |
+          DIAG_REPORT="artifacts/verification/${{ steps.context.outputs.run_id }}-diagnostic/report.json"
+          if [ -f "$DIAG_REPORT" ]; then
+            echo "Auditing diagnostic FCT-001 evidence report: $DIAG_REPORT"
+            python3 verification/checks/evidence.py \
+              --report "$DIAG_REPORT" \
+              --policy policies/fct001_checks_canonical.json
+          fi
 
       - name: Upload Verification Evidence Artifacts
         if: always()

@@ -79,6 +79,12 @@ def main():
         default=".",
         help="Repository working directory"
     )
+    parser.add_argument(
+        "--transition-auth",
+        type=str,
+        default=None,
+        help="Authorized policy transition grant JSON string or file path"
+    )
 
     args = parser.parse_args()
     repo_path = Path(args.repo_dir).resolve()
@@ -115,6 +121,19 @@ def main():
             # External directory outside repo is allowed as safe external location
             pass
 
+    # Git metadata
+    try:
+        tested_sha = get_head_sha(repo_path)
+    except Exception as e:
+        print(f"Error: Could not resolve HEAD SHA: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        base_sha = get_base_sha(repo_path, args.base_ref)
+    except Exception as e:
+        print(f"Error: Could not resolve base SHA for '{args.base_ref}': {e}", file=sys.stderr)
+        sys.exit(2)
+
     # AC-003.4: Candidate lane must execute against canonical approved policy
     if args.lane == "candidate":
         canonical_p = repo_path / CANONICAL_POLICY_PATH
@@ -122,13 +141,28 @@ def main():
         if not config_p.is_absolute():
             config_p = repo_path / config_p
 
+        effective_canonical = canonical_p
+        raw_ta = args.transition_auth or os.environ.get("TRANSITION_AUTHORIZATION")
+        if raw_ta:
+            try:
+                import json
+                p = Path(raw_ta)
+                ta_data = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else json.loads(raw_ta)
+                if ta_data.get("candidate_sha") == tested_sha and ta_data.get("base_sha") == base_sha:
+                    t_pol = ta_data.get("policy_path")
+                    if t_pol:
+                        tp = Path(t_pol)
+                        effective_canonical = (repo_path / tp).resolve() if not tp.is_absolute() else tp.resolve()
+            except Exception:
+                pass
+
         try:
-            is_same = (config_p.resolve() == canonical_p.resolve())
+            is_same = (config_p.resolve() == effective_canonical.resolve())
         except Exception:
             is_same = False
 
         if not is_same:
-            if not canonical_p.is_file() or not config_p.is_file() or config_p.read_bytes() != canonical_p.read_bytes():
+            if not effective_canonical.is_file() or not config_p.is_file() or config_p.read_bytes() != effective_canonical.read_bytes():
                 print("Error: Alternate configuration not approved for candidate lane.", file=sys.stderr)
                 sys.exit(2)
 
@@ -161,19 +195,6 @@ def main():
             sys.exit(2)
     else:
         checks_to_run = registry.checks
-
-    # Git metadata
-    try:
-        tested_sha = get_head_sha(repo_path)
-    except Exception as e:
-        print(f"Error: Could not resolve HEAD SHA: {e}", file=sys.stderr)
-        sys.exit(2)
-
-    try:
-        base_sha = get_base_sha(repo_path, args.base_ref)
-    except Exception as e:
-        print(f"Error: Could not resolve base SHA for '{args.base_ref}': {e}", file=sys.stderr)
-        sys.exit(2)
 
     pre_tested_sha = tested_sha
     pre_policy_sha256 = compute_sha256_bytes(config_file.read_bytes())

@@ -5,13 +5,13 @@
   "title": "Android Foundation & First Runnable APK",
   "version": "1.0.0",
   "planned_mapping_coverage": 100.0,
-  "verified_execution_coverage": 0.0,
+  "verified_execution_coverage": 96.3,
   "metrics": {
     "planned_scenario_count": 18,
-    "discovered_executable_test_count": 0,
-    "executed_test_count": 0,
+    "discovered_executable_test_count": 18,
+    "executed_test_count": 17,
     "ac_mapping_coverage_percent": 100.0,
-    "verified_ac_execution_coverage_status": "PLANNED"
+    "verified_ac_execution_coverage_status": "PARTIALLY_EXECUTED_PENDING_DEVICE"
   },
   "summary": {
     "total_requirements": 8,
@@ -28,7 +28,7 @@
       "test_oracle": "TEST-ANDR-102: gradle_wrapper_check.py verifies distributionUrl uses HTTPS, Gradle 8.10.2, and distributionSha256Sum matches official digest 31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26",
       "implementation_task": "Task 2",
       "check_id": "gradle-wrapper-validation",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-101.2",
@@ -38,7 +38,7 @@
       "test_oracle": "TEST-ANDR-101: SHA-256(gradle-wrapper.jar) matches official checksum 2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046",
       "implementation_task": "Task 2, Task 7",
       "check_id": "gradle-wrapper-validation",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-101.3",
@@ -48,7 +48,7 @@
       "test_oracle": "TEST-ANDR-103: Static inspection of gradle/libs.versions.toml confirms all dependencies have exact pinned versions (zero dynamic + versions)",
       "implementation_task": "Task 2",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-101.4",
@@ -58,7 +58,7 @@
       "test_oracle": "TEST-ANDR-116: ./gradlew assembleDebug executes under OpenJDK 21 LTS and exits with code 0",
       "implementation_task": "Task 1, Task 8",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-102.1",
@@ -68,7 +68,7 @@
       "test_oracle": "TEST-ANDR-104: Inspection of settings.gradle.kts confirms :app module inclusion and clean repository declaration",
       "implementation_task": "Task 2",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-102.2",
@@ -78,7 +78,7 @@
       "test_oracle": "TEST-ANDR-104: apk_validator.py and build inspection verify applicationId equals com.weback.robot",
       "implementation_task": "Task 3",
       "check_id": "apk-validation",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-102.3",
@@ -88,7 +88,7 @@
       "test_oracle": "TEST-ANDR-105: Inspection of app/build.gradle.kts confirms compileSdk 35, targetSdk 35, and minSdk 31",
       "implementation_task": "Task 3",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-102.4",
@@ -98,7 +98,7 @@
       "test_oracle": "TEST-ANDR-106: apk_validator.py scans lib/ directory in APK archive and confirms 0 occurrences of proprietary SO binaries",
       "implementation_task": "Task 3, Task 7",
       "check_id": "apk-validation",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-103.1",
@@ -108,7 +108,7 @@
       "test_oracle": "TEST-ANDR-109: Inspection of app/build.gradle.kts confirms compose = true and compose compiler plugin applied",
       "implementation_task": "Task 3, Task 5",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-103.2",
@@ -118,7 +118,7 @@
       "test_oracle": "TEST-ANDR-109: Verification of Theme.kt, Color.kt, Type.kt confirming Material 3 color schemes and typography",
       "implementation_task": "Task 5",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-103.3",
@@ -128,7 +128,7 @@
       "test_oracle": "TEST-ANDR-110: MainActivity inherits ComponentActivity and invokes setContent { WeBackTheme { ... } }",
       "implementation_task": "Task 5",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-103.4",
@@ -138,7 +138,7 @@
       "test_oracle": "TEST-ANDR-110: DashboardScreen composable renders application title, version string, simulator mode badge, and telemetry card",
       "implementation_task": "Task 5",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-104.1",
@@ -148,7 +148,7 @@
       "test_oracle": "TEST-ANDR-111: Package hierarchy verification confirms separation of concerns into ui, domain, protocol, core packages",
       "implementation_task": "Task 4",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-104.2",
@@ -158,7 +158,7 @@
       "test_oracle": "TEST-ANDR-111: Static import scan of com/weback/robot/domain confirms 0 occurrences of android.* imports",
       "implementation_task": "Task 4",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-104.3",
@@ -168,7 +168,7 @@
       "test_oracle": "TEST-ANDR-112: AppContainerTest confirms container instantiates RobotTransport and dispatchers without reflection or annotation processing",
       "implementation_task": "Task 4, Task 6",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-105.1",
@@ -178,7 +178,7 @@
       "test_oracle": "TEST-ANDR-107: Manifest inspection and Android Lint confirm usesCleartextTraffic is false and network security config is referenced",
       "implementation_task": "Task 3",
       "check_id": "android-lint",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-105.2",
@@ -188,7 +188,7 @@
       "test_oracle": "TEST-ANDR-107: Inspection of network_security_config.xml confirms cleartextTrafficPermitted is false globally",
       "implementation_task": "Task 3",
       "check_id": "android-lint",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-105.3",
@@ -198,7 +198,7 @@
       "test_oracle": "TEST-ANDR-108: Static grep scan across all files in app/ confirms 0 API keys, credentials, or secrets",
       "implementation_task": "Task 3",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-106.1",
@@ -208,7 +208,7 @@
       "test_oracle": "TEST-ANDR-113: ./gradlew testDebugUnitTest executes with exit code 0 and reports 100% pass rate",
       "implementation_task": "Task 6",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-106.2",
@@ -218,7 +218,7 @@
       "test_oracle": "TEST-ANDR-114: Unit test execution verifies domain immutability, ViewModel state emission, and container injection",
       "implementation_task": "Task 6",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-106.3",
@@ -228,7 +228,7 @@
       "test_oracle": "TEST-ANDR-113: XML test result files exist under app/build/test-results/testDebugUnitTest/ and parse cleanly",
       "implementation_task": "Task 6",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-107.1",
@@ -238,7 +238,7 @@
       "test_oracle": "TEST-ANDR-115: ./gradlew lintDebug executes and returns exit code 0",
       "implementation_task": "Task 8",
       "check_id": "android-lint",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-107.2",
@@ -248,7 +248,7 @@
       "test_oracle": "TEST-ANDR-115: Inspection of app/build.gradle.kts confirms lint { abortOnError = true; warningsAsErrors = false }",
       "implementation_task": "Task 3, Task 8",
       "check_id": "android-lint",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-107.3",
@@ -258,7 +258,7 @@
       "test_oracle": "TEST-ANDR-115: lint-results-debug.xml generated with 0 fatal errors",
       "implementation_task": "Task 8",
       "check_id": "android-lint",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-108.1",
@@ -268,7 +268,7 @@
       "test_oracle": "TEST-ANDR-116: ./gradlew assembleDebug executes and returns exit code 0, producing app-debug.apk",
       "implementation_task": "Task 8",
       "check_id": "android-build",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-108.2",
@@ -278,7 +278,7 @@
       "test_oracle": "TEST-ANDR-117: apk_validator.py inspects debug APK archive and returns exit code 0",
       "implementation_task": "Task 7, Task 8",
       "check_id": "apk-validation",
-      "status": "PLANNED"
+      "status": "EXECUTED"
     },
     {
       "ac_id": "AC-108.3",
@@ -288,7 +288,7 @@
       "test_oracle": "TEST-ANDR-118: android_smoke_test.py executes ADB install and launch, confirming RESUMED state and 0 crashes (or reports SKIPPED cleanly)",
       "implementation_task": "Task 7",
       "check_id": "android-smoke-test",
-      "status": "PLANNED"
+      "status": "DEVICE_DEPENDENT_NOT_RUN"
     }
   ]
 }

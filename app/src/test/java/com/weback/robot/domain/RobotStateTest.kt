@@ -48,4 +48,30 @@ class RobotStateTest {
         assertEquals(RobotMode.CLEAN, modified.mode)
         assertFalse(modified.isDocked)
     }
+
+    @Test
+    fun testBatteryBoundaryValidation() {
+        // Valid boundaries: 0 and 100
+        val zeroState = RobotState(batteryPercentage = 0)
+        assertEquals(0, zeroState.batteryPercentage)
+
+        val fullState = RobotState(batteryPercentage = 100)
+        assertEquals(100, fullState.batteryPercentage)
+
+        // Invalid: below 0
+        try {
+            RobotState(batteryPercentage = -1)
+            org.junit.Assert.fail("Expected IllegalArgumentException for battery -1")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("between 0 and 100") == true)
+        }
+
+        // Invalid: above 100
+        try {
+            RobotState(batteryPercentage = 101)
+            org.junit.Assert.fail("Expected IllegalArgumentException for battery 101")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("between 0 and 100") == true)
+        }
+    }
 }

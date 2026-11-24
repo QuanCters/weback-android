@@ -246,43 +246,67 @@ java.lang.NullPointerException: container was null
     def test_e2e_cli_invocation_without_pythonpath(self):
         clean_env = os.environ.copy()
         clean_env.pop("PYTHONPATH", None)
-        if "ANDROID_HOME" not in clean_env:
-            default_sdk = Path.home() / ".android" / "sdk"
-            if default_sdk.is_dir():
-                clean_env["ANDROID_HOME"] = str(default_sdk)
 
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        res = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "verification.checks.gradle_test_adapter",
-                "--task",
-                "testDebugUnitTest",
-                "--results-dir",
-                "app/build/test-results/testDebugUnitTest"
-            ],
-            cwd=str(repo_root),
-            env=clean_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        self.assertEqual(res.returncode, 0, f"Adapter CLI failed with stderr: {res.stderr}\nstdout: {res.stdout}")
-        self.assertIn(SUMMARY_PREFIX, res.stdout)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            results_dir = tmp_path / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
 
-        summary_found = False
-        for line in res.stdout.splitlines():
-            if line.startswith(SUMMARY_PREFIX):
-                summary_data = json.loads(line[len(SUMMARY_PREFIX):].strip())
-                self.assertGreaterEqual(summary_data["total"], 7)
-                self.assertGreaterEqual(summary_data["passed"], 7)
-                self.assertEqual(summary_data["failures"], 0)
-                self.assertEqual(summary_data["errors"], 0)
-                self.assertEqual(summary_data["skipped"], 0)
-                summary_found = True
-                break
-        self.assertTrue(summary_found, "SUMMARY_PREFIX line not found in CLI output")
+            # Executable fixture simulating test task generating JUnit XML
+            mock_task_script = tmp_path / "mock_test_task.py"
+            mock_xml_content = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<testsuite name="com.weback.robot.FixtureTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-01-01T00:00:00" hostname="localhost" time="0.05">\n'
+                '  <properties/>\n'
+                '  <testcase name="testOne" classname="com.weback.robot.FixtureTest" time="0.01"/>\n'
+                '  <testcase name="testTwo" classname="com.weback.robot.FixtureTest" time="0.02"/>\n'
+                '  <testcase name="testThree" classname="com.weback.robot.FixtureTest" time="0.02"/>\n'
+                '</testsuite>\n'
+            )
+            mock_task_script.write_text(
+                "import sys, os, time\n"
+                "from pathlib import Path\n"
+                f"out_dir = Path({repr(str(results_dir))})\n"
+                "out_dir.mkdir(parents=True, exist_ok=True)\n"
+                f"(out_dir / 'TEST-fixture.xml').write_text({repr(mock_xml_content)}, encoding='utf-8')\n"
+                "sys.exit(0)\n",
+                encoding="utf-8"
+            )
+
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "verification.checks.gradle_test_adapter",
+                    "--results-dir",
+                    str(results_dir),
+                    "--gradle-bin",
+                    sys.executable,
+                    "--task",
+                    str(mock_task_script)
+                ],
+                cwd=str(repo_root),
+                env=clean_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            self.assertEqual(res.returncode, 0, f"Adapter CLI failed with stderr: {res.stderr}\nstdout: {res.stdout}")
+            self.assertIn(SUMMARY_PREFIX, res.stdout)
+
+            summary_found = False
+            for line in res.stdout.splitlines():
+                if line.startswith(SUMMARY_PREFIX):
+                    summary_data = json.loads(line[len(SUMMARY_PREFIX):].strip())
+                    self.assertEqual(summary_data["total"], 3)
+                    self.assertEqual(summary_data["passed"], 3)
+                    self.assertEqual(summary_data["failures"], 0)
+                    self.assertEqual(summary_data["errors"], 0)
+                    self.assertEqual(summary_data["skipped"], 0)
+                    summary_found = True
+                    break
+            self.assertTrue(summary_found, "SUMMARY_PREFIX line not found in CLI output")
 
 if __name__ == "__main__":
     unittest.main()

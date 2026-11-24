@@ -1,0 +1,92 @@
+{
+  "$schema": "../verification/schemas/checks.schema.json",
+  "version": 1,
+  "checks": [
+    {
+      "id": "spec-hygiene",
+      "argv": [
+        "python3",
+        "verification/checks/spec_validator.py"
+      ],
+      "required": true,
+      "timeout_seconds": 30,
+      "type": "command",
+      "description": "Validates markdown links, requirement traceability, and defect schemas"
+    },
+    {
+      "id": "harness-selftests",
+      "argv": [
+        "python3",
+        "verification/checks/test_adapter.py",
+        "--discover",
+        "verification/selftests"
+      ],
+      "required": true,
+      "timeout_seconds": 60,
+      "type": "test_suite",
+      "description": "Executes complete verification harness isolated selftest suite via structured test adapter"
+    },
+    {
+      "id": "gradle-wrapper-validation",
+      "argv": [
+        "python3",
+        "verification/checks/gradle_wrapper_check.py"
+      ],
+      "required": true,
+      "timeout_seconds": 30,
+      "type": "command",
+      "description": "Verifies gradle-wrapper.jar SHA-256 against official Gradle releases checksum and checks wrapper properties"
+    },
+    {
+      "id": "android-lint",
+      "argv": [
+        "./gradlew",
+        "lintDebug",
+        "--no-daemon"
+      ],
+      "required": true,
+      "timeout_seconds": 300,
+      "type": "command",
+      "description": "Executes Android Lint on the application module and enforces zero errors and zero security regressions"
+    },
+    {
+      "id": "android-unit-tests",
+      "argv": [
+        "python3",
+        "-m",
+        "verification.checks.gradle_test_adapter",
+        "--task",
+        "testDebugUnitTest",
+        "--results-dir",
+        "app/build/test-results/testDebugUnitTest"
+      ],
+      "required": true,
+      "timeout_seconds": 180,
+      "type": "test_suite",
+      "description": "Executes JVM unit tests for Android application module via Gradle test adapter, enforcing XML freshness and extracting structured JUnit metrics"
+    },
+    {
+      "id": "android-build",
+      "argv": [
+        "./gradlew",
+        "assembleDebug",
+        "--no-daemon"
+      ],
+      "required": true,
+      "timeout_seconds": 300,
+      "type": "command",
+      "description": "Compiles and packages the debug APK (:app:assembleDebug)"
+    },
+    {
+      "id": "apk-validation",
+      "argv": [
+        "python3",
+        "verification/checks/apk_validator.py"
+      ],
+      "required": true,
+      "timeout_seconds": 60,
+      "type": "command",
+      "description": "Verifies debug APK existence, SHA-256, archive integrity, manifest attributes via apkanalyzer, signature via apksigner, and confirms zero proprietary vendor binaries"
+    }
+  ]
+}
