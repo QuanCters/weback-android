@@ -268,7 +268,7 @@ java.lang.NullPointerException: container was null
             stderr=subprocess.PIPE,
             text=True
         )
-        self.assertEqual(res.returncode, 0, f"Adapter CLI failed with stderr: {res.stderr}")
+        self.assertEqual(res.returncode, 0, f"Adapter CLI failed with stderr: {res.stderr}\nstdout: {res.stdout}")
         self.assertIn(SUMMARY_PREFIX, res.stdout)
 
         summary_found = False
