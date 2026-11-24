@@ -281,14 +281,23 @@ Every verification execution generates a structured report `artifacts/verificati
 }
 ```
 
-### 4.1 Independent Verdict Recomputation Rules
-The evidence validator (`verification/checks/evidence.py`) never trusts the report's self-declared `verdict` field alone:
-1. **Recompute Verdict:** Evaluates every required check in `checks`:
+### 4.1 Independent Verdict Recomputation & Authoritative Candidate Acceptance
+The evidence validator (`verification/checks/evidence.py`) never trusts the report's self-declared fields alone:
+1. **Authoritative Candidate Context Requirement:** In candidate mode (`--require-candidate`), all contextual expectations must be provided externally and validated fail-closed:
+   - `expected_sha`: 40-character hex commit SHA of candidate HEAD.
+   - `expected_base_sha`: 40-character hex commit SHA of target base ref.
+   - `expected_policy_sha256`: 64-character hex SHA-256 digest of approved checks policy.
+   - `required_check_ids`: Non-empty array of check IDs that must be present and passed.
+   - `expected_run_id`: Exact execution run ID binding when `--audit-latest` is invoked.
+2. **Approved Policy Check Type Distinction:** Check types (`command` vs `test_suite`) are resolved against approved check policy definitions rather than trusting report fields alone. Any check defined as `test_suite` in approved policy must contain a structurally valid `test_summary` with strict integer metrics (`total > 0`, non-negative, non-boolean).
+3. **Log Directory Containment & Symlink Guards:** All referenced `log_file` entries must reside strictly within the designated evidence report directory. Paths containing directory traversal (`..`), absolute paths, or symbolic links are rejected fail-closed.
+4. **Recompute Verdict:** Evaluates every required check in `checks`:
    - If any required check has `status != "PASS"` or `exit_code != 0`, the recomputed verdict is strictly `FAIL`.
-   - If any required test suite reports `total == 0` or `skipped > 0`, the recomputed verdict is strictly `FAIL`.
+   - If any required test suite reports `total == 0` or `skipped > 0` or `errors > 0` or `failures > 0`, the recomputed verdict is strictly `FAIL`.
    - If any check reports `cleanup_failed == true`, the recomputed verdict is `FAIL`.
-2. **Forged Verdict Rejection:** If the report's self-declared `verdict == "PASS"` but the recomputed verdict is `FAIL`, the report is rejected as forged (`FORGED_VERDICT_REJECTED`) with exit code 2.
-3. **Inconsistent Status Check:** If any check reports `exit_code != 0` but `status == "PASS"`, or `exit_code == 0` but `status == "FAIL"`, the report is rejected as corrupt (`INCONSISTENT_CHECK_STATUS`) with exit code 2.
+5. **Forged Verdict Rejection:** If the report's self-declared `verdict == "PASS"` but the recomputed verdict is `FAIL`, the report is rejected as forged (`FORGED_VERDICT_REJECTED`) with exit code 1.
+6. **Inconsistent Status Check:** If any check reports `exit_code != 0` but `status == "PASS"`, or `exit_code == 0` but `status in ("FAIL", "ERROR", "TIMEOUT")`, the report is rejected as corrupt (`INCONSISTENT_CHECK_STATUS`) with exit code 1.
+7. **Candidate Acceptance Separation:** A structurally valid report with `verdict == "FAIL"` may satisfy diagnostic evaluation (`require_candidate=False`), but candidate acceptance (`require_candidate=True`) strictly rejects non-PASS verdicts.
 
 ### 4.2 Four-Tier Governance Boundary
 ```text

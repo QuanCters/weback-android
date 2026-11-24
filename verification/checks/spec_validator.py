@@ -93,6 +93,14 @@ def validate_markdown_text(text: str, base_dir: Path, repo_root: Optional[Path] 
                 else:
                     target_file = (base_dir / file_part).resolve()
 
+                # Root traversal guard
+                if root:
+                    try:
+                        target_file.resolve().relative_to(root.resolve())
+                    except ValueError:
+                        errors.append(f"Line {line_num}: Referenced path escapes repository root: {file_part}")
+                        continue
+
                 if not target_file.exists():
                     errors.append(f"Line {line_num}: Referenced file does not exist: {file_part} (resolved to {target_file})")
                 elif anchor_part and target_file.is_file() and target_file.suffix in (".md", ".markdown"):
@@ -121,11 +129,18 @@ def validate_markdown_file(file_path: Path, repo_root: Optional[Path] = None) ->
     base_dir = file_path.parent
     return validate_markdown_text(text, base_dir=base_dir, repo_root=repo_root)
 
-def validate_spec_traceability(req_path: Path, trace_path: Path) -> list[str]:
+def validate_spec_traceability(
+    req_path: Path,
+    trace_path: Path,
+    declared_tasks: Optional[set[str]] = None,
+    declared_tests: Optional[set[str]] = None,
+    policy_checks: Optional[set[str]] = None
+) -> list[str]:
     """
     Validates that:
     1. All REQ-xxx IDs in req_path are in trace_path.
     2. All AC-xxx IDs in req_path are mapped in trace_path with task, check, and test oracle.
+    3. If provided, checks, tasks, and test oracles point to declared items.
     """
     errors: list[str] = []
     if not req_path.is_file():
@@ -154,6 +169,24 @@ def validate_spec_traceability(req_path: Path, trace_path: Path) -> list[str]:
     traced_req_ids: set[str] = set()
     traced_ac_ids: set[str] = set()
 
+    def check_mapping(acid: str, task: Optional[str], check: Optional[str], oracle: Optional[str]):
+        if not task or not check or not oracle:
+            errors.append(f"Traceability missing task/check/oracle for {acid}")
+            return
+        if policy_checks and check not in policy_checks:
+            errors.append(f"Unknown verification_check_id '{check}' for {acid}")
+        if declared_tasks:
+            subtasks = [t.strip().lower() for t in task.split(",") if t.strip()]
+            for st in subtasks:
+                if st not in declared_tasks:
+                    errors.append(f"Unknown task_id '{st}' (in '{task}') for {acid}")
+                    break
+        if declared_tests:
+            # Check if oracle or validation_test_id matches a declared test
+            test_id_match = re.search(r'\b(TEST-[A-Z0-9_-]+)\b', oracle)
+            if test_id_match and test_id_match.group(1) not in declared_tests:
+                errors.append(f"Unknown test_oracle '{test_id_match.group(1)}' for {acid}")
+
     # Support flat acceptance_criteria list
     if "acceptance_criteria" in trace_data:
         for ac in trace_data["acceptance_criteria"]:
@@ -166,9 +199,8 @@ def validate_spec_traceability(req_path: Path, trace_path: Path) -> list[str]:
                     traced_ac_ids.add(acid)
                     task = ac.get("implementation_task") or ac.get("task_id")
                     check = ac.get("check_id") or ac.get("verification_check_id")
-                    oracle = ac.get("test_oracle") or ac.get("validation_test_id")
-                    if not task or not check or not oracle:
-                        errors.append(f"Traceability missing task/check/oracle for {acid}")
+                    oracle = ac.get("validation_test_id") or ac.get("test_oracle")
+                    check_mapping(acid, task, check, oracle)
 
     # Support requirements list (where acs can be strings or dicts)
     if "requirements" in trace_data:
@@ -186,9 +218,8 @@ def validate_spec_traceability(req_path: Path, trace_path: Path) -> list[str]:
                             traced_ac_ids.add(acid)
                             task = ac.get("task_id") or ac.get("implementation_task")
                             check = ac.get("verification_check_id") or ac.get("check_id")
-                            oracle = ac.get("test_oracle") or ac.get("validation_test_id")
-                            if not task or not check or not oracle:
-                                errors.append(f"Traceability missing task/check/oracle for {acid}")
+                            oracle = ac.get("validation_test_id") or ac.get("test_oracle")
+                            check_mapping(acid, task, check, oracle)
 
     for rid in doc_req_ids:
         if rid not in traced_req_ids:
@@ -197,6 +228,102 @@ def validate_spec_traceability(req_path: Path, trace_path: Path) -> list[str]:
     for acid in doc_ac_ids:
         if acid not in traced_ac_ids:
             errors.append(f"Untraced acceptance criterion: {acid}")
+
+    return errors
+
+def discover_change_specs(repo_root: Path) -> list[Path]:
+    """
+    Dynamically discovers all change specification directories containing requirements.md.
+    """
+    changes_dir = repo_root / "specs" / "changes"
+    if not changes_dir.is_dir():
+        return []
+    active = []
+    for d in sorted(changes_dir.iterdir()):
+        if d.is_dir() and (d / "requirements.md").is_file():
+            active.append(d)
+    return active
+
+def extract_req_and_ac_ids(req_path: Path) -> tuple[set[str], set[str]]:
+    """
+    Extracts set of requirement IDs and set of acceptance criteria IDs from a requirements document.
+    """
+    if not req_path.is_file():
+        return set(), set()
+    text = req_path.read_text(encoding="utf-8")
+    req_matches = re.findall(r'###\s+(REQ-[A-Z0-9_-]+)', text)
+    ac_matches = re.findall(r'-\s+\*\*(AC-[0-9.]+)\b', text)
+    return set(req_matches), set(ac_matches)
+
+def validate_all_change_specs(repo_root: Path) -> list[str]:
+    """
+    Discovers all active change specs, enforces cross-spec uniqueness of REQ and AC IDs,
+    and validates specification traceability, task references, and check references.
+    """
+    errors: list[str] = []
+    change_specs = discover_change_specs(repo_root)
+    if not change_specs:
+        return ["No active change specifications found in specs/changes/"]
+
+    policy_checks: set[str] = set()
+    policy_path = repo_root / "policies" / "checks.json"
+    if policy_path.is_file():
+        try:
+            pdata = json.loads(policy_path.read_text(encoding="utf-8"))
+            for c in pdata.get("checks", []):
+                if "id" in c:
+                    policy_checks.add(c["id"])
+        except Exception:
+            pass
+
+    global_req_ids: dict[str, str] = {}
+    global_ac_ids: dict[str, str] = {}
+
+    for cdir in change_specs:
+        spec_name = cdir.name
+        req_p = cdir / "requirements.md"
+        trace_p = cdir / "traceability.json"
+        tasks_p = cdir / "tasks.md"
+        val_p = cdir / "validation.md"
+
+        declared_tasks: set[str] = set()
+        if tasks_p.is_file():
+            t_text = tasks_p.read_text(encoding="utf-8")
+            t_matches = re.findall(r'(?:###\s+)?Task\s+([0-9A-Za-z_-]+)', t_text, re.IGNORECASE)
+            for tm in t_matches:
+                declared_tasks.add(f"task {tm}".lower())
+                declared_tasks.add(f"task-{tm}".lower())
+                declared_tasks.add(f"task_{tm}".lower())
+                declared_tasks.add(tm.lower())
+
+        declared_tests: set[str] = set()
+        if val_p.is_file():
+            v_text = val_p.read_text(encoding="utf-8")
+            test_matches = re.findall(r'`(TEST-[A-Z0-9_-]+)`', v_text)
+            for tid in test_matches:
+                declared_tests.add(tid)
+
+        spec_errs = validate_spec_traceability(
+            req_p, trace_p,
+            declared_tasks=declared_tasks if declared_tasks else None,
+            declared_tests=declared_tests if declared_tests else None,
+            policy_checks=policy_checks if policy_checks else None
+        )
+        for e in spec_errs:
+            errors.append(f"[{spec_name}] {e}")
+
+        r_ids, a_ids = extract_req_and_ac_ids(req_p)
+        for rid in r_ids:
+            if rid in global_req_ids:
+                errors.append(f"Duplicate requirement ID '{rid}' detected across specifications: in '{global_req_ids[rid]}' and '{spec_name}'")
+            else:
+                global_req_ids[rid] = spec_name
+
+        for acid in a_ids:
+            if acid in global_ac_ids:
+                errors.append(f"Duplicate acceptance criteria ID '{acid}' detected across specifications: in '{global_ac_ids[acid]}' and '{spec_name}'")
+            else:
+                global_ac_ids[acid] = spec_name
 
     return errors
 
@@ -307,16 +434,13 @@ def main():
             for e in errs:
                 all_errors.append(f"  - {e}")
 
-    # 2. Validate active change specification traceability
-    active_req = repo / "specs/changes/FCT-000/requirements.md"
-    active_trace = repo / "specs/changes/FCT-000/traceability.json"
-    if active_req.is_file() and active_trace.is_file():
-        print("Auditing requirement traceability for FCT-000...")
-        trace_errs = validate_spec_traceability(active_req, active_trace)
-        if trace_errs:
-            all_errors.append("Traceability Errors:")
-            for e in trace_errs:
-                all_errors.append(f"  - {e}")
+    # 2. Validate all active change specification traceability and cross-spec uniqueness
+    print("Auditing active change specifications traceability and ID uniqueness...")
+    spec_errs = validate_all_change_specs(repo)
+    if spec_errs:
+        all_errors.append("Traceability & Spec Errors:")
+        for e in spec_errs:
+            all_errors.append(f"  - {e}")
 
     # 3. Validate defects registry if present
     defects_path = repo / "verification/defects.jsonl"

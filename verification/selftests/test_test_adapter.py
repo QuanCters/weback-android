@@ -124,5 +124,45 @@ class SyntheticSuite(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("TEST_SUMMARY_JSON:", res.stdout)
 
+    def test_boolean_counts_rejected_TEST_INV_008(self):
+        summary = {"total": True, "passed": True, "failures": False, "errors": False, "skipped": False}
+        with self.assertRaises(ValueError):
+            parse_test_summary(summary)
+        ok, diag = validate_test_summary_integrity(summary, exit_code=0)
+        self.assertFalse(ok)
+        self.assertIn("metric 'total' must be an integer", diag)
+
+    def test_negative_counts_rejected_TEST_INV_009(self):
+        summary = {"total": -5, "passed": -5, "failures": 0, "errors": 0, "skipped": 0}
+        with self.assertRaises(ValueError):
+            parse_test_summary(summary)
+        ok, diag = validate_test_summary_integrity(summary, exit_code=1)
+        self.assertFalse(ok)
+        self.assertIn("cannot be negative", diag)
+
+    def test_string_counts_rejected_TEST_INV_010(self):
+        summary = {"total": "5", "passed": "5", "failures": 0, "errors": 0, "skipped": 0}
+        with self.assertRaises(ValueError):
+            parse_test_summary(summary)
+        ok, diag = validate_test_summary_integrity(summary, exit_code=0)
+        self.assertFalse(ok)
+        self.assertIn("must be an integer", diag)
+
+    def test_failing_test_traceback_and_id_retained_TEST_INV_011(self):
+        suite_code = """
+import unittest
+class SampleFailingSuite(unittest.TestCase):
+    def test_explicit_failure(self):
+        self.assertEqual(10, 20, "explicit_math_mismatch")
+"""
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "test_sample_fail.py"
+            f.write_text(suite_code)
+            res = run_synthetic_suite(f)
+            self.assertEqual(res.failures, 1)
+            self.assertIn("test_explicit_failure", res.diagnostic)
+            self.assertIn("explicit_math_mismatch", res.diagnostic)
+
+
 if __name__ == "__main__":
     unittest.main()

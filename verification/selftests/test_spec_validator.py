@@ -73,5 +73,41 @@ class TestSpecValidator(unittest.TestCase):
             self.assertGreater(len(errs), 0)
             self.assertTrue(any("workstation" in e.lower() or "file:///home" in e or "does not exist" in e for e in errs))
 
+    def test_detect_cross_spec_duplicate_ids_TEST_SPEC_001(self):
+        from verification.checks.spec_validator import validate_all_change_specs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            specs_dir = root / "specs" / "changes"
+            spec1 = specs_dir / "FCT-001"
+            spec2 = specs_dir / "FCT-002"
+            spec1.mkdir(parents=True)
+            spec2.mkdir(parents=True)
+
+            # Both specs declare REQ-COMM-001 and AC-001.1
+            (spec1 / "requirements.md").write_text("### REQ-COMM-001\n- **AC-001.1:** Do it\n")
+            (spec1 / "traceability.json").write_text(json.dumps({
+                "requirements": [{"requirement_id": "REQ-COMM-001", "acceptance_criteria": [{"ac_id": "AC-001.1", "task_id": "Task 1", "verification_check_id": "check1", "test_oracle": "TEST-1"}]}]
+            }))
+            (spec2 / "requirements.md").write_text("### REQ-COMM-001\n- **AC-001.1:** Do it again\n")
+            (spec2 / "traceability.json").write_text(json.dumps({
+                "requirements": [{"requirement_id": "REQ-COMM-001", "acceptance_criteria": [{"ac_id": "AC-001.1", "task_id": "Task 1", "verification_check_id": "check1", "test_oracle": "TEST-1"}]}]
+            }))
+
+            errs = validate_all_change_specs(root)
+            self.assertGreater(len(errs), 0)
+            self.assertTrue(any("Duplicate requirement ID 'REQ-COMM-001'" in e for e in errs))
+            self.assertTrue(any("Duplicate acceptance criteria ID 'AC-001.1'" in e for e in errs))
+
+    def test_detect_link_escaping_repo_root_TEST_SPEC_002(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            doc = root / "docs" / "doc.md"
+            doc.parent.mkdir(parents=True)
+            doc.write_text("See [escape](../../../../../../etc/passwd)")
+            errs = validate_markdown_file(doc, repo_root=root)
+            self.assertGreater(len(errs), 0)
+            self.assertTrue(any("escapes repository root" in e for e in errs))
+
+
 if __name__ == "__main__":
     unittest.main()

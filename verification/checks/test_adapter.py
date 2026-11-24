@@ -41,6 +41,13 @@ class CountingTestResult(unittest.TestResult):
         super().addSuccess(test)
         self.passed += 1
 
+def _check_metric_strict(name: str, val) -> Optional[str]:
+    if isinstance(val, bool) or not isinstance(val, int):
+        return f"metric '{name}' must be an integer, got {type(val).__name__} ({val})"
+    if val < 0:
+        return f"metric '{name}' cannot be negative ({val})"
+    return None
+
 def parse_test_summary(
     summary: dict,
     allow_skipped: bool = False,
@@ -50,10 +57,18 @@ def parse_test_summary(
     Evaluates test summary metrics and returns (status, diagnostic).
     Status is 'PASS' or 'FAIL'.
     """
+    if not isinstance(summary, dict):
+        raise ValueError("Test summary must be a dictionary")
+
     required_keys = ["total", "passed", "failures", "errors", "skipped"]
     for k in required_keys:
         if k not in summary:
             raise ValueError(f"Missing required metric in test summary: '{k}'")
+
+    for k, val in summary.items():
+        err = _check_metric_strict(k, val)
+        if err:
+            raise ValueError(err)
 
     total = summary["total"]
     passed = summary["passed"]
@@ -85,10 +100,18 @@ def validate_test_summary_integrity(summary: dict, exit_code: int) -> tuple[bool
     Validates mathematical consistency of test execution counts and checks
     for contradictions with child process exit code.
     """
+    if not isinstance(summary, dict):
+        return False, "Test summary must be a dictionary"
+
     required_keys = ["total", "passed", "failures", "errors", "skipped"]
     for k in required_keys:
         if k not in summary:
             return False, f"Missing required test summary key '{k}'"
+
+    for k, val in summary.items():
+        err = _check_metric_strict(k, val)
+        if err:
+            return False, err
 
     total = summary["total"]
     passed = summary["passed"]
@@ -157,6 +180,13 @@ def run_synthetic_suite(suite_path: Path) -> StructuredTestResult:
     has_failure = (failures > 0 or errors > 0 or total == 0 or unexpected_successes > 0 or skipped > 0)
     exit_code = 1 if has_failure else 0
 
+    diag_lines = []
+    for test, tb in result.failures:
+        diag_lines.append(f"FAIL: {test.id()}\n{tb}")
+    for test, tb in result.errors:
+        diag_lines.append(f"ERROR: {test.id()}\n{tb}")
+    diagnostic = "\n".join(diag_lines)
+
     return StructuredTestResult(
         total=total,
         passed=passed,
@@ -165,7 +195,8 @@ def run_synthetic_suite(suite_path: Path) -> StructuredTestResult:
         skipped=skipped,
         expected_failures=expected_failures,
         unexpected_successes=unexpected_successes,
-        exit_code=exit_code
+        exit_code=exit_code,
+        diagnostic=diagnostic
     )
 
 def main():
@@ -207,6 +238,12 @@ def main():
         "expected_failures": expected_failures,
         "unexpected_successes": unexpected_successes
     }
+
+    # Print failures and errors detail if any
+    for test, tb in result.failures:
+        print(f"\n=======================================================\nFAIL: {test.id()}\n-------------------------------------------------------\n{tb}", file=sys.stderr)
+    for test, tb in result.errors:
+        print(f"\n=======================================================\nERROR: {test.id()}\n-------------------------------------------------------\n{tb}", file=sys.stderr)
 
     # Print human-readable summary
     print(f"Ran {total} tests: {passed} passed, {failures} failed, {errors} errors, {skipped} skipped")

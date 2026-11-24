@@ -32,7 +32,7 @@ def _kill_process_group(pgid: int, timeout_limit: float = 2.0) -> bool:
     Terminates a process group using SIGTERM, followed by SIGKILL if needed.
     Returns True if all processes are confirmed terminated, False if cleanup failed.
     """
-    start = time.time()
+    start = time.monotonic()
     try:
         os.killpg(pgid, signal.SIGTERM)
     except ProcessLookupError:
@@ -55,7 +55,7 @@ def _kill_process_group(pgid: int, timeout_limit: float = 2.0) -> bool:
 
     # Wait bounded time for SIGKILL to complete
     deadline = start + timeout_limit
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         try:
             os.killpg(pgid, 0)
             time.sleep(0.05)
@@ -72,7 +72,7 @@ def execute_check(check: CheckDefinition) -> CheckResult:
     Captures stdout and stderr without buffer deadlocks using a concurrent reader thread.
     Enforces timeout, exit code preservation, and test summary extraction.
     """
-    t0 = time.time()
+    t0 = time.monotonic()
     work_dir = str(check.cwd) if check.cwd else os.getcwd()
 
     try:
@@ -85,7 +85,7 @@ def execute_check(check: CheckDefinition) -> CheckResult:
             start_new_session=True
         )
     except FileNotFoundError as e:
-        elapsed = time.time() - t0
+        elapsed = time.monotonic() - t0
         err_msg = f"[EXECUTABLE NOT FOUND: {check.argv[0]}] {e}\n".encode("utf-8")
         return CheckResult(
             id=check.id,
@@ -95,7 +95,7 @@ def execute_check(check: CheckDefinition) -> CheckResult:
             output=err_msg
         )
     except PermissionError as e:
-        elapsed = time.time() - t0
+        elapsed = time.monotonic() - t0
         err_msg = f"[PERMISSION DENIED: {check.argv[0]}] {e}\n".encode("utf-8")
         return CheckResult(
             id=check.id,
@@ -105,7 +105,7 @@ def execute_check(check: CheckDefinition) -> CheckResult:
             output=err_msg
         )
     except OSError as e:
-        elapsed = time.time() - t0
+        elapsed = time.monotonic() - t0
         code = 126 if "Exec format error" in str(e) else 127
         err_msg = f"[OS ERROR: {check.argv[0]}] {e}\n".encode("utf-8")
         return CheckResult(
@@ -135,10 +135,10 @@ def execute_check(check: CheckDefinition) -> CheckResult:
     cleanup_failed = False
     timed_out = False
     parent_finished = False
-    deadline = time.time() + check.timeout_seconds
+    deadline = time.monotonic() + check.timeout_seconds
 
     # Poll parent until it exits or timeout is reached
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         if proc.poll() is not None:
             parent_finished = True
             break
@@ -152,7 +152,9 @@ def execute_check(check: CheckDefinition) -> CheckResult:
     else:
         # Parent finished: terminate remaining background group workers
         # so they do not hold stdout pipe open or linger as orphaned processes
-        _kill_process_group(pgid, timeout_limit=1.0)
+        clean = _kill_process_group(pgid, timeout_limit=1.0)
+        if not clean:
+            cleanup_failed = True
 
     # Wait for reader thread to finish reading EOF
     reader_thread.join(timeout=1.0)
@@ -168,7 +170,7 @@ def execute_check(check: CheckDefinition) -> CheckResult:
         pass
 
     output = b"".join(output_chunks)
-    elapsed = time.time() - t0
+    elapsed = time.monotonic() - t0
 
     if timed_out:
         return CheckResult(
@@ -181,7 +183,7 @@ def execute_check(check: CheckDefinition) -> CheckResult:
         )
 
     exit_code = proc.returncode
-    status = "PASS" if exit_code == 0 else "FAIL"
+    status = "PASS" if (exit_code == 0 and not cleanup_failed) else "FAIL"
 
     # Extract test summary if check is a test_suite or contains summary marker
     test_summary = extract_test_summary_from_output(output)

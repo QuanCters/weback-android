@@ -281,5 +281,378 @@ class TestEvidence(unittest.TestCase):
         self.assertTrue(verify_log_hash(content, h))
         self.assertFalse(verify_log_hash(content, "0"*64))
 
+    def test_candidate_mode_missing_expected_context_TEST_EVI_013(self):
+        results = [CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        # Missing expected_sha
+        ok, errs = verify_evidence_report(
+            report_path,
+            require_candidate=True,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"]
+        )
+        self.assertFalse(ok)
+        self.assertIn("Missing required context: expected_sha", "".join(errs))
+
+        # Missing expected_base_sha
+        ok, errs = verify_evidence_report(
+            report_path,
+            require_candidate=True,
+            expected_sha="a"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"]
+        )
+        self.assertFalse(ok)
+        self.assertIn("Missing required context: expected_base_sha", "".join(errs))
+
+        # Missing expected_policy_sha256
+        ok, errs = verify_evidence_report(
+            report_path,
+            require_candidate=True,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            required_check_ids=["c1"]
+        )
+        self.assertFalse(ok)
+        self.assertIn("Missing required context: expected_policy_sha256", "".join(errs))
+
+        # Missing or empty required_check_ids
+        ok, errs = verify_evidence_report(
+            report_path,
+            require_candidate=True,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=[]
+        )
+        self.assertFalse(ok)
+        self.assertIn("Missing required context: required_check_ids", "".join(errs))
+
+    def test_candidate_mode_invalid_sha_and_digest_format_TEST_EVI_014(self):
+        results = [CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        # Invalid expected_sha format
+        ok, errs = verify_evidence_report(
+            report_path,
+            require_candidate=True,
+            expected_sha="not-a-valid-sha",
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"]
+        )
+        self.assertFalse(ok)
+        self.assertIn("Invalid SHA format for expected_sha", "".join(errs))
+
+        # Invalid expected_policy_sha256 format
+        ok, errs = verify_evidence_report(
+            report_path,
+            require_candidate=True,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="short-sha",
+            required_check_ids=["c1"]
+        )
+        self.assertFalse(ok)
+        self.assertIn("Invalid SHA-256 digest format for expected_policy_sha256", "".join(errs))
+
+    def test_candidate_mode_run_id_mismatch_TEST_EVI_015(self):
+        results = [CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir,
+            run_id="real-run-123"
+        )
+        ok, errs = verify_evidence_report(
+            report_path,
+            require_candidate=True,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            expected_run_id="other-run-456"
+        )
+        self.assertFalse(ok)
+        self.assertIn("Report run_id mismatch", "".join(errs))
+
+    def test_empty_report_checks_array_TEST_EVI_016(self):
+        results = []
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        ok, errs = verify_evidence_report(
+            report_path,
+            require_candidate=True,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"]
+        )
+        self.assertFalse(ok)
+        self.assertIn("Report contains zero checks", "".join(errs))
+
+    def test_log_path_traversal_rejected_TEST_EVI_021(self):
+        # Report referencing a log file outside its directory (path traversal)
+        report_dict = {
+            "schema_version": 1,
+            "run_id": "test-uuid",
+            "tested_sha": "a"*40,
+            "base_sha": "0"*40,
+            "policy_sha256": "b"*64,
+            "policy_modified_from_base": False,
+            "lane": "candidate",
+            "started_at": "2026-11-24T00:00:00Z",
+            "finished_at": "2026-11-24T00:00:01Z",
+            "environment": {"python_version": "3.12", "platform": "linux"},
+            "verdict": "PASS",
+            "checks": [
+                {
+                    "id": "c1",
+                    "status": "PASS",
+                    "exit_code": 0,
+                    "duration_seconds": 0.1,
+                    "log_file": "../secret.log",
+                    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                }
+            ]
+        }
+        report_path = self.out_dir / "report.json"
+        report_path.write_text(json.dumps(report_dict))
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            require_candidate=True
+        )
+        self.assertFalse(ok)
+        self.assertIn("Log path traversal detected", "".join(errs))
+
+    def test_log_symlink_rejected_TEST_EVI_022(self):
+        # Create a real log file and a symlink to it
+        real_file = self.out_dir.parent / "real_file.log"
+        real_file.write_bytes(b"content\n")
+        symlink_log = self.out_dir / "c1.log"
+        if not symlink_log.exists():
+            symlink_log.symlink_to(real_file)
+
+        import hashlib
+        h = hashlib.sha256(b"content\n").hexdigest()
+        report_dict = {
+            "schema_version": 1,
+            "run_id": "test-uuid",
+            "tested_sha": "a"*40,
+            "base_sha": "0"*40,
+            "policy_sha256": "b"*64,
+            "policy_modified_from_base": False,
+            "lane": "candidate",
+            "started_at": "2026-11-24T00:00:00Z",
+            "finished_at": "2026-11-24T00:00:01Z",
+            "environment": {"python_version": "3.12", "platform": "linux"},
+            "verdict": "PASS",
+            "checks": [
+                {
+                    "id": "c1",
+                    "status": "PASS",
+                    "exit_code": 0,
+                    "duration_seconds": 0.1,
+                    "log_file": "c1.log",
+                    "log_sha256": h
+                }
+            ]
+        }
+        report_path = self.out_dir / "report.json"
+        report_path.write_text(json.dumps(report_dict))
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            require_candidate=True
+        )
+        self.assertFalse(ok)
+        self.assertIn("Unsafe symlink log reference detected", "".join(errs))
+
+    def test_cleanup_failed_flag_rejected_in_candidate_TEST_EVI_023(self):
+        results = [
+            CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n", cleanup_failed=True)
+        ]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            require_candidate=True
+        )
+        self.assertFalse(ok)
+        self.assertIn("cleanup_failed=true", "".join(errs))
+
+    def test_unknown_check_status_rejected_TEST_EVI_024(self):
+        report_dict = {
+            "schema_version": 1,
+            "run_id": "test-uuid",
+            "tested_sha": "a"*40,
+            "base_sha": "0"*40,
+            "policy_sha256": "b"*64,
+            "policy_modified_from_base": False,
+            "lane": "candidate",
+            "started_at": "2026-11-24T00:00:00Z",
+            "finished_at": "2026-11-24T00:00:01Z",
+            "environment": {"python_version": "3.12", "platform": "linux"},
+            "verdict": "FAIL",
+            "checks": [
+                {
+                    "id": "c1",
+                    "status": "UNKNOWN_STATUS",
+                    "exit_code": 1,
+                    "duration_seconds": 0.1,
+                    "log_file": "c1.log",
+                    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                }
+            ]
+        }
+        (self.out_dir / "c1.log").write_bytes(b"")
+        report_path = self.out_dir / "report.json"
+        report_path.write_text(json.dumps(report_dict))
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"]
+        )
+        self.assertFalse(ok)
+        self.assertIn("Unknown or unsupported status", "".join(errs))
+
+    def test_candidate_rejects_non_pass_verdict_TEST_EVI_025(self):
+        results = [
+            CheckResult(id="c1", status="FAIL", exit_code=1, duration_seconds=0.1, output=b"failed\n")
+        ]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        # Diagnostically valid because verdict is truthfully FAIL and logs match
+        ok_diag, errs_diag = verify_evidence_report(
+            report_path,
+            require_candidate=False
+        )
+        self.assertTrue(ok_diag, errs_diag)
+
+        # But candidate acceptance MUST reject
+        ok_cand, errs_cand = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            require_candidate=True
+        )
+        self.assertFalse(ok_cand)
+        self.assertIn("Candidate acceptance rejected: verdict is FAIL", "".join(errs_cand))
+
+    def test_test_suite_missing_summary_rejected_TEST_EVI_026(self):
+        # c1 defined as test_suite in approved_checks, but lacks test_summary in report
+        results = [
+            CheckResult(id="c1", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")
+        ]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        approved_checks = {
+            "c1": {"type": "test_suite", "required": True}
+        }
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            require_candidate=True,
+            approved_checks=approved_checks
+        )
+        self.assertFalse(ok)
+        self.assertIn("Missing required test_summary for test_suite check 'c1'", "".join(errs))
+
+    def test_unexpected_check_id_rejected_TEST_EVI_027(self):
+        results = [
+            CheckResult(id="unapproved-check", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")
+        ]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        approved_checks = {
+            "c1": {"type": "command", "required": True}
+        }
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["c1"],
+            require_candidate=True,
+            approved_checks=approved_checks
+        )
+        self.assertFalse(ok)
+        self.assertIn("Unexpected unapproved check ID in report: unapproved-check", "".join(errs))
+
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import sys
 import uuid
 from typing import Optional
@@ -22,12 +23,87 @@ if str(repo_root) not in sys.path:
 from verification.checks.runner import CheckResult
 
 REPORT_SCHEMA_VERSION = 1
+HEX_SHA40_RE = re.compile(r'^[0-9a-fA-F]{40}$')
+HEX_SHA256_RE = re.compile(r'^[0-9a-fA-F]{64}$')
 
 def compute_sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 def verify_log_hash(content: bytes, expected_sha: str) -> bool:
     return hashlib.sha256(content).hexdigest().lower() == expected_sha.lower()
+
+def validate_test_summary_deep(ts: dict, check_status: str, exit_code: int) -> list[str]:
+    """
+    Validates mathematical consistency and metric types of test suite summaries.
+    Rejects bool values, negative counts, string numbers, and zero total.
+    """
+    errs = []
+    required_keys = ["total", "passed", "failures", "errors", "skipped"]
+    for k in required_keys:
+        if k not in ts:
+            errs.append(f"missing required key '{k}'")
+    if errs:
+        return errs
+
+    for k, val in ts.items():
+        if isinstance(val, bool) or not isinstance(val, int):
+            errs.append(f"metric '{k}' must be an integer, got {type(val).__name__} ({val})")
+        elif val < 0:
+            errs.append(f"metric '{k}' cannot be negative ({val})")
+
+    if errs:
+        return errs
+
+    total = ts["total"]
+    passed = ts["passed"]
+    failures = ts["failures"]
+    errors = ts["errors"]
+    skipped = ts["skipped"]
+    expected_failures = ts.get("expected_failures", 0)
+    unexpected_successes = ts.get("unexpected_successes", 0)
+
+    if total == 0:
+        errs.append("total tests executed is zero")
+
+    computed_total = passed + failures + errors + skipped + expected_failures + unexpected_successes
+    if total != computed_total:
+        errs.append(f"inconsistent execution counts: total={total} != sum of parts={computed_total}")
+
+    if check_status == "PASS":
+        if failures > 0 or errors > 0 or unexpected_successes > 0 or skipped > 0 or expected_failures > 0:
+            errs.append(f"PASS check has failing/skipped/unexpected metrics: failures={failures}, errors={errors}, skipped={skipped}")
+
+    return errs
+
+def load_approved_checks_from_policy(policy_path: Path, expected_policy_sha256: Optional[str] = None) -> tuple[Optional[dict[str, dict]], list[str]]:
+    """
+    Loads approved check definitions from policy JSON file and verifies policy SHA-256 digest.
+    """
+    errs = []
+    if not policy_path.is_file():
+        return None, [f"Policy file not found: {policy_path}"]
+
+    data_bytes = policy_path.read_bytes()
+    actual_hash = compute_sha256_bytes(data_bytes)
+    if expected_policy_sha256 and actual_hash.lower() != expected_policy_sha256.lower():
+        errs.append(f"Policy file hash mismatch: expected {expected_policy_sha256}, found {actual_hash}")
+        return None, errs
+
+    try:
+        pdata = json.loads(data_bytes.decode("utf-8"))
+    except Exception as e:
+        return None, [f"Failed to parse policy JSON: {e}"]
+
+    raw_checks = pdata.get("checks", [])
+    approved = {}
+    for c in raw_checks:
+        cid = c.get("id")
+        if cid:
+            approved[cid] = {
+                "type": c.get("type", "command"),
+                "required": c.get("required", False)
+            }
+    return approved, []
 
 def recompute_overall_verdict(results: list[CheckResult], required_ids: Optional[set[str]] = None) -> str:
     """
@@ -40,7 +116,7 @@ def recompute_overall_verdict(results: list[CheckResult], required_ids: Optional
         if is_required:
             if r.status == "ERROR":
                 return "ERROR"
-            elif r.status in ("FAIL", "TIMEOUT") or r.exit_code != 0:
+            elif r.status in ("FAIL", "TIMEOUT") or r.exit_code != 0 or r.cleanup_failed:
                 verdict = "FAIL"
     return verdict
 
@@ -132,8 +208,24 @@ def validate_report_schema_dict(data: dict) -> list[str]:
     if errors:
         return errors
 
-    if not isinstance(data.get("checks"), list):
+    checks = data.get("checks")
+    if not isinstance(checks, list):
         errors.append("Schema validation failed: 'checks' must be an array")
+        return errors
+
+    for idx, c in enumerate(checks):
+        if not isinstance(c, dict):
+            errors.append(f"Schema validation failed: checks[{idx}] must be an object")
+            continue
+        for req in ["id", "status", "exit_code", "duration_seconds", "log_file", "log_sha256"]:
+            if req not in c:
+                errors.append(f"Schema validation failed: missing required property '{req}' in checks[{idx}]")
+        if "status" in c and c["status"] not in ("PASS", "FAIL", "ERROR", "TIMEOUT"):
+            errors.append(f"Schema validation failed: Unknown or unsupported status '{c['status']}' in checks[{idx}]")
+        if "exit_code" in c and (not isinstance(c["exit_code"], int) or isinstance(c["exit_code"], bool)):
+            errors.append(f"Schema validation failed: exit_code must be an integer in checks[{idx}]")
+        if "log_sha256" in c and (not isinstance(c["log_sha256"], str) or not HEX_SHA256_RE.match(c["log_sha256"])):
+            errors.append(f"Schema validation failed: invalid log_sha256 pattern in checks[{idx}]")
 
     return errors
 
@@ -144,53 +236,95 @@ def verify_evidence_report(
     expected_policy_sha256: Optional[str] = None,
     required_check_ids: Optional[list[str]] = None,
     require_candidate: bool = False,
-    bootstrap_approval_path: Optional[Path] = None
+    expected_run_id: Optional[str] = None,
+    approved_checks: Optional[dict[str, dict]] = None,
+    policy_path: Optional[Path] = None
 ) -> tuple[bool, list[str]]:
     """
     Independent Evidence Auditor.
     Validates structural schema, cryptographic log hashes, SHA matching,
-    duplicate check detection, status/exit-code consistency, and recomputed verdict.
+    duplicate check detection, status/exit-code consistency, test metrics,
+    and recomputed verdict.
     """
     errors: list[str] = []
 
+    # 1. Authoritative candidate validation requirements
+    if require_candidate:
+        if not expected_sha:
+            errors.append("Missing required context: expected_sha")
+        elif not HEX_SHA40_RE.match(expected_sha):
+            errors.append(f"Invalid SHA format for expected_sha: '{expected_sha}'")
+
+        if not expected_base_sha:
+            errors.append("Missing required context: expected_base_sha")
+        elif not HEX_SHA40_RE.match(expected_base_sha):
+            errors.append(f"Invalid SHA format for expected_base_sha: '{expected_base_sha}'")
+
+        if not expected_policy_sha256:
+            errors.append("Missing required context: expected_policy_sha256")
+        elif not HEX_SHA256_RE.match(expected_policy_sha256):
+            errors.append(f"Invalid SHA-256 digest format for expected_policy_sha256: '{expected_policy_sha256}'")
+
+        if not required_check_ids or len(required_check_ids) == 0:
+            errors.append("Missing required context: required_check_ids (must be a non-empty list of check IDs)")
+
+    # 2. Policy resolution if provided
+    loaded_approved = dict(approved_checks) if approved_checks else None
+    if policy_path:
+        p_checks, p_errs = load_approved_checks_from_policy(policy_path, expected_policy_sha256)
+        if p_errs:
+            errors.extend(p_errs)
+        elif p_checks and loaded_approved is None:
+            loaded_approved = p_checks
+
     if not report_path.is_file():
-        return False, [f"Report file not found: {report_path}"]
+        return False, [f"Report file not found: {report_path}"] + errors
 
     try:
         raw_text = report_path.read_text(encoding="utf-8")
         data = json.loads(raw_text)
     except Exception as e:
-        return False, [f"Failed to parse report JSON: {e}"]
+        return False, [f"Failed to parse report JSON: {e}"] + errors
 
-    # 1. Structural schema validation
+    # 3. Structural schema validation
     schema_errs = validate_report_schema_dict(data)
     if schema_errs:
-        return False, schema_errs
+        return False, schema_errs + errors
 
-    # 2. Candidate lane requirement
+    # 4. Candidate lane requirement
     lane = data.get("lane")
     if require_candidate and lane != "candidate":
         errors.append(f"Fast lane report cannot be used for candidate gate evaluation (found lane: '{lane}')")
 
-    # 3. Tested SHA equality
+    # 5. Tested SHA equality & format
     tested_sha = data.get("tested_sha")
     if expected_sha and tested_sha != expected_sha:
         errors.append(f"Report tested_sha mismatch: expected {expected_sha}, found {tested_sha}")
 
-    # 4. Base SHA equality
+    # 6. Base SHA equality & format
     base_sha = data.get("base_sha")
     if expected_base_sha and base_sha != expected_base_sha:
         errors.append(f"Report base_sha mismatch: expected {expected_base_sha}, found {base_sha}")
 
-    # 5. Policy SHA-256 digest equality
+    # 7. Policy SHA-256 digest equality
     policy_sha = data.get("policy_sha256")
     if expected_policy_sha256 and policy_sha != expected_policy_sha256:
         errors.append(f"Policy hash mismatch against expected context: expected {expected_policy_sha256}, found {policy_sha}")
 
-    # 6. Checks evaluation
+    # 8. Run ID equality if specified
+    run_id = data.get("run_id")
+    if expected_run_id and run_id != expected_run_id:
+        errors.append(f"Report run_id mismatch: expected '{expected_run_id}', found '{run_id}'")
+
+    # 9. Checks array presence
     checks = data.get("checks", [])
+    if len(checks) == 0:
+        errors.append("Report contains zero checks")
+
+    # 10. Individual checks evaluation
     seen_ids: set[str] = set()
     parent_dir = report_path.parent
+    allowed_statuses = {"PASS", "FAIL", "ERROR", "TIMEOUT"}
 
     for c in checks:
         cid = c.get("id")
@@ -198,35 +332,93 @@ def verify_evidence_report(
             errors.append(f"Duplicate check ID in report: {cid}")
         seen_ids.add(cid)
 
+        if loaded_approved and cid not in loaded_approved:
+            errors.append(f"Unexpected unapproved check ID in report: {cid}")
+
         # Check status and code consistency
         status = c.get("status")
+        if status not in allowed_statuses:
+            errors.append(f"Unknown or unsupported status '{status}' in check '{cid}'")
+
         exit_code = c.get("exit_code")
         if status == "PASS" and exit_code != 0:
             errors.append(f"Inconsistent check status and exit code in check '{cid}': status={status}, exit_code={exit_code}")
         elif status in ("FAIL", "TIMEOUT", "ERROR") and exit_code == 0:
             errors.append(f"Inconsistent check status and exit code in check '{cid}': status={status}, exit_code={exit_code}")
 
-        # Log file verification
+        # Cleanup failed check
+        if c.get("cleanup_failed"):
+            if require_candidate:
+                errors.append(f"Check '{cid}' marked cleanup_failed=true")
+
+        # Log file verification with path containment and symlink checks
         log_name = c.get("log_file")
-        if not log_name:
+        if not log_name or not isinstance(log_name, str):
             errors.append(f"Missing log_file in check result: {cid}")
         else:
-            log_path = parent_dir / log_name
-            if not log_path.is_file():
-                errors.append(f"Referenced log file missing: {log_name}")
+            norm_parts = log_name.replace("\\", "/").split("/")
+            if ".." in norm_parts:
+                errors.append(f"Log path traversal detected in check '{cid}': {log_name}")
+            elif Path(log_name).is_absolute():
+                errors.append(f"Absolute log path prohibited in check '{cid}': {log_name}")
             else:
-                expected_log_hash = c.get("log_sha256")
-                actual_log_hash = compute_sha256_bytes(log_path.read_bytes())
-                if expected_log_hash != actual_log_hash:
-                    errors.append(f"Log integrity violation in {log_name}: expected {expected_log_hash}, found {actual_log_hash}")
+                raw_log_path = parent_dir / log_name
+                if raw_log_path.is_symlink():
+                    errors.append(f"Unsafe symlink log reference detected in check '{cid}': {log_name}")
+                else:
+                    try:
+                        resolved_log = raw_log_path.resolve()
+                        resolved_parent = parent_dir.resolve()
+                        resolved_log.relative_to(resolved_parent)
+                    except ValueError:
+                        errors.append(f"Log path traversal detected in check '{cid}': {log_name}")
+                        resolved_log = None
 
-    # 7. Required checks presence
+                    if resolved_log and not raw_log_path.is_file():
+                        errors.append(f"Referenced log file missing: {log_name}")
+                    elif resolved_log:
+                        expected_log_hash = c.get("log_sha256")
+                        actual_log_hash = compute_sha256_bytes(raw_log_path.read_bytes())
+                        if expected_log_hash != actual_log_hash:
+                            errors.append(f"Log integrity violation in {log_name}: expected {expected_log_hash}, found {actual_log_hash}")
+
+        # Check type distinction (from approved checks if present, or test_summary in report)
+        check_type = "command"
+        if loaded_approved and cid in loaded_approved:
+            check_type = loaded_approved[cid].get("type", "command")
+        elif "test_summary" in c and c["test_summary"] is not None:
+            check_type = "test_suite"
+
+        if check_type == "test_suite":
+            ts = c.get("test_summary")
+            if not ts or not isinstance(ts, dict):
+                errors.append(f"Missing required test_summary for test_suite check '{cid}'")
+            else:
+                ts_errs = validate_test_summary_deep(ts, status, exit_code)
+                for te in ts_errs:
+                    errors.append(f"Test summary integrity violation in check '{cid}': {te}")
+        elif "test_summary" in c and c["test_summary"] is not None:
+            ts_errs = validate_test_summary_deep(c["test_summary"], status, exit_code)
+            for te in ts_errs:
+                errors.append(f"Test summary integrity violation in check '{cid}': {te}")
+
+    # 11. Required checks presence
     if required_check_ids:
         for req_id in required_check_ids:
             if req_id not in seen_ids:
                 errors.append(f"Missing result for required check: {req_id}")
 
-    # 8. Recomputed verdict vs recorded verdict
+    # In candidate lane, every required check must have passed
+    if require_candidate:
+        for c in checks:
+            cid = c.get("id")
+            is_req = (cid in required_check_ids) if required_check_ids else True
+            if is_req:
+                c_status = c.get("status")
+                if c_status != "PASS":
+                    errors.append(f"Required check '{cid}' did not pass: status={c_status}")
+
+    # 12. Recomputed verdict vs recorded verdict
     declared_verdict = data.get("verdict")
     recomputed = "PASS"
     req_set = set(required_check_ids) if required_check_ids else seen_ids
@@ -239,11 +431,14 @@ def verify_evidence_report(
             if c_status == "ERROR":
                 recomputed = "ERROR"
                 break
-            elif c_status in ("FAIL", "TIMEOUT") or c_code != 0:
+            elif c_status in ("FAIL", "TIMEOUT") or c_code != 0 or c.get("cleanup_failed"):
                 recomputed = "FAIL"
 
     if declared_verdict == "PASS" and recomputed != "PASS":
         errors.append(f"Forged PASS verdict rejected: declared '{declared_verdict}', recomputed '{recomputed}'")
+
+    if require_candidate and declared_verdict != "PASS":
+        errors.append(f"Candidate acceptance rejected: verdict is {declared_verdict}")
 
     return len(errors) == 0, errors
 
@@ -256,7 +451,14 @@ def main():
     parser.add_argument("--expected-base-sha", type=str, default=None, help="Expected target base SHA")
     parser.add_argument("--expected-policy-sha256", type=str, default=None, help="Expected policy SHA-256")
     parser.add_argument("--expected-required-checks", nargs="*", default=None, help="Expected required check IDs")
+    parser.add_argument("--expected-run-id", type=str, default=None, help="Expected run ID")
+    parser.add_argument("--policy", type=str, default=None, help="Path to approved checks policy JSON")
     args = parser.parse_args()
+
+    # Reject unanchored --audit-latest in candidate mode without explicit expected run id
+    if args.require_candidate and args.audit_latest and not args.expected_run_id:
+        print("Error: --audit-latest cannot be used as an authoritative run selector without explicit --expected-run-id binding.", file=sys.stderr)
+        sys.exit(2)
 
     report_path: Optional[Path] = None
     if args.report:
@@ -272,13 +474,17 @@ def main():
         print("Error: No valid report file specified or found.", file=sys.stderr)
         sys.exit(2)
 
+    policy_p = Path(args.policy) if args.policy else None
+
     ok, errors = verify_evidence_report(
         report_path,
         expected_sha=args.expected_sha,
         expected_base_sha=args.expected_base_sha,
         expected_policy_sha256=args.expected_policy_sha256,
         required_check_ids=args.expected_required_checks,
-        require_candidate=args.require_candidate
+        require_candidate=args.require_candidate,
+        expected_run_id=args.expected_run_id,
+        policy_path=policy_p
     )
 
     if not ok:

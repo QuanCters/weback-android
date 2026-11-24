@@ -48,5 +48,29 @@ class TestCliRunner(unittest.TestCase):
             self.assertEqual(report_data["lane"], "fast")
             self.assertEqual(report_data["verdict"], "PASS")
 
+    def test_unresolvable_base_ref_rejected_in_candidate_lane_TEST_RUN_019(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Tester"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "tester@weback.local"], cwd=repo, check=True)
+            # Copy canonical policy
+            pol_dir = repo / "policies"
+            pol_dir.mkdir(parents=True)
+            canonical = Path("policies/checks.json").read_text()
+            (pol_dir / "checks.json").write_text(canonical)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+            res = subprocess.run(
+                [sys.executable, str(Path("verification/run.py").resolve()), "--lane", "candidate", "--base-ref", "non_existent_branch_xyz", "--repo-dir", str(repo)],
+                capture_output=True,
+                text=True
+            )
+            self.assertEqual(res.returncode, 2)
+            self.assertIn("Could not resolve base SHA", res.stderr)
+
+
+
 if __name__ == "__main__":
     unittest.main()

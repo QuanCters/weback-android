@@ -94,5 +94,14 @@ class TestRunnerExecution(unittest.TestCase):
         self.assertEqual(res.exit_code, 0)
         self.assertEqual(len(res.output), 5 * 1024 * 1024)
 
+    def test_cleanup_failed_sets_status_fail_TEST_RUN_015(self):
+        from unittest.mock import patch
+        c = CheckDefinition(id="c_clean_fail", argv=["python3", "-c", "print('ok'); exit(0)"], required=True, timeout_seconds=5)
+        with patch("verification.checks.runner._kill_process_group", return_value=False):
+            res = execute_check(c)
+            self.assertTrue(res.cleanup_failed)
+            self.assertEqual(res.status, "FAIL")
+
+
 if __name__ == "__main__":
     unittest.main()

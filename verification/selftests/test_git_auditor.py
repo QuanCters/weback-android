@@ -74,5 +74,32 @@ class TestGitAuditor(unittest.TestCase):
         base = get_base_sha(self.repo, base_ref="HEAD")
         self.assertEqual(base, head)
 
+    def test_non_existent_base_ref_raises_value_error_TEST_RUN_016(self):
+        with self.assertRaises(ValueError) as ctx:
+            get_base_sha(self.repo, base_ref="non_existent_ref_xyz")
+        self.assertIn("Failed to resolve base ref", str(ctx.exception))
+
+    def test_invalid_head_ref_raises_value_error_TEST_RUN_017(self):
+        with tempfile.TemporaryDirectory() as td:
+            # Non-git directory
+            with self.assertRaises(ValueError) as ctx:
+                get_head_sha(Path(td))
+            self.assertIn("Failed to resolve HEAD SHA", str(ctx.exception))
+
+    def test_dual_repo_working_dir_propagation_TEST_RUN_018(self):
+        with tempfile.TemporaryDirectory() as td2:
+            repo2 = Path(td2)
+            subprocess.run(["git", "init"], cwd=repo2, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Agent 2"], cwd=repo2, check=True)
+            subprocess.run(["git", "config", "user.email", "agent2@weback.local"], cwd=repo2, check=True)
+            subprocess.run(["git", "commit", "--allow-empty", "-m", "repo 2 commit"], cwd=repo2, check=True, capture_output=True)
+
+            sha1 = get_head_sha(self.repo)
+            sha2 = get_head_sha(repo2)
+            self.assertNotEqual(sha1, sha2)
+            self.assertEqual(len(sha1), 40)
+            self.assertEqual(len(sha2), 40)
+
+
 if __name__ == "__main__":
     unittest.main()

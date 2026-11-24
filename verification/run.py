@@ -28,7 +28,7 @@ from verification.checks.git_auditor import (
     get_base_sha,
     check_policy_modified_from_base
 )
-from verification.checks.evidence import generate_evidence_report
+from verification.checks.evidence import generate_evidence_report, compute_sha256_bytes
 
 CANONICAL_POLICY_PATH = "policies/checks.json"
 
@@ -132,15 +132,24 @@ def main():
     # Git metadata
     try:
         tested_sha = get_head_sha(repo_path)
-    except Exception:
-        tested_sha = "0" * 40
+    except Exception as e:
+        print(f"Error: Could not resolve HEAD SHA: {e}", file=sys.stderr)
+        sys.exit(2)
 
     try:
         base_sha = get_base_sha(repo_path, args.base_ref)
-    except Exception:
-        base_sha = tested_sha
+    except Exception as e:
+        print(f"Error: Could not resolve base SHA for '{args.base_ref}': {e}", file=sys.stderr)
+        sys.exit(2)
 
+    pre_tested_sha = tested_sha
+    pre_policy_sha256 = compute_sha256_bytes(config_file.read_bytes())
     policy_modified = check_policy_modified_from_base(repo_path, args.base_ref)
+
+    # Set working directory context for all checks
+    for check in checks_to_run:
+        if check.cwd is None:
+            check.cwd = repo_path
 
     # Execute checks
     run_id = str(uuid.uuid4())
@@ -160,6 +169,23 @@ def main():
         results.append(res)
 
     finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    # Post-run HEAD and policy immutability checks
+    try:
+        post_tested_sha = get_head_sha(repo_path)
+    except Exception as e:
+        print(f"Error: Post-run HEAD SHA could not be resolved: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    post_policy_sha256 = compute_sha256_bytes(config_file.read_bytes())
+
+    if pre_tested_sha != post_tested_sha:
+        print(f"Error: Repository HEAD mutated during verification run (pre: {pre_tested_sha}, post: {post_tested_sha})", file=sys.stderr)
+        sys.exit(2)
+
+    if pre_policy_sha256 != post_policy_sha256:
+        print(f"Error: Policy file mutated during verification run (pre: {pre_policy_sha256}, post: {post_policy_sha256})", file=sys.stderr)
+        sys.exit(2)
 
     # AC-006.2: Post-run cleanliness check in candidate lane
     if args.lane == "candidate":

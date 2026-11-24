@@ -41,11 +41,26 @@ class TestCIWorkflow(unittest.TestCase):
         # Verify candidate lane invocation
         run_step = next(s for s in steps if "run.py" in s.get("run", ""))
         self.assertIn("--lane candidate", run_step["run"])
+        self.assertFalse(run_step.get("continue-on-error", False), "continue-on-error prohibited on verification run")
+        self.assertNotIn("|| true", run_step["run"], "Exit code suppression prohibited")
+
+        # Verify evidence audit step
+        audit_step = next((s for s in steps if "evidence.py" in s.get("run", "")), None)
+        self.assertIsNotNone(audit_step, "CI workflow must include explicit evidence audit step")
+        self.assertFalse(audit_step.get("continue-on-error", False), "continue-on-error prohibited on evidence audit")
+        self.assertNotIn("|| true", audit_step["run"], "Exit code suppression prohibited on evidence audit")
+        self.assertIn("--require-candidate", audit_step["run"])
+        self.assertIn("--expected-sha", audit_step["run"])
+        self.assertIn("--expected-base-sha", audit_step["run"])
+        self.assertIn("--expected-policy-sha256", audit_step["run"])
+        self.assertIn("--expected-required-checks", audit_step["run"])
 
         # Verify artifact upload step
         artifact_step = next((s for s in steps if "actions/upload-artifact" in s.get("uses", "")), None)
         self.assertIsNotNone(artifact_step, "Must include actions/upload-artifact step")
         self.assertIn("artifacts/verification", artifact_step["with"]["path"])
+        self.assertEqual(artifact_step.get("if"), "always()", "Artifact upload must run on failure (if: always())")
+
 
         # 5. Zero Secrets Check
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", raw_text)

@@ -4,8 +4,11 @@ Standard library only, invoking git commands via subprocess.
 """
 import os
 from pathlib import Path
+import re
 import subprocess
 from typing import Optional
+
+HEX_SHA40_RE = re.compile(r'^[0-9a-fA-F]{40}$')
 
 DEFAULT_IGNORED_PREFIXES = ["artifacts/verification/"]
 
@@ -81,30 +84,44 @@ def is_clean_checkout(repo_dir: Optional[Path] = None, ignored_prefixes: Optiona
 def get_head_sha(repo_dir: Optional[Path] = None) -> str:
     """
     Returns exact 40-character commit SHA for HEAD.
+    Raises ValueError if HEAD cannot be resolved or is invalid.
     """
     cwd = str(repo_dir) if repo_dir else os.getcwd()
-    proc = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=True
-    )
-    return proc.stdout.strip()
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        sha = proc.stdout.strip()
+        if not HEX_SHA40_RE.match(sha):
+            raise ValueError(f"Invalid HEAD SHA resolved: '{sha}'")
+        return sha
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"Failed to resolve HEAD SHA: {e.stderr.strip()}")
 
 def get_base_sha(repo_dir: Optional[Path] = None, base_ref: str = "main") -> str:
     """
     Returns exact 40-character commit SHA for base_ref.
+    Raises ValueError if base_ref cannot be resolved or is invalid.
     """
     cwd = str(repo_dir) if repo_dir else os.getcwd()
-    proc = subprocess.run(
-        ["git", "rev-parse", base_ref],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=True
-    )
-    return proc.stdout.strip()
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", base_ref],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        sha = proc.stdout.strip()
+        if not HEX_SHA40_RE.match(sha):
+            raise ValueError(f"Invalid base SHA resolved for '{base_ref}': '{sha}'")
+        return sha
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"Failed to resolve base ref '{base_ref}': {e.stderr.strip()}")
 
 def check_policy_modified_from_base(repo_dir: Optional[Path] = None, base_ref: str = "main") -> bool:
     """
