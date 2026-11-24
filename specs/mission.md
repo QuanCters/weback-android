@@ -89,4 +89,4 @@ graph LR
 
 1. **Development & Verification Lane:** 100% of automated testing executes against synthetic fixtures, simulated WebSocket endpoints, and mock shadow states.
 2. **Compatibility Assurance:** The protocol serializers and state machines strictly adhere to the bytecode-grounded schemas recorded in `docs/reference/RE_BASELINE.md`.
-3. **Controlled Hardware Gate:** Direct testing against physical robot vacuums requires separate authorization (Milestone FCT-005) and operates under a dedicated test protocol.
+3. **Controlled Hardware Gate:** Direct testing against physical robot vacuums requires separate authorization (Milestone FCT-004 for early connectivity risk reduction; Milestone FCT-009 for final release qualification) and operates under a dedicated test protocol.

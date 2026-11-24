@@ -35,16 +35,24 @@ Any modification, deletion, or renaming of a Protected Verification Asset:
 
 ---
 
-## 3. Prohibited Test-Weakening Behaviors
+## 3. Prohibited Test-Weakening Behaviors & Legitimate Corrections
 
+### 3.1 Prohibited Test-Weakening Behaviors
 The following actions are strictly prohibited and classified as severe integrity violations:
 
-1. **Assertion Removal:** Deleting or commenting out assertions (`assert`, `assertEquals`, `assertThat`) in existing tests.
+1. **Assertion Removal:** Deleting or commenting out assertions (`assert`, `assertEquals`, `assertThat`) in existing tests to bypass failures.
 2. **Test Disabling:** Annotating tests with `@Ignore`, `@Disabled`, or skipping test methods without an approved, time-bounded waiver.
 3. **Threshold Loosening:** Increasing timeout limits, lowering coverage thresholds, or widening numeric tolerance bands solely to allow failing code to pass.
 4. **Silent Golden Mutation:** Overwriting golden fixture files (`golden/*.json`, expected map matrices) without a documented schema change and review.
 5. **Exception Swallowing in Tests:** Wrapping failing assertions in empty `try-catch` blocks.
 6. **Self-Referential Oracles:** Computing expected test results by calling the implementation class under test.
+
+### 3.2 Legitimate Corrections
+Existing tests, golden fixtures, and policies are not immutable in the face of legitimate defects in the tests themselves or authorized contract changes. They **may be corrected** when:
+1. The underlying specification or canonical schema has been formally amended via an approved PR.
+2. The existing test contained a confirmed defect or inaccurate oracle, accompanied by root-cause evidence.
+3. The correction undergoes independent review and is approved by the Lead Maintainer.
+*Crucially, tests and policies must never be weakened or modified merely to achieve a PASS verdict.*
 
 ---
 

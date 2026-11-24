@@ -58,20 +58,31 @@ The canonical reverse engineering registries remain frozen in read-only workspac
 
 ---
 
-## 4. Reconciled Discrepancies (Historical Errata)
+## 4. Reconciled Discrepancies (Historical Errata & Grounded Findings)
 
-The following discrepancies from early reverse-engineering phases were conclusively resolved and must not recur:
+The following discrepancies from early reverse-engineering phases were conclusively resolved through Dalvik bytecode analysis and must not recur:
 
 1. **Shadow Wire Format Duality (`REG-01`)**:
    - Outbound real-time WebSocket robot control transmits a flat `state` object without a `desired` wrapper:
      `{"opt":"send_to_device","sub_type":"...","thing_name":"...","topic_name":"$aws/things/{thing}/shadow/update","topic_payload":{"state":{"working_status":"Clean"}}}`.
    - REST scheduled countdown timers wrap desired state in `thing_shadow.state.desired`.
-2. **SoftAP Gateway IP Elimination (`REG-02`)**:
+2. **SoftAP Gateway IP Elimination & Port Assumptions (`REG-02`, `REG-05`)**:
    - Speculative claims regarding `192.168.200.1` and `192.168.10.1` have 0 occurrences across the entire DEX string pool and are **expunged**.
-   - Verified SoftAP endpoints: `192.168.4.1` (Espressif provisioning gateway), `192.168.99.1` (Router setup webview), and dynamic DHCP/SSDP resolution.
-3. **BLE Fixed Slicing Capacity (`REG-03`)**:
+   - Speculative claims regarding HTTP communication on robot port 8000 have 0 bytecode evidence and are **expunged**.
+   - Verified SoftAP endpoints serve distinct use cases:
+     - `192.168.4.1`: Espressif Wi-Fi provisioning gateway.
+     - `192.168.99.1`: Embedded router setup webview.
+     - Dynamic local network discovery: Relies on local SSDP/DHCP broadcast discovery.
+3. **BLE Fixed Slicing Capacity & Encoding Nuance (`REG-03`)**:
    - Speculative `MTU - 10` variable slicing formulas were refuted by bytecode in `bluetooth.c.E`.
-   - The slicing capacity is hardcoded to **86 characters** ($128 - 42$), derived from buffer constant `f41938j = 128` minus the 42-character sample envelope overhead. Negotiated MTU 500 is ignored during payload fragmentation.
+   - The legacy slicing capacity is hardcoded to **86 characters** ($128 - 42$), derived from buffer constant `f41938j = 128` minus the 42-character sample envelope overhead. Negotiated MTU 500 is completely ignored during payload fragmentation.
+   - **Wire Byte Length vs String Length:** The legacy code performs slicing via `String.substring` (UTF-16 code units / character count). New clean-room designs must explicitly account for the distinction between character count and UTF-8 encoded wire byte length to prevent buffer overruns on non-ASCII payloads.
+4. **Binary Map Decompression: ZLIB vs Speculative GZIP (`REG-04`)**:
+   - Binary SLAM map frames are compressed using standard **ZLIB** (deflate stream with ZLIB header) and decompressed via `java.util.zip.Inflater`.
+   - Speculative claims of GZIP compression are refuted by bytecode and expunged.
+5. **Distinct XMPP Routing vs WebSocket (No Dynamic Fallback)**:
+   - XMPP routing (`Smack` client) is statically partitioned for legacy robot hardware categories based on device model classification.
+   - There is **no automatic dynamic fallback** from WebSocket to XMPP at runtime; each robot communication channel is determined by device capability routing.
 
 ---
 
@@ -102,8 +113,11 @@ The following systems reside outside the observable client APK boundary and are 
 
 ---
 
-## 7. Operational Distinction Notice
+## 7. Operational Distinction & Requirements Integrity Notice
 
 > [!IMPORTANT]
-> The findings in this baseline document **OBSERVED BEHAVIOR** of the original legacy application `com.yugong.Backome`.
-> They **DO NOT** constitute approved product requirements, nor do they imply that legacy security vulnerabilities, design flaws, or undocumented transport assumptions should be replicated in the new application.
+> 1. **Observed Behavior vs Approved Product Behavior:**
+>    The findings in this baseline document record the **OBSERVED REVERSE-ENGINEERED BEHAVIOR** of legacy application `com.yugong.Backome`.
+>    They **DO NOT** constitute automatically approved product requirements, nor do they imply that legacy security vulnerabilities, design flaws, or undocumented transport assumptions should be replicated in the new application.
+> 2. **No Hardcoded Speculative Constants:**
+>    Exact command constants (e.g. `working_status` strings, mode values, error codes) must not be hardcoded into generic application requirements without source-grounded, model-specific confirmation against the intended physical target device.
