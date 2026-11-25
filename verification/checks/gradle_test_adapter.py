@@ -15,6 +15,11 @@ import time
 from typing import Optional
 import xml.etree.ElementTree as ET
 
+# Ensure repository root is on sys.path for direct script execution without PYTHONPATH
+_repo_root = Path(__file__).resolve().parent.parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
 from verification.checks.test_adapter import SUMMARY_PREFIX, parse_test_summary
 
 @dataclass
@@ -214,16 +219,24 @@ def execute_gradle_task(
         for old_xml in results_dir.glob("TEST-*.xml"):
             try:
                 old_xml.unlink()
-            except OSError:
-                pass
+            except OSError as e:
+                sys.stderr.write(f"[ADAPTER ERROR] Cleanup failure removing {old_xml}: {e}\n")
+                return 1, f"Cleanup failure: {e}".encode("utf-8"), time.time()
 
     start_time = time.time()
+    task_env = os.environ.copy()
+    if "ANDROID_HOME" not in task_env:
+        default_sdk = Path.home() / ".android" / "sdk"
+        if default_sdk.is_dir():
+            task_env["ANDROID_HOME"] = str(default_sdk)
+
     try:
         proc = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            shell=False
+            shell=False,
+            env=task_env
         )
         return proc.returncode, proc.stdout, start_time
     except FileNotFoundError as e:
@@ -249,7 +262,7 @@ def run_adapter(
 
     if not no_exec:
         if not cmd:
-            cmd = ["./gradlew", "testDebugUnitTest", "--no-daemon"]
+            cmd = ["./gradlew", "testDebugUnitTest", "--no-daemon", "--rerun-tasks"]
         gradle_exit_code, output, exec_start_time = execute_gradle_task(cmd, results_dir)
         sys.stdout.buffer.write(output)
         sys.stdout.buffer.flush()
@@ -313,9 +326,9 @@ def main():
     if args.cmd_args:
         cmd = args.cmd_args
     elif args.task:
-        cmd = [args.gradle_bin, args.task, "--no-daemon"]
+        cmd = [args.gradle_bin, args.task, "--no-daemon", "--rerun-tasks"]
     else:
-        cmd = [args.gradle_bin, "testDebugUnitTest", "--no-daemon"]
+        cmd = [args.gradle_bin, "testDebugUnitTest", "--no-daemon", "--rerun-tasks"]
 
     exit_code = run_adapter(results_dir, cmd=cmd, allow_skipped=args.allow_skipped)
     sys.exit(exit_code)

@@ -1,4 +1,5 @@
 import unittest
+import os
 import subprocess
 import sys
 import tempfile
@@ -6,6 +7,13 @@ import json
 from pathlib import Path
 
 class TestCliRunner(unittest.TestCase):
+    @staticmethod
+    def _clean_env() -> dict[str, str]:
+        return {
+            k: v for k, v in os.environ.items()
+            if k not in ("APPROVED_POLICY_SHA256", "TRANSITION_AUTHORIZATION", "GITHUB_EVENT_NAME")
+        }
+
     def test_cli_help(self):
         res = subprocess.run([sys.executable, "verification/run.py", "--help"], capture_output=True, text=True)
         self.assertEqual(res.returncode, 0)
@@ -13,7 +21,7 @@ class TestCliRunner(unittest.TestCase):
         self.assertIn("--check", res.stdout)
 
     def test_candidate_partial_check_prohibited_TEST_RUN_009(self):
-        res = subprocess.run([sys.executable, "verification/run.py", "--lane", "candidate", "--check", "c1"], capture_output=True, text=True)
+        res = subprocess.run([sys.executable, "verification/run.py", "--lane", "candidate", "--check", "c1"], capture_output=True, text=True, env=self._clean_env())
         self.assertEqual(res.returncode, 2)
         self.assertIn("Partial check execution is prohibited in candidate lane", res.stderr)
 
@@ -21,7 +29,7 @@ class TestCliRunner(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "alt.json"
             p.write_text('{"checks": [{"id": "c1", "argv": ["python3"], "required": true, "timeout_seconds": 5}]}')
-            res = subprocess.run([sys.executable, "verification/run.py", "--lane", "candidate", "--config", str(p)], capture_output=True, text=True)
+            res = subprocess.run([sys.executable, "verification/run.py", "--lane", "candidate", "--config", str(p)], capture_output=True, text=True, env=self._clean_env())
             self.assertEqual(res.returncode, 2)
             self.assertIn("Alternate configuration not approved for candidate lane", res.stderr)
 
@@ -37,7 +45,8 @@ class TestCliRunner(unittest.TestCase):
             res = subprocess.run(
                 [sys.executable, "verification/run.py", "--lane", "fast", "--config", str(p), "--output-dir", str(out_dir)],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertIn("PASS", res.stdout)
@@ -65,7 +74,8 @@ class TestCliRunner(unittest.TestCase):
             res = subprocess.run(
                 [sys.executable, str(Path("verification/run.py").resolve()), "--lane", "candidate", "--base-ref", "non_existent_branch_xyz", "--repo-dir", str(repo)],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res.returncode, 2)
             self.assertIn("Could not resolve base SHA", res.stderr)
@@ -83,7 +93,8 @@ class TestCliRunner(unittest.TestCase):
             res = subprocess.run(
                 [sys.executable, "verification/run.py", "--lane", "fast", "--config", str(p), "--output-dir", str(out_dir), "--run-id", "my-run-123"],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertTrue((out_dir / "my-run-123" / "report.json").is_file())
@@ -92,7 +103,8 @@ class TestCliRunner(unittest.TestCase):
             res_bad = subprocess.run(
                 [sys.executable, "verification/run.py", "--lane", "fast", "--config", str(p), "--output-dir", str(out_dir), "--run-id", "../../escaped"],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res_bad.returncode, 2)
             self.assertIn("Invalid run-id format", res_bad.stderr)
@@ -117,7 +129,8 @@ class TestCliRunner(unittest.TestCase):
             res1 = subprocess.run(
                 [sys.executable, run_script, "--lane", "candidate", "--base-ref", "HEAD", "--repo-dir", str(repo), "--output-dir", "../escaped"],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res1.returncode, 2)
             self.assertIn("prohibited in candidate lane", res1.stderr)
@@ -126,7 +139,8 @@ class TestCliRunner(unittest.TestCase):
             res2 = subprocess.run(
                 [sys.executable, run_script, "--lane", "candidate", "--base-ref", "HEAD", "--repo-dir", str(repo), "--output-dir", "policies"],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res2.returncode, 2)
             self.assertIn("Candidate lane output directory must be within", res2.stderr)
@@ -165,12 +179,158 @@ class TestCliRunner(unittest.TestCase):
             res = subprocess.run(
                 [sys.executable, run_script, "--lane", "candidate", "--base-ref", "HEAD", "--repo-dir", str(repo)],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res.returncode, 2)
             self.assertIn("Repository mutated during execution", res.stderr)
             self.assertIn("tracked_source.py", res.stderr)
 
+    def test_candidate_transition_context_error_fails_closed_TEST_RUN_026(self):
+        """Unexpected errors resolving transition context in candidate lane must fail closed (exit 2)."""
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Tester"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "tester@weback.local"], cwd=repo, check=True)
+
+            pol_dir = repo / "policies"
+            pol_dir.mkdir(parents=True)
+            (pol_dir / "checks.json").write_text(json.dumps({
+                "version": 1,
+                "checks": [{"id": "c1", "type": "command", "argv": ["python3", "-c", "exit(0)"], "timeout_seconds": 5, "required": True}]
+            }))
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+            run_script = str(Path("verification/run.py").resolve())
+            # Pass a non-existent path / invalid JSON via --transition-auth
+            res = subprocess.run(
+                [sys.executable, run_script, "--lane", "candidate", "--event-name", "pull_request", "--base-ref", "HEAD", "--repo-dir", str(repo), "--transition-auth", "{not-json"],
+                capture_output=True,
+                text=True,
+                env=self._clean_env()
+            )
+            self.assertEqual(res.returncode, 2)
+            self.assertIn("Candidate policy resolution failed", res.stderr)
+
+    def test_candidate_unexpected_context_error_fails_closed_TEST_RUN_027(self):
+        """Unexpected non-TransitionError during context resolution in candidate lane must fail closed."""
+        from unittest.mock import patch
+        import verification.run as run_mod
+
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Tester"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "tester@weback.local"], cwd=repo, check=True)
+
+            pol_dir = repo / "policies"
+            pol_dir.mkdir(parents=True)
+            (pol_dir / "checks.json").write_text(json.dumps({
+                "version": 1,
+                "checks": [{"id": "c1", "type": "command", "argv": ["python3", "-c", "exit(0)"], "timeout_seconds": 5, "required": True}]
+            }))
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+            with patch.dict(os.environ, self._clean_env(), clear=True), \
+                 patch.object(run_mod, "resolve_verification_context", side_effect=RuntimeError("unexpected failure")), \
+                 patch.object(sys, "argv", ["verification/run.py", "--lane", "candidate", "--base-ref", "HEAD", "--repo-dir", str(repo)]):
+                with self.assertRaises(SystemExit) as cm:
+                    run_mod.main()
+                self.assertEqual(cm.exception.code, 2)
+
+    def test_candidate_transition_auth_file_path_supported_TEST_RUN_028(self):
+        """Passing a JSON file path to --transition-auth in candidate lane succeeds."""
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Tester"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "tester@weback.local"], cwd=repo, check=True)
+
+            pol_dir = repo / "policies"
+            pol_dir.mkdir(parents=True)
+            policy_bytes = json.dumps({
+                "version": 1,
+                "checks": [
+                    {"id": "spec-hygiene", "type": "command", "argv": ["python3", "-c", "exit(0)"], "timeout_seconds": 5, "required": True},
+                    {"id": "harness-selftests", "type": "command", "argv": ["python3", "-c", "exit(0)"], "timeout_seconds": 5, "required": True}
+                ]
+            }).encode("utf-8")
+            (pol_dir / "checks.json").write_bytes(policy_bytes)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+            base_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            subprocess.run(["git", "checkout", "-b", "feat"], cwd=repo, check=True, capture_output=True)
+            (repo / "src.txt").write_text("x")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "feat"], cwd=repo, check=True, capture_output=True)
+
+            cand_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            tree_sha = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            import hashlib
+            policy_sha = hashlib.sha256(policy_bytes).hexdigest()
+
+            with tempfile.TemporaryDirectory() as auth_td:
+                auth_file = Path(auth_td) / "auth.json"
+                auth_file.write_text(json.dumps({
+                    "candidate_sha": cand_sha,
+                    "target_base_sha": base_sha,
+                    "candidate_tree_sha": tree_sha,
+                    "canonical_policy_sha256": policy_sha,
+                    "required_checks": ["spec-hygiene", "harness-selftests"]
+                }))
+
+                run_script = str(Path("verification/run.py").resolve())
+                # Missing explicit event_name during transition MUST fail closed (not inferred!)
+                res_missing_evt = subprocess.run(
+                    [sys.executable, run_script, "--lane", "candidate", "--base-ref", base_sha, "--repo-dir", str(repo), "--transition-auth", str(auth_file)],
+                    capture_output=True,
+                    text=True,
+                    env=self._clean_env()
+                )
+                self.assertEqual(res_missing_evt.returncode, 2)
+                self.assertIn("event", res_missing_evt.stderr.lower())
+
+                # Unsupported event_name MUST fail closed
+                res_bad_evt = subprocess.run(
+                    [sys.executable, run_script, "--lane", "candidate", "--event-name", "workflow_dispatch", "--base-ref", base_sha, "--repo-dir", str(repo), "--transition-auth", str(auth_file)],
+                    capture_output=True,
+                    text=True,
+                    env=self._clean_env()
+                )
+                self.assertEqual(res_bad_evt.returncode, 2)
+
+                # Explicit pull_request event_name succeeds
+                res = subprocess.run(
+                    [sys.executable, run_script, "--lane", "candidate", "--event-name", "pull_request", "--base-ref", base_sha, "--repo-dir", str(repo), "--transition-auth", str(auth_file)],
+                    capture_output=True,
+                    text=True,
+                    env=self._clean_env()
+                )
+                self.assertEqual(res.returncode, 0, f"stderr: {res.stderr}\nstdout: {res.stdout}")
+                self.assertIn("Verdict: PASS", res.stdout)
+
+    def test_cli_isolated_tests_retain_behavior_under_active_transition_env_TEST_RUN_029(self):
+        """Isolated CLI tests retain intended behavior even when parent process holds active transition env vars."""
+        from unittest.mock import patch
+        active_env = {
+            "APPROVED_POLICY_SHA256": "4a004ac8d07178c4164193d827983dfa5a7d86c5245fbcb6df69497e976137fd",
+            "TRANSITION_AUTHORIZATION": json.dumps({
+                "candidate_sha": "a" * 40,
+                "target_base_sha": "b" * 40,
+                "candidate_tree_sha": "c" * 40,
+                "canonical_policy_sha256": "d" * 64,
+                "required_checks": ["spec-hygiene", "harness-selftests"]
+            }),
+            "GITHUB_EVENT_NAME": "pull_request"
+        }
+        with patch.dict(os.environ, active_env, clear=False):
+            self.test_candidate_partial_check_prohibited_TEST_RUN_009()
+            self.test_candidate_alternate_config_prohibited_TEST_RUN_010()
+            self.test_fast_lane_with_custom_config()
 
 
 if __name__ == "__main__":

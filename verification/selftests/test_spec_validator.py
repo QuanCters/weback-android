@@ -367,6 +367,64 @@ class TestSpecValidator(unittest.TestCase):
             errs = validate_all_change_specs(root)
             self.assertTrue(any("cannot masquerade as approved execution evidence" in e for e in errs))
 
+    def test_proposal_duplicate_check_id_rejected_TEST_PROP_001(self):
+        from verification.checks.spec_validator import validate_all_change_specs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            pol = root / "policies"
+            pol.mkdir()
+            (pol / "checks.json").write_text(json.dumps({"checks": [{"id": "approved-check"}]}))
+            (pol / "fct001_checks_proposal.json").write_text(json.dumps({
+                "milestone": "FCT-001",
+                "status": "PROPOSED",
+                "checks": [
+                    {"id": "duplicate-check", "type": "command", "argv": ["python3", "c1.py"], "timeout_seconds": 30, "required": True},
+                    {"id": "duplicate-check", "type": "command", "argv": ["python3", "c2.py"], "timeout_seconds": 30, "required": True}
+                ]
+            }))
+            specs_dir = root / "specs" / "changes"
+            fct = specs_dir / "FCT-001"
+            fct.mkdir(parents=True)
+            (fct / "requirements.md").write_text("### REQ-FCT1-001\n- **AC-001.1:** Do FCT1\n")
+            (fct / "tasks.md").write_text("### Task 1: Task for FCT1\n")
+            (fct / "validation.md").write_text("`TEST-FCT1-001`: Oracle\n")
+            (fct / "traceability.json").write_text(json.dumps({
+                "requirements": [{"requirement_id": "REQ-FCT1-001", "acceptance_criteria": [{"ac_id": "AC-001.1", "task_id": "Task 1", "verification_check_id": "duplicate-check", "test_oracle": "TEST-FCT1-001", "status": "PLANNED"}]}]
+            }))
+            errs = validate_all_change_specs(root)
+            self.assertTrue(any("Duplicate check ID 'duplicate-check'" in e for e in errs))
+
+    def test_proposal_invalid_fields_rejected_TEST_PROP_002(self):
+        from verification.checks.spec_validator import validate_all_change_specs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            pol = root / "policies"
+            pol.mkdir()
+            (pol / "checks.json").write_text(json.dumps({"checks": [{"id": "approved-check"}]}))
+            (pol / "fct001_checks_proposal.json").write_text(json.dumps({
+                "milestone": "FCT-001",
+                "status": "PROPOSED",
+                "checks": [
+                    {"id": "bad-check-1", "type": "unsupported_type", "argv": ["cmd"], "timeout_seconds": 30, "required": True},
+                    {"id": "bad-check-2", "type": "command", "argv": [], "timeout_seconds": 30, "required": True},
+                    {"id": "bad-check-3", "type": "command", "argv": ["cmd"], "timeout_seconds": -5, "required": True},
+                    {"id": "bad-check-4", "type": "command", "argv": ["cmd"], "timeout_seconds": 30, "required": "yes"}
+                ]
+            }))
+            specs_dir = root / "specs" / "changes"
+            fct = specs_dir / "FCT-001"
+            fct.mkdir(parents=True)
+            (fct / "requirements.md").write_text("### REQ-FCT1-001\n- **AC-001.1:** Do FCT1\n")
+            (fct / "tasks.md").write_text("### Task 1: Task for FCT1\n")
+            (fct / "validation.md").write_text("`TEST-FCT1-001`: Oracle\n")
+            (fct / "traceability.json").write_text(json.dumps({
+                "requirements": [{"requirement_id": "REQ-FCT1-001", "acceptance_criteria": [{"ac_id": "AC-001.1", "task_id": "Task 1", "verification_check_id": "bad-check-1", "test_oracle": "TEST-FCT1-001", "status": "PLANNED"}]}]
+            }))
+            errs = validate_all_change_specs(root)
+            self.assertTrue(any("invalid 'type'" in e for e in errs))
+            self.assertTrue(any("invalid 'argv'" in e for e in errs))
+            self.assertTrue(any("invalid 'timeout_seconds'" in e for e in errs))
+            self.assertTrue(any("invalid 'required' flag" in e for e in errs))
 
 if __name__ == "__main__":
     unittest.main()

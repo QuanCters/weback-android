@@ -777,6 +777,274 @@ class TestEvidence(unittest.TestCase):
         )
         self.assertTrue(ok, errs)
 
+    def test_transition_state_baseline_active_TEST_EVI_032(self):
+        """When no transition_auth is provided, baseline policy and checks are strictly enforced."""
+        results = [CheckResult(id="spec-hygiene", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="a"*40,
+            base_sha="0"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="a"*40,
+            expected_base_sha="0"*40,
+            expected_policy_sha256="c"*64,  # Differs from b*64
+            required_check_ids=["spec-hygiene"],
+            require_candidate=True,
+            approved_checks={"spec-hygiene": {"type": "command", "required": True}}
+        )
+        self.assertFalse(ok)
+        self.assertIn("Policy hash mismatch against expected context", "".join(errs))
+
+    def test_transition_state_authorized_candidate_match_TEST_EVI_033(self):
+        """When transition_auth matches exact candidate and base, transition policy and required checks apply."""
+        results = [
+            CheckResult(id="spec-hygiene", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n"),
+            CheckResult(id="harness-selftests", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n",
+                        test_summary={"total": 1, "passed": 1, "failures": 0, "errors": 0, "skipped": 0, "expected_failures": 0, "unexpected_successes": 0}),
+            CheckResult(id="android-build", status="PASS", exit_code=0, duration_seconds=0.5, output=b"ok\n")
+        ]
+        transition_policy_file = self.out_dir / "trans_policy.json"
+        transition_policy_file.write_text(json.dumps({
+            "checks": [
+                {"id": "spec-hygiene", "type": "command", "required": True, "argv": ["true"], "timeout_seconds": 10},
+                {"id": "harness-selftests", "type": "test_suite", "required": True, "argv": ["true"], "timeout_seconds": 10},
+                {"id": "android-build", "type": "command", "required": True, "argv": ["true"], "timeout_seconds": 10}
+            ]
+        }))
+        import hashlib
+        trans_policy_sha = hashlib.sha256(transition_policy_file.read_bytes()).hexdigest()
+
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="1"*40,
+            base_sha="2"*40,
+            policy_sha256=trans_policy_sha,
+            policy_modified_from_base=True,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+
+        transition_auth = {
+            "candidate_sha": "1"*40,
+            "base_sha": "2"*40,
+            "canonical_policy_sha256": trans_policy_sha,
+            "required_checks": ["spec-hygiene", "harness-selftests", "android-build"],
+            "policy_path": str(transition_policy_file)
+        }
+
+        # Passing baseline hash b*64 with transition_auth matching candidate (1*40, 2*40)
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="1"*40,
+            expected_base_sha="2"*40,
+            expected_policy_sha256="b"*64,  # Old baseline policy
+            required_check_ids=["spec-hygiene", "harness-selftests"],  # Old baseline required
+            require_candidate=True,
+            policy_path=self.out_dir / "nonexistent_baseline.json",
+            transition_auth=transition_auth
+        )
+        self.assertTrue(ok, errs)
+
+    def test_transition_state_candidate_sha_mismatch_rejected_TEST_EVI_034(self):
+        """When candidate SHA does not match authorized transition tuple, transition is rejected."""
+        results = [CheckResult(id="spec-hygiene", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="3"*40,  # Unapproved candidate
+            base_sha="2"*40,
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        transition_auth = {
+            "candidate_sha": "1"*40,  # Authorized candidate differs
+            "base_sha": "2"*40,
+            "canonical_policy_sha256": "f"*64,
+            "required_checks": ["spec-hygiene", "harness-selftests", "android-build"]
+        }
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="3"*40,
+            expected_base_sha="2"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["spec-hygiene"],
+            require_candidate=True,
+            approved_checks={"spec-hygiene": {"type": "command", "required": True}},
+            transition_auth=transition_auth
+        )
+        self.assertFalse(ok)
+        self.assertIn("Candidate SHA does not match authorized transition candidate", "".join(errs))
+
+    def test_transition_state_base_sha_mismatch_rejected_TEST_EVI_035(self):
+        """When base SHA does not match authorized transition tuple, transition is rejected."""
+        results = [CheckResult(id="spec-hygiene", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="1"*40,
+            base_sha="9"*40,  # Unapproved base
+            policy_sha256="b"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        transition_auth = {
+            "candidate_sha": "1"*40,
+            "base_sha": "2"*40,  # Expected base differs
+            "canonical_policy_sha256": "f"*64,
+            "required_checks": ["spec-hygiene", "harness-selftests"]
+        }
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="1"*40,
+            expected_base_sha="9"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["spec-hygiene"],
+            require_candidate=True,
+            approved_checks={"spec-hygiene": {"type": "command", "required": True}},
+            transition_auth=transition_auth
+        )
+        self.assertFalse(ok)
+        self.assertIn("Base SHA does not match authorized transition target base", "".join(errs))
+
+    def test_transition_state_mandatory_checks_preservation_TEST_EVI_036(self):
+        """Transition authorization cannot remove existing baseline mandatory checks."""
+        transition_auth = {
+            "candidate_sha": "1"*40,
+            "base_sha": "2"*40,
+            "canonical_policy_sha256": "c"*64,
+            "required_checks": ["android-build"]  # Omitted mandatory spec-hygiene & harness-selftests
+        }
+        results = [CheckResult(id="android-build", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="1"*40,
+            base_sha="2"*40,
+            policy_sha256="c"*64,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="1"*40,
+            expected_base_sha="2"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["spec-hygiene", "harness-selftests"],
+            require_candidate=True,
+            transition_auth=transition_auth
+        )
+        self.assertFalse(ok)
+        self.assertIn("Transition policy removes mandatory baseline checks", "".join(errs))
+
+    def test_transition_state_retired_policy_rejected_TEST_EVI_037(self):
+        """Candidate cannot select an older, weaker policy marked as retired."""
+        retired_sha = "4a004ac8d07178c4164193d827983dfa5a7d86c5245fbcb6df69497e976137fd"
+        results = [CheckResult(id="spec-hygiene", status="PASS", exit_code=0, duration_seconds=0.1, output=b"ok\n")]
+        report_path = generate_evidence_report(
+            results,
+            tested_sha="1"*40,
+            base_sha="2"*40,
+            policy_sha256=retired_sha,
+            policy_modified_from_base=False,
+            lane="candidate",
+            output_dir=self.out_dir
+        )
+        transition_auth = {
+            "candidate_sha": "1"*40,
+            "base_sha": "2"*40,
+            "canonical_policy_sha256": "e"*64,
+            "required_checks": ["spec-hygiene", "harness-selftests"],
+            "retired_policies": [retired_sha]
+        }
+        ok, errs = verify_evidence_report(
+            report_path,
+            expected_sha="1"*40,
+            expected_base_sha="2"*40,
+            expected_policy_sha256="b"*64,
+            required_check_ids=["spec-hygiene", "harness-selftests"],
+            require_candidate=True,
+            transition_auth=transition_auth
+        )
+        self.assertFalse(ok)
+        self.assertIn("Report references retired policy digest", "".join(errs))
+
+    def test_transition_state_pr_and_push_contexts_TEST_EVI_038(self):
+        """Both PR and post-merge push event contexts are properly handled by transition state machine."""
+        from verification.checks.evidence import resolve_transition_context
+
+        # 1. PR Context: candidate_sha is PR head, base_sha is PR base
+        pr_auth = {
+            "candidate_sha": "a"*40,
+            "base_sha": "b"*40,
+            "canonical_policy_sha256": "c"*64,
+            "required_checks": ["spec-hygiene", "harness-selftests", "android-build"]
+        }
+        eff_sha, eff_reqs, eff_path, ret, errs = resolve_transition_context(
+            expected_sha="a"*40,
+            expected_base_sha="b"*40,
+            expected_policy_sha256="0"*64,
+            required_check_ids=["spec-hygiene", "harness-selftests"],
+            policy_path=Path("policies/checks.json"),
+            transition_auth=pr_auth
+        )
+        self.assertEqual(errs, [])
+        self.assertEqual(eff_sha, "c"*64)
+        self.assertEqual(eff_reqs, ["spec-hygiene", "harness-selftests", "android-build"])
+
+        # 2. Push Context: candidate_sha is commit SHA, base_sha is before SHA
+        push_auth = {
+            "candidate_sha": "d"*40,
+            "base_sha": "e"*40,
+            "canonical_policy_sha256": "f"*64,
+            "required_checks": ["spec-hygiene", "harness-selftests", "android-build"]
+        }
+        eff_sha2, eff_reqs2, eff_path2, ret2, errs2 = resolve_transition_context(
+            expected_sha="d"*40,
+            expected_base_sha="e"*40,
+            expected_policy_sha256="0"*64,
+            required_check_ids=["spec-hygiene", "harness-selftests"],
+            policy_path=Path("policies/checks.json"),
+            transition_auth=push_auth
+        )
+        self.assertEqual(errs2, [])
+        self.assertEqual(eff_sha2, "f"*64)
+        self.assertEqual(eff_reqs2, ["spec-hygiene", "harness-selftests", "android-build"])
+
+    def test_transition_state_policy_file_and_squash_push_TEST_EVI_039(self):
+        """resolve_transition_context accepts policy_file alias and validates post-squash-merge push via tree_sha."""
+        from verification.checks.evidence import resolve_transition_context
+
+        auth = {
+            "candidate_sha": "a"*40,
+            "target_base_sha": "b"*40,
+            "candidate_tree_sha": "c"*40,
+            "canonical_policy_sha256": "d"*64,
+            "policy_file": "policies/checks.json",
+            "required_checks": ["spec-hygiene", "harness-selftests", "android-build"]
+        }
+        eff_sha, eff_reqs, eff_path, _, errs = resolve_transition_context(
+            expected_sha="9"*40,  # squash commit SHA differs from PR head SHA
+            expected_base_sha="b"*40,
+            expected_policy_sha256="0"*64,
+            required_check_ids=["spec-hygiene", "harness-selftests"],
+            policy_path=Path("policies/checks.baseline.json"),
+            transition_auth=auth,
+            event_name="push",
+            expected_tree_sha="c"*40,
+            parent_shas=["b"*40]
+        )
+        self.assertEqual(errs, [])
+        self.assertEqual(eff_sha, "d"*64)
+        self.assertEqual(eff_path, Path("policies/checks.json"))
+        self.assertEqual(eff_reqs, ["spec-hygiene", "harness-selftests", "android-build"])
+
 
 
 

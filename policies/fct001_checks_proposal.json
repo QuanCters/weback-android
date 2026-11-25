@@ -5,7 +5,7 @@
   "governance_gate": "G3_IMPLEMENTATION_PROPOSAL",
   "authorized_by": null,
   "authorization_date": null,
-  "notes": "Proposed check extensions for Android Foundation & First Runnable APK. Preserves approved FCT-000 baseline checks (spec-hygiene, harness-selftests) and adds Gradle wrapper integrity, Android build, unit tests, lint, APK validation, and device smoke test.",
+  "notes": "Proposed check extensions for Android Foundation & First Runnable APK. Preserves approved FCT-000 baseline checks (spec-hygiene, harness-selftests) and adds Gradle wrapper integrity, Android build, unit tests, lint, and APK validation. Runtime smoke test is executed separately when an authorized device is available.",
   "checks": [
     {
       "id": "spec-hygiene",
@@ -59,7 +59,8 @@
       "type": "test_suite",
       "argv": [
         "python3",
-        "verification/checks/gradle_test_adapter.py",
+        "-m",
+        "verification.checks.gradle_test_adapter",
         "--task",
         "testDebugUnitTest",
         "--results-dir",
@@ -91,17 +92,6 @@
       "timeout_seconds": 60,
       "required": true,
       "description": "Verifies debug APK existence, SHA-256, archive integrity, manifest attributes via apkanalyzer, signature via apksigner, and confirms zero proprietary vendor binaries."
-    },
-    {
-      "id": "android-smoke-test",
-      "type": "command",
-      "argv": [
-        "python3",
-        "verification/checks/android_smoke_test.py"
-      ],
-      "timeout_seconds": 120,
-      "required": false,
-      "description": "Optional environment-gated check performing adb install and activity launch smoke test on explicitly authorized device serial. Reports SKIPPED/NOT_RUN if unauthorized or no device."
     }
   ]
 }

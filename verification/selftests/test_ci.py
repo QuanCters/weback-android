@@ -93,9 +93,10 @@ class TestCIWorkflow(unittest.TestCase):
         self.assertIn("run_id", c_run)
         self.assertIn("report_path", c_run)
 
-        # Run step must bind --run-id and exact event-derived base SHA
+        # Run step must bind --run-id, --event-name, and exact event-derived base SHA
         run_step = next(s for s in steps if "run.py" in s.get("run", ""))
         self.assertIn("--run-id", run_step["run"])
+        self.assertIn('--event-name "${{ github.event_name }}"', run_step["run"])
         self.assertIn('--base-ref "${{ steps.context.outputs.base_sha }}"', run_step["run"])
 
         # Audit step must bind --expected-run-id and report path
@@ -143,6 +144,15 @@ class TestCIWorkflow(unittest.TestCase):
         self.assertEqual(push_zero_ctx["candidate_sha"], "pushsha789")
         self.assertEqual(push_zero_ctx["base_sha"], "parentsha222")
         self.assertEqual(push_zero_ctx["base_ref"], "parentsha222")
+
+    def test_ci_candidate_runner_receives_policy_env_vars_TEST_CI_004(self):
+        wf_path = Path(".github/workflows/ci.yml")
+        data = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+        steps = data["jobs"]["verify"]["steps"]
+        run_step = next(s for s in steps if "run.py" in s.get("run", "") and "--lane candidate" in s.get("run", ""))
+        env_map = run_step.get("env", {})
+        self.assertEqual(env_map.get("APPROVED_POLICY_SHA256"), "${{ vars.APPROVED_POLICY_SHA256 }}")
+        self.assertEqual(env_map.get("TRANSITION_AUTHORIZATION"), "${{ vars.TRANSITION_AUTHORIZATION }}")
 
 if __name__ == "__main__":
     unittest.main()

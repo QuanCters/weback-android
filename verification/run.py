@@ -29,8 +29,14 @@ from verification.checks.git_auditor import (
     check_policy_modified_from_base
 )
 from verification.checks.evidence import generate_evidence_report, compute_sha256_bytes
-
-CANONICAL_POLICY_PATH = "policies/checks.json"
+from verification.checks.transition import (
+    resolve_verification_context,
+    TransitionError,
+    CANONICAL_POLICY_PATH,
+    BASELINE_POLICY_PATH,
+    get_tree_sha,
+    get_commit_parents
+)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -79,9 +85,26 @@ def main():
         default=".",
         help="Repository working directory"
     )
+    parser.add_argument(
+        "--transition-auth",
+        type=str,
+        default=None,
+        help="Authorized policy transition grant JSON string or file path"
+    )
+    parser.add_argument(
+        "--event-name",
+        type=str,
+        default=None,
+        help="Explicit CI execution event context ('pull_request' or 'push'); never inferred from SHAs"
+    )
 
     args = parser.parse_args()
     repo_path = Path(args.repo_dir).resolve()
+
+    if "ANDROID_HOME" not in os.environ:
+        default_sdk = Path.home() / ".android" / "sdk"
+        if default_sdk.is_dir():
+            os.environ["ANDROID_HOME"] = str(default_sdk)
 
     # AC-003.5: Targeted check execution prohibited in candidate lane
     if args.lane == "candidate" and args.check:
@@ -110,20 +133,90 @@ def main():
             # External directory outside repo is allowed as safe external location
             pass
 
+    # Git metadata
+    try:
+        tested_sha = get_head_sha(repo_path)
+    except Exception as e:
+        print(f"Error: Could not resolve HEAD SHA: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        base_sha = get_base_sha(repo_path, args.base_ref)
+    except Exception as e:
+        print(f"Error: Could not resolve base SHA for '{args.base_ref}': {e}", file=sys.stderr)
+        sys.exit(2)
+
     # AC-003.4: Candidate lane must execute against canonical approved policy
     if args.lane == "candidate":
-        canonical_p = repo_path / CANONICAL_POLICY_PATH
+        try:
+            tree_sha = get_tree_sha(repo_path, tested_sha)
+            parent_shas = get_commit_parents(repo_path, tested_sha)
+        except Exception as e:
+            print(f"Error: Could not resolve candidate tree metadata: {e}", file=sys.stderr)
+            sys.exit(2)
+
+        event_name = args.event_name.strip() if isinstance(args.event_name, str) and args.event_name.strip() else None
+
+        if event_name is not None and event_name not in ("pull_request", "push"):
+            print(f"Error: Unsupported event context '{event_name}'. Must be 'pull_request' or 'push'.", file=sys.stderr)
+            sys.exit(2)
+
+        env = dict(os.environ)
+        if args.transition_auth:
+            auth_p = Path(args.transition_auth)
+            if auth_p.is_file():
+                try:
+                    env["TRANSITION_AUTHORIZATION"] = auth_p.read_text(encoding="utf-8")
+                except Exception as e:
+                    print(f"Error: Failed to read transition auth file '{args.transition_auth}': {e}", file=sys.stderr)
+                    sys.exit(2)
+            else:
+                env["TRANSITION_AUTHORIZATION"] = args.transition_auth
+
+        if env.get("TRANSITION_AUTHORIZATION", "").strip() and not event_name:
+            print(
+                "Error: Explicit --event-name ('pull_request' or 'push') is required "
+                "for authoritative transition verification.",
+                file=sys.stderr
+            )
+            sys.exit(2)
+
+        git_context = {
+            "event_name": event_name,
+            "candidate_sha": tested_sha,
+            "base_sha": base_sha,
+            "base_ref": args.base_ref,
+            "tree_sha": tree_sha,
+            "parent_shas": parent_shas,
+            "run_id": args.run_id or "run"
+        }
+
+        try:
+            resolved = resolve_verification_context(env, git_context, repo_path)
+            effective_canonical = (repo_path / resolved.policy_file).resolve()
+        except TransitionError as te:
+            print(f"Error: Candidate policy resolution failed: {te}", file=sys.stderr)
+            sys.exit(2)
+        except Exception as e:
+            print(f"Error: Unexpected failure resolving candidate policy context: {e}", file=sys.stderr)
+            sys.exit(2)
+
         config_p = Path(args.config)
         if not config_p.is_absolute():
             config_p = repo_path / config_p
 
+        # If user left --config as default CANONICAL_POLICY_PATH, adopt the resolved policy file
+        if args.config == CANONICAL_POLICY_PATH and config_p.resolve() != effective_canonical:
+            config_p = effective_canonical
+            args.config = str(effective_canonical)
+
         try:
-            is_same = (config_p.resolve() == canonical_p.resolve())
+            is_same = (config_p.resolve() == effective_canonical.resolve())
         except Exception:
             is_same = False
 
         if not is_same:
-            if not canonical_p.is_file() or not config_p.is_file() or config_p.read_bytes() != canonical_p.read_bytes():
+            if not effective_canonical.is_file() or not config_p.is_file() or config_p.read_bytes() != effective_canonical.read_bytes():
                 print("Error: Alternate configuration not approved for candidate lane.", file=sys.stderr)
                 sys.exit(2)
 
@@ -156,19 +249,6 @@ def main():
             sys.exit(2)
     else:
         checks_to_run = registry.checks
-
-    # Git metadata
-    try:
-        tested_sha = get_head_sha(repo_path)
-    except Exception as e:
-        print(f"Error: Could not resolve HEAD SHA: {e}", file=sys.stderr)
-        sys.exit(2)
-
-    try:
-        base_sha = get_base_sha(repo_path, args.base_ref)
-    except Exception as e:
-        print(f"Error: Could not resolve base SHA for '{args.base_ref}': {e}", file=sys.stderr)
-        sys.exit(2)
 
     pre_tested_sha = tested_sha
     pre_policy_sha256 = compute_sha256_bytes(config_file.read_bytes())
