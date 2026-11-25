@@ -1,5 +1,8 @@
 package com.weback.robot.domain.model
 
+/**
+ * Committed robot telemetry snapshot with enforced battery and docking invariants.
+ */
 data class RobotState(
     val name: String = "WeBack Simulator Robot",
     val batteryPercentage: Int = 100,
@@ -14,5 +17,8 @@ data class RobotState(
     }
 
     val isDocked: Boolean
-        get() = mode == RobotMode.DOCK
+        get() = mode == RobotMode.DOCK || mode == RobotMode.CHARGING
+
+    val isFault: Boolean
+        get() = mode == RobotMode.FAULT || errorCode != 0
 }

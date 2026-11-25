@@ -1,5 +1,7 @@
 package com.weback.robot.ui
 
+import com.weback.robot.domain.model.CommandResult
+import com.weback.robot.domain.model.RobotCommand
 import com.weback.robot.domain.model.RobotMode
 import com.weback.robot.domain.model.RobotState
 import com.weback.robot.protocol.RobotTransport
@@ -27,8 +29,9 @@ class FakeRobotTransport(initialState: RobotState) : RobotTransport {
         _robotState.value = newState
     }
 
-    override suspend fun sendCommand(command: String) {
-        // Controllable test double
+    override suspend fun sendCommand(command: RobotCommand): CommandResult {
+        // Controllable test double adapted to typed FCT-002 transport contract
+        return CommandResult.Acknowledged(_robotState.value)
     }
 }
 
