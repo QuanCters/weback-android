@@ -36,7 +36,7 @@ data class BootTimeSnapshot(
     val wallEpochMs: Long
 )
 
-interface BootSessionTimeProvider {
+fun interface BootSessionTimeProvider {
     fun snapshot(): BootTimeSnapshot
 }
 
