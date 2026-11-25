@@ -1,0 +1,356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "change_id": "FCT-003",
+  "milestone": "FCT-003",
+  "title": "Authentication, Device Inventory & Connectivity Readiness",
+  "version": "1.1.0",
+  "risk_ceiling": "T4",
+  "workstream_risk_tiers": {
+    "auth_trust_session_keystore_logging": "T4",
+    "protocol_inventory_capabilities_adapters": "T3"
+  },
+  "planned_mapping_coverage": 100.0,
+  "verified_execution_coverage": 0.0,
+  "metrics": {
+    "planned_ac_count": 32,
+    "verified_ac_count": 0,
+    "executed_ac_count": 0,
+    "device_dependent_not_run_count": 1,
+    "verified_coverage_percent": 0.0,
+    "executed_coverage_percent": 0.0,
+    "total_executed_or_verified_percent": 0.0,
+    "planned_scenario_count": 21,
+    "discovered_executable_test_count": 0,
+    "executed_test_count": 0,
+    "ac_mapping_coverage_percent": 100.0,
+    "verified_ac_execution_coverage_status": "PLANNED_G3_SPECIFICATION_READY"
+  },
+  "summary": {
+    "total_requirements": 10,
+    "total_acceptance_criteria": 32,
+    "total_acceptance_tests": 21,
+    "total_tasks": 6
+  },
+  "acceptance_criteria": [
+    {
+      "ac_id": "AC-301.1",
+      "requirement_id": "REQ-AUTH-301",
+      "description": "RegionEndpointRouter resolves CN (+86/0086) and Global calling codes to observed auth URLs when configured, keeps FCT-003 test/offline configs isolated, and rejects invalid region codes cleanly.",
+      "validation_test_id": "TEST-AUTH-301",
+      "test_oracle": "TEST-AUTH-301: Region routing table asserts grit-cloud.cn (+86/0086) vs grit-cloud.com (+1/+44) and rejects blank/malformed region codes.",
+      "implementation_task": "Task 2, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-301.2",
+      "requirement_id": "REQ-AUTH-301",
+      "description": "UriValidator and EndpointTrustPolicy enforce exact approved origin checks, reject unapproved HTTPS/WSS hosts, userinfo, and credential query params/fragments, disable production trust until FCT-004, and isolate TestLoopbackTrustPolicy to loopback IPs.",
+      "validation_test_id": "TEST-AUTH-309",
+      "test_oracle": "TEST-AUTH-309: Negative origin, userinfo, query-secret, disabled-production-policy, and non-loopback DNS/IP destination tests fail closed before I/O.",
+      "implementation_task": "Task 2, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-301.3",
+      "requirement_id": "REQ-AUTH-301",
+      "description": "Credential-bearing HTTP clients disable automatic redirects (followRedirects=false/followSslRedirects=false), retain standard TLS verification, and forbid trust-all verifiers and global SSL factory mutations.",
+      "validation_test_id": "TEST-AUTH-309",
+      "test_oracle": "TEST-AUTH-309, TEST-AUTH-301: MockWebServer 302/307/308 redirect tests confirm 1 request with zero forwarded headers; static scan confirms zero setDefaultSSLSocketFactory or trust-all TLS.",
+      "implementation_task": "Task 2, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-302.1",
+      "requirement_id": "REQ-AUTH-302",
+      "description": "Pure Kotlin com.weback.robot.domain defines typed auth contracts with zero Android, coroutine, serialization, or OkHttp imports and secret-safe overridden toString().",
+      "validation_test_id": "TEST-AUTH-302",
+      "test_oracle": "TEST-AUTH-302, TEST-AUTH-308: DomainPurityTest asserts zero prohibited imports; AuthModelsTest asserts credential model toString() masks secrets.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-302.2",
+      "requirement_id": "REQ-AUTH-302",
+      "description": "OkHttpAuthGateway serializes POST login envelope with configurable protocolApiVersion (never 0.1.0-alpha), isolated Utf8TlsDefault PasswordDigestStrategy, and token/region headers attached only after trust and expiry checks.",
+      "validation_test_id": "TEST-AUTH-302",
+      "test_oracle": "TEST-AUTH-302: MockWebServer RecordedRequest inspection verifies POST JSON shape, opt='login', configurable protocolApiVersion, token/region headers, and zero query credentials.",
+      "implementation_task": "Task 2, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-302.3",
+      "requirement_id": "REQ-AUTH-302",
+      "description": "Negative auth responses (HTTP 401/403/5xx, 3xx redirects, malformed JSON, code != 1, empty/untrusted token/URLs/region, expired_time <= 0) fail closed to AuthResult.Failure without mutating active sessions.",
+      "validation_test_id": "TEST-AUTH-303",
+      "test_oracle": "TEST-AUTH-303: Fault-injected MockWebServer negative response matrix verifies AuthResult.Failure and preserved prior valid session state.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-303.1",
+      "requirement_id": "REQ-AUTH-303",
+      "description": "SessionStateMachine and SessionCoordinator model mutually exclusive states using single-flight Mutex, short-held commitLock, and serialized persistence boundary without holding locks across network I/O or backoff delays.",
+      "validation_test_id": "TEST-AUTH-304",
+      "test_oracle": "TEST-AUTH-304: Concurrent coroutine signIn tests assert single gateway dispatch and deterministic non-blocking FSM transitions.",
+      "implementation_task": "Task 1, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-303.2",
+      "requirement_id": "REQ-AUTH-303",
+      "description": "Serialized persistence contract (persistenceMutex + epoch-fenced store ops) requires TokenStore.save() before durable Authenticated, clears caches/WS/storage under NonCancellable cleanup on signOut, rejects failed-clear durable logout, and blocks failed-logout restart resurrection.",
+      "validation_test_id": "TEST-AUTH-304",
+      "test_oracle": "TEST-AUTH-304: Fault-injected TokenStore save/clear failure, cancellation, and post-failed-logout restart simulation tests verify durable commit ordering.",
+      "implementation_task": "Task 1, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-303.3",
+      "requirement_id": "REQ-AUTH-303",
+      "description": "sessionEpoch governs TokenStore operations, concurrent signIn/refresh, logout during login/persist, Account A->B switching, late HTTP/401 callbacks, inventory caches, selected device, WS instances, and telemetry.",
+      "validation_test_id": "TEST-AUTH-311",
+      "test_oracle": "TEST-AUTH-311, TEST-AUTH-304: Rapid Account A->B switch and late-epoch HTTP/401 callback tests verify superseded epoch effects are discarded without mutating Account B.",
+      "implementation_task": "Task 1, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-304.1",
+      "requirement_id": "REQ-AUTH-304",
+      "description": "TokenExpiryPolicy evaluates 80% proactive renewal and 100% expiration via AuthMonotonicClock (SystemClock.elapsedRealtime()) and checked Long arithmetic (sub/add/mul), enforces immediate pre-send and post-response expiry checks, and fails closed on overflow or invalid values.",
+      "validation_test_id": "TEST-AUTH-305",
+      "test_oracle": "TEST-AUTH-305, TEST-AUTH-310: Boundary table (2880000ms vs 2880001ms, 3599999ms vs 3600000ms), Long overflow checks, pre-send block, and in-flight expiry discard tests pass.",
+      "implementation_task": "Task 1, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-304.2",
+      "requirement_id": "REQ-AUTH-304",
+      "description": "PersistedSessionRecord never resets lifetime on reload, preserves remaining lifetime on verified same-boot restart, transitions to ReauthenticationRequired on device reboot or clock rollback, and ignores unverified JWT claims.",
+      "validation_test_id": "TEST-AUTH-310",
+      "test_oracle": "TEST-AUTH-310: Deterministic restart (priorElapsedMs preserved), reboot, clock rollback, and unverified JWT exp claim ignore tests verify conservative ReauthenticationRequired.",
+      "implementation_task": "Task 1, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-304.3",
+      "requirement_id": "REQ-AUTH-304",
+      "description": "Optional RefreshGrantStrategy remains synthetic/disabled in production (defaulting to ReauthenticationRequired), and plaintext passwords/MD5 digests are never persisted or replayed.",
+      "validation_test_id": "TEST-AUTH-305",
+      "test_oracle": "TEST-AUTH-305: Synthetic single-flight refresh test and production-disabled ReauthenticationRequired default verify zero password/MD5 storage or replay.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-305.1",
+      "requirement_id": "REQ-AUTH-305",
+      "description": "KeystoreAeadTokenStore uses non-exportable AndroidKeyStore AES-256-GCM (randomizedEncryptionRequired, cipher-generated 12B IV, 128-bit tag, canonical AAD, 29..16384B bounds, atomic replace in noBackupFilesDir) with zero EncryptedSharedPreferences or software fallback.",
+      "validation_test_id": "TEST-AUTH-306",
+      "test_oracle": "TEST-AUTH-306: AEAD storage test verifies envelope layout, distinct cipher-generated 12B IVs, AAD binding, atomic replacement, and zero EncryptedSharedPreferences/software fallback.",
+      "implementation_task": "Task 2",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-305.2",
+      "requirement_id": "REQ-AUTH-305",
+      "description": "Missing key w/ orphaned blob, AEADBadTagException, KeyPermanentlyInvalidatedException, out-of-bounds size, bad schema version, or post-decrypt validation error deletes blob/invalidated key and fails closed; mutable buffers are wiped in finally blocks.",
+      "validation_test_id": "TEST-AUTH-307",
+      "test_oracle": "TEST-AUTH-307: Bit-flip, version/AAD mismatch, truncation/oversize, missing key, invalidation, bad post-decrypt JSON, and I/O fault tests verify atomic wipe and fail-closed errors.",
+      "implementation_task": "Task 2",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-305.3",
+      "requirement_id": "REQ-AUTH-305",
+      "description": "Deny-by-default DiagnosticLogger logs only allowlisted safe categories/fields, credential models mask toString(), and SecretRedactor scrubs headers, opaque/JWT tokens, nested/malformed JSON, URL-encoded secrets, and exceptions.",
+      "validation_test_id": "TEST-AUTH-308",
+      "test_oracle": "TEST-AUTH-308: Log sink, model toString(), and SecretRedactor tests verify zero raw secret exposure across headers, opaque tokens, JWTs, nested/malformed JSON, URL-encoded strings, and exceptions.",
+      "implementation_task": "Task 2, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-305.4",
+      "requirement_id": "REQ-AUTH-305",
+      "description": "Hardware-backed Keystore protection is verified on a real Android >= 12 device via KeyInfo.getSecurityLevel() (TEE/StrongBox), remaining NOT_RUN in offline CI without an authorized device and blocking T4 hardware/release closure.",
+      "validation_test_id": "TEST-AUTH-312",
+      "test_oracle": "TEST-AUTH-312: Device instrumentation test checks KeyInfo.getSecurityLevel() in {TRUSTED_ENVIRONMENT, STRONGBOX} (NOT_RUN in offline CI when no authorized device attached).",
+      "implementation_task": "Task 2, Task 6",
+      "check_id": "android-smoke-test",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-306.1",
+      "requirement_id": "REQ-CONN-306",
+      "description": "OkHttpDeviceInventoryGateway validates trust and pre-send expiry/epoch, disables redirects, posts opt=user_thing_list_get with token/region headers, and parses via kotlinx.serialization.json.",
+      "validation_test_id": "TEST-CONN-301",
+      "test_oracle": "TEST-CONN-301: MockWebServer asserts exact POST JSON opt=user_thing_list_get, token/region headers, redirect blocking, and parsed ThingBean list.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-306.2",
+      "requirement_id": "REQ-CONN-306",
+      "description": "Missing thing_name, non-1 code, HTTP/redirect errors, stale sessionEpoch, or malformed JSON fail safely while valid empty thing_list returns InventoryState.Empty cleanly.",
+      "validation_test_id": "TEST-CONN-301",
+      "test_oracle": "TEST-CONN-301: Negative inventory payloads assert typed ConnectivityError while valid empty list asserts InventoryState.Empty.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-306.3",
+      "requirement_id": "REQ-CONN-306",
+      "description": "Initial thing_status telemetry hydrates into bounded RobotState fields (battery 0..100 clamped safely, isAdmin preserved) and inventory caches are scoped to active sessionEpoch.",
+      "validation_test_id": "TEST-CONN-302",
+      "test_oracle": "TEST-CONN-302: Boundary test asserts out-of-range battery and unrecognized working_status hydrate cleanly without unhandled exceptions.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-307.1",
+      "requirement_id": "REQ-CONN-307",
+      "description": "DeviceCapabilityClassifier normalizes sub_type prefixes grounded in enums/p.java and utils/c.java (Laser P0, VisualGyro q1, Gyro l1/L0, Camera n1, Peripherals m1/N0/Y0/v0/g1, Legacy H0/U0, Unknown).",
+      "validation_test_id": "TEST-CONN-303",
+      "test_oracle": "TEST-CONN-303: Exhaustive RE-grounded prefix table (including yg-yw10001-, xs-x8-, yw-vs01-, xs-x5c2-) verifies classification and case-insensitivity.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-307.2",
+      "requirement_id": "REQ-CONN-307",
+      "description": "Capability gating restricts MVP shadow control strictly to compatible Laser SLAM (P0) devices and marks peripherals, cameras, legacy XMPP, q1/gyro, and unknowns unsupported safely.",
+      "validation_test_id": "TEST-CONN-303",
+      "test_oracle": "TEST-CONN-303: ControlCompatibility mapping confirms only P0 LaserSlam returns MvpSupportedShadowWs while excluded classes return Unsupported.",
+      "implementation_task": "Task 1, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-308.1",
+      "requirement_id": "REQ-CONN-308",
+      "description": "RealtimeSessionTransport exposes ConnectionState StateFlow with (sessionEpoch, connectionGeneration) fencing and short-held commitLock with zero locks across I/O or sleeps.",
+      "validation_test_id": "TEST-CONN-304",
+      "test_oracle": "TEST-CONN-304, TEST-CONN-308: Concurrent connect/disconnect/send MockWebServer tests verify ordered non-blocking ConnectionState emissions and generation isolation.",
+      "implementation_task": "Task 4",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-308.2",
+      "requirement_id": "REQ-CONN-308",
+      "description": "OkHttpWebSocketTransport enforces trust/expiry pre-connect, sends token/region upgrade headers, parses thing_status_update frames, applies 20s outbound send-stall + 4s virtual-time reconnect, and sends close 1000.",
+      "validation_test_id": "TEST-CONN-304",
+      "test_oracle": "TEST-CONN-304: MockWebServer WebSocket contract tests assert upgrade headers, telemetry frames, 20s send-stall trigger, 4s reconnect timing, and close frame 1000.",
+      "implementation_task": "Task 4",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-308.3",
+      "requirement_id": "REQ-CONN-308",
+      "description": "HTTP 401/403/3xx WS upgrade rejection OR session expiry/invalidation while already connected stops outbound activity and telemetry, cancels reconnects, closes socket, and triggers epoch-checked invalidation; idempotent close() blocks post-close mutations.",
+      "validation_test_id": "TEST-CONN-305",
+      "test_oracle": "TEST-CONN-305: 401/403/302 handshake and connected-socket expiry tests verify 0 reconnect retries, stopped telemetry/outbound sends, and auth callback; close race test proves zero post-close mutation.",
+      "implementation_task": "Task 4",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-308.4",
+      "requirement_id": "REQ-CONN-308",
+      "description": "WebSocket instances and delayed reconnect jobs are fenced by (sessionEpoch, connectionGeneration) so superseded callbacks or timers cannot mutate state.",
+      "validation_test_id": "TEST-CONN-308",
+      "test_oracle": "TEST-CONN-308: Superseded epoch/generation callback and pending reconnect timer tests verify zero state mutation or duplicate sockets.",
+      "implementation_task": "Task 4",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-308.5",
+      "requirement_id": "REQ-CONN-308",
+      "description": "Inbound telemetry validates sessionEpoch, connectionGeneration, selected thing_name, and MvpSupportedShadowWs capability; unknown/unsupported/unselected frames never mutate RobotState.",
+      "validation_test_id": "TEST-CONN-309",
+      "test_oracle": "TEST-CONN-309: Negative telemetry frames for unselected, unknown, or unsupported devices confirm RobotState remains unchanged.",
+      "implementation_task": "Task 4",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-309.1",
+      "requirement_id": "REQ-CONN-309",
+      "description": "OfflineFixtureAuthGateway, OfflineFixtureInventoryGateway, and OfflineFixtureRealtimeTransport enable complete offline flows preserving OFFLINE simulator identity.",
+      "validation_test_id": "TEST-CONN-306",
+      "test_oracle": "TEST-CONN-306: AppContainer and offline fixture integration test runs signIn -> inventory -> capability -> WS events offline cleanly.",
+      "implementation_task": "Task 3, Task 4, Task 5",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-309.2",
+      "requirement_id": "REQ-CONN-309",
+      "description": "OkHttp gateways and WebSocket transport execute hermetically against local MockWebServer bound via TestLoopbackTrustPolicy blocking public DNS/external hosts.",
+      "validation_test_id": "TEST-CONN-306",
+      "test_oracle": "TEST-CONN-306, TEST-AUTH-309: Loopback MockWebServer contract suite runs offline in unit tests and blocks any external DNS/TCP destination.",
+      "implementation_task": "Task 3, Task 4, Task 5",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-309.3",
+      "requirement_id": "REQ-CONN-309",
+      "description": "Active policies/checks.json, verification/, workflows, and offline AndroidManifest.xml (zero INTERNET permission until isolated FCT-004 policy transition) remain preserved.",
+      "validation_test_id": "TEST-CONN-307",
+      "test_oracle": "TEST-CONN-307: spec-hygiene, android-lint, android-build, and apk-validation confirm zero unapproved manifest permissions or policy edits.",
+      "implementation_task": "Task 5, Task 6",
+      "check_id": "apk-validation",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-310.1",
+      "requirement_id": "REQ-CONN-310",
+      "description": "ConnectivityError maps auth, redirect, trust, expiry, challenge, timeout, network, handshake, storage, and unsupported device failures to safe allowlisted UI errors.",
+      "validation_test_id": "TEST-CONN-307",
+      "test_oracle": "TEST-CONN-307, TEST-AUTH-308: Error mapping tests verify every ConnectivityError variant formats safe guidance without raw tokens or stack traces.",
+      "implementation_task": "Task 1, Task 5",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-310.2",
+      "requirement_id": "REQ-CONN-310",
+      "description": "WebSocket disconnects preserve committed RobotState telemetry within active sessionEpoch/selected device, block remote sends while disconnected, and clear state on logout/switch.",
+      "validation_test_id": "TEST-CONN-307",
+      "test_oracle": "TEST-CONN-307, TEST-CONN-308: Disconnect recovery test asserts committed RobotState survives socket loss, remote send returns Rejected, and logout clears state.",
+      "implementation_task": "Task 4, Task 5",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-310.3",
+      "requirement_id": "REQ-CONN-310",
+      "description": "All existing 54 FCT-001/FCT-002 unit and Robolectric Compose UI tests plus 7-check policy execution remain non-regressed.",
+      "validation_test_id": "TEST-CONN-307",
+      "test_oracle": "TEST-CONN-307: Full testDebugUnitTest + 7-check candidate pipeline confirms all 54 FCT-001/FCT-002 regressions and spec-hygiene pass.",
+      "implementation_task": "Task 5, Task 6",
+      "check_id": "spec-hygiene",
+      "status": "PLANNED"
+    }
+  ]
+}
