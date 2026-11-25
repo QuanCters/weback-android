@@ -1,5 +1,7 @@
 package com.weback.robot.ui
 
+import com.weback.robot.domain.model.CommandResult
+import com.weback.robot.domain.model.RobotCommand
 import com.weback.robot.domain.model.RobotMode
 import com.weback.robot.domain.model.RobotState
 import com.weback.robot.protocol.RobotTransport
@@ -27,8 +29,9 @@ class FakeRobotTransport(initialState: RobotState) : RobotTransport {
         _robotState.value = newState
     }
 
-    override suspend fun sendCommand(command: String) {
-        // Controllable test double
+    override suspend fun sendCommand(command: RobotCommand): CommandResult {
+        // Controllable test double adapted to typed FCT-002 transport contract
+        return CommandResult.Acknowledged(_robotState.value)
     }
 }
 
@@ -48,7 +51,8 @@ class DashboardViewModelTest {
         assertTrue(state.isDocked)
         assertTrue(state.isDustbinClean)
         assertTrue(state.isSimulator)
-        assertEquals("v0.1.0-alpha (FCT-001 Foundation)", state.appVersion)
+        assertEquals("v0.1.0-alpha (FCT-002 Simulated Robot Control)", state.appVersion)
+        transport.close()
     }
 
     @Test
@@ -71,6 +75,7 @@ class DashboardViewModelTest {
         assertFalse(state.isDocked)
         assertFalse(state.isDustbinClean)
         assertTrue(state.isSimulator)
+        transport.close()
     }
 
     @Test

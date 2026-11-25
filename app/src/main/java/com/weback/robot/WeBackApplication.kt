@@ -12,4 +12,11 @@ class WeBackApplication : Application() {
         super.onCreate()
         container = DefaultAppContainer()
     }
+
+    override fun onTerminate() {
+        if (::container.isInitialized) {
+            container.close()
+        }
+        super.onTerminate()
+    }
 }

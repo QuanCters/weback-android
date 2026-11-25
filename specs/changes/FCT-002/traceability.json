@@ -5,20 +5,20 @@
   "title": "Simulated Robot Control",
   "version": "1.1.0",
   "planned_mapping_coverage": 100.0,
-  "verified_execution_coverage": 0.0,
+  "verified_execution_coverage": 100.0,
   "metrics": {
     "planned_ac_count": 32,
-    "verified_ac_count": 0,
-    "executed_ac_count": 0,
+    "verified_ac_count": 32,
+    "executed_ac_count": 32,
     "device_dependent_not_run_count": 0,
-    "verified_coverage_percent": 0.0,
-    "executed_coverage_percent": 0.0,
-    "total_executed_or_verified_percent": 0.0,
+    "verified_coverage_percent": 100.0,
+    "executed_coverage_percent": 100.0,
+    "total_executed_or_verified_percent": 100.0,
     "planned_scenario_count": 22,
-    "discovered_executable_test_count": 0,
-    "executed_test_count": 0,
+    "discovered_executable_test_count": 54,
+    "executed_test_count": 54,
     "ac_mapping_coverage_percent": 100.0,
-    "verified_ac_execution_coverage_status": "PLANNED_SPEC_BASELINE_G3_CONDITIONALLY_AUTHORIZED"
+    "verified_ac_execution_coverage_status": "VERIFIED_CANDIDATE_OFFLINE_SUITE"
   },
   "summary": {
     "total_requirements": 8,
@@ -35,7 +35,8 @@
       "test_oracle": "TEST-CTRL-201: JUnit asserts exact literal wire tokens for all 4 commands matching SPEC-PROT-01 and SPEC-STATE-01.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/RobotCommandTest.kt::testCanonicalWireStatusTokens (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-201.2",
@@ -45,7 +46,8 @@
       "test_oracle": "TEST-CTRL-202: JUnit verifies all 8 RobotMode enum values and docked classification semantics.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/RobotModeTest.kt::testAllEightRobotModesExist (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-201.3",
@@ -55,7 +57,8 @@
       "test_oracle": "TEST-CTRL-201: Static source scan test enforces pure Kotlin domain dependency boundary.",
       "implementation_task": "Task 1, Task 5",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/DomainPurityTest.kt::testDomainPackageHasZeroFrameworkOrNetworkImports (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-202.1",
@@ -65,7 +68,8 @@
       "test_oracle": "TEST-CTRL-203: Table-driven JUnit verifies all valid (sourceMode, command) pairs return Accepted with expected literal target mode.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/RobotStateMachineTest.kt::testExhaustiveEightByFourTransitionMatrixAcrossBoundariesAndFaults (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-202.2",
@@ -75,7 +79,8 @@
       "test_oracle": "TEST-CTRL-204: Complete 8x4 mode-command matrix across battery (0, 14, 15, 100) and errorCode (0, 9001) verifies exact rejection precedence.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/RobotStateMachineTest.kt::testRejectionPrecedenceOrderExplicitly, testExhaustiveEightByFourTransitionMatrixAcrossBoundariesAndFaults (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-202.3",
@@ -85,7 +90,8 @@
       "test_oracle": "TEST-CTRL-204: Boundary table JUnit at batteryPercentage 0, 14, 15, and 100 verifies exact LOW_BATTERY boundary behavior.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/RobotStateMachineTest.kt::testExhaustiveEightByFourTransitionMatrixAcrossBoundariesAndFaults, app/src/test/java/com/weback/robot/protocol/SimulatorRobotTransportTest.kt::testBatteryThresholdAgreementAcrossCommandAdmissionAndAutoReturn (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-203.1",
@@ -95,7 +101,8 @@
       "test_oracle": "TEST-CTRL-205: JUnit verifies sealed hierarchy, immutability, unique commandId emission, and MonotonicClock timestamps.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testValidCommandLifecycleIdleToPendingToAcknowledgedWithSimulator, testLocallyInvalidCommandRejectedWithoutInvokingTransport, testTransportRejectionAndUnexpectedExceptionPreserveCommittedTelemetry, testBoundedCommandTimeoutRejectsAndReleasesLock (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-203.2",
@@ -105,7 +112,8 @@
       "test_oracle": "TEST-CTRL-205: StandardTestDispatcher virtual-time timeline verifies Pending before ackDelayMs, Acknowledged + updated mode after advanceTimeBy, and 0 transport sends on local invalid command.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testValidCommandLifecycleIdleToPendingToAcknowledgedWithSimulator, testLocallyInvalidCommandRejectedWithoutInvokingTransport (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-203.3",
@@ -115,7 +123,8 @@
       "test_oracle": "TEST-CTRL-206: Fault- and exception-injected transport tests verify Pending -> Rejected (TRANSPORT_REJECTED / TRANSPORT_ERROR) with unchanged committed RobotState.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testTransportRejectionAndUnexpectedExceptionPreserveCommittedTelemetry, testAcknowledgedSettlementDoesNotRollbackNewerTelemetry (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-203.4",
@@ -125,7 +134,8 @@
       "test_oracle": "TEST-CTRL-217: Virtual-time withTimeout test verifies actual TIMEOUT settlement, telemetry preservation, and subsequent command acceptance.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testBoundedCommandTimeoutRejectsAndReleasesLock, testStaleCompletionCannotOverwriteNewerCommandLifecycle (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-203.5",
@@ -135,7 +145,8 @@
       "test_oracle": "TEST-CTRL-218: Cancellation test verifies CancellationException propagates, Pending cleans up to Idle, and subsequent valid command succeeds.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testExternalCancellationCleansPendingWithoutSwallowingAndAllowsRecovery, testPreStartAndInactiveScopeCancellationNeverLeavesPendingStuck (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-203.6",
@@ -145,7 +156,8 @@
       "test_oracle": "TEST-CTRL-219: Stale completion correlation test asserts late ack/reject for superseded commandId=1 does not alter active commandId=2.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testStaleCompletionCannotOverwriteNewerCommandLifecycle (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-204.1",
@@ -155,7 +167,8 @@
       "test_oracle": "TEST-CTRL-207: Spy transport counter asserts exactly 1 sendCommand call on duplicate/concurrent dispatches during Pending.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testDuplicateAndConcurrentAdmissionsDispatchOnlyOnce (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-204.2",
@@ -165,7 +178,8 @@
       "test_oracle": "TEST-CTRL-208: Virtual-time conflict sequence asserts 0 extra transport sends, preserved Pending command, and non-null busyConflictNotice.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testConflictingCommandAndDismissDuringPendingPreserveActiveLock (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-204.3",
@@ -175,7 +189,8 @@
       "test_oracle": "TEST-CTRL-218: Cancellation recovery and post-settlement sequence assert subsequent valid commands succeed cleanly.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testExternalCancellationCleansPendingWithoutSwallowingAndAllowsRecovery, testConflictingCommandAndDismissDuringPendingPreserveActiveLock, testTransportRejectionAndUnexpectedExceptionPreserveCommittedTelemetry (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-204.4",
@@ -185,7 +200,8 @@
       "test_oracle": "TEST-CTRL-208: DismissCommandFeedback while Pending preserves Pending state, disabled controls, and active lock until transport settles.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testConflictingCommandAndDismissDuringPendingPreserveActiveLock (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-205.1",
@@ -195,7 +211,8 @@
       "test_oracle": "TEST-CTRL-209: Contract tests verify serialized CommandResult delivery and monotonic StateFlow emissions.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/SimulatorRobotTransportTest.kt::testConcurrentSendCommandSerializesSafelyViaStateMutex, testOneShotFailureInjectionAndCloseLifecycleLeakPrevention (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-205.2",
@@ -205,7 +222,8 @@
       "test_oracle": "TEST-CTRL-210: StandardTestDispatcher runTest advances virtual clock cleanly through RETURNING_DOCK, CHARGING, and DOCK.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/SimulatorRobotTransportTest.kt::testSimulatorConfigHasDocumentedSyntheticDefaults, testSimulatorConfigRejectsThresholdDisagreementAndInvalidBounds, testDeterministicVirtualTimeReturnToDockChargingToDockLifecycle (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-205.3",
@@ -215,7 +233,8 @@
       "test_oracle": "TEST-CTRL-220: Virtual-time command-vs-tick race verifies tick/fault during ackDelayMs executes cleanly and commit point revalidates against latest telemetry.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/SimulatorRobotTransportTest.kt::testCommandVsTickRaceRevalidatesAtCommitPoint, testFaultInjectionDuringAckDelayPreventsStaleCommandCommit, testCloseWaitsForInFlightCommitAndOrdersSynchronously (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-205.4",
@@ -225,7 +244,8 @@
       "test_oracle": "TEST-CTRL-221: Obsolete docking/charging job cancellation and generation-check test prevents stale overwrites.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/SimulatorRobotTransportTest.kt::testObsoleteDockingAndChargingJobsCancelledByNewerTransitions, testOneShotFailureInjectionAndCloseLifecycleLeakPrevention (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-205.5",
@@ -235,7 +255,8 @@
       "test_oracle": "TEST-CTRL-222: Lifecycle cleanup tests verify close() halts active drain/dock/charge jobs with zero subsequent mutations or leaks.",
       "implementation_task": "Task 2, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/SimulatorRobotTransportTest.kt::testOneShotFailureInjectionAndCloseLifecycleLeakPrevention, testCloseWhileCommandPendingInAckDelayRejectsAndPreventsMutation, testCloseWaitsForInFlightCommitAndOrdersSynchronously, testQueuedCommandDuringCloseNeverDeadlocksOrAcknowledgesAfterClose, testConcurrentCloseDuringTimedTicksAndCommandsPreventsPostCloseMutation, AppContainerTest.kt::testContainerCloseStopsActiveSimulatorJobs, DashboardViewModelControlTest.kt::testExternalCancellationCleansPendingWithoutSwallowingAndAllowsRecovery (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-206.1",
@@ -245,7 +266,8 @@
       "test_oracle": "TEST-CTRL-211: Boundary and virtual-time tests verify IllegalArgumentException outside 0..100, non-negative drain, auto-docking, and clamp at 100.",
       "implementation_task": "Task 1, Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/RobotStateInvariantsTest.kt, SimulatorRobotTransportTest.kt::testCleanDrainageAutoReturnsBelowFifteenAndZeroBatteryUndockedEntersFault, testInitialChargingAtHundredTransitionsToDockOnTick, testBatteryThresholdAgreementAcrossCommandAdmissionAndAutoReturn, testBatteryProgressionClampsWithinBoundsWithoutOverflow (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-206.2",
@@ -255,7 +277,8 @@
       "test_oracle": "TEST-CTRL-212: Exhaustive enum test checks isDocked across all 8 RobotMode values.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/RobotStateInvariantsTest.kt::testIsDockedAcrossAllEightModes (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-206.3",
@@ -265,7 +288,8 @@
       "test_oracle": "TEST-CTRL-212: Multi-step transition sequence asserts metadata preservation and FAULT consistency on errorCode != 0.",
       "implementation_task": "Task 1, Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/RobotStateInvariantsTest.kt::testIsFaultConsistency, SimulatorRobotTransportTest.kt::testInitialZeroBatteryAndNonZeroErrorNormalization, testDeterministicVirtualTimeReturnToDockChargingToDockLifecycle (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-206.4",
@@ -275,7 +299,8 @@
       "test_oracle": "TEST-CTRL-211: Undocked 0% battery initialization and runtime depletion tests verify FAULT transition with synthetic errorCode 9001 while docked 0% remains docked.",
       "implementation_task": "Task 1, Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/SimulatorRobotTransportTest.kt::testCleanDrainageAutoReturnsBelowFifteenAndZeroBatteryUndockedEntersFault, testInitialZeroBatteryAndNonZeroErrorNormalization (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-207.1",
@@ -285,7 +310,8 @@
       "test_oracle": "TEST-CTRL-213: Independent truth table asserts exact ControlAvailability booleans across all 8 modes, battery boundaries, errorCode != 0, and Pending.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/ControlAvailabilityTest.kt::testControlAvailabilityTruthTableAcrossAllModesAndOverlays (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-207.2",
@@ -295,7 +321,8 @@
       "test_oracle": "TEST-CTRL-213: MVI ViewModel contract tests verify deterministic StateFlow updates across all intent variants.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testFullCleanPauseResumeDockMviLifecycle, DashboardViewModelTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-207.3",
@@ -305,7 +332,8 @@
       "test_oracle": "TEST-CTRL-214: JUnit verifies DismissCommandFeedback clears settled commandState/busyConflictNotice while preserving RobotState.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/DashboardViewModelControlTest.kt::testPostSettlementDismissResetsFeedbackWithoutMutatingTelemetry (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-208.1",
@@ -315,7 +343,8 @@
       "test_oracle": "TEST-CTRL-215: Robolectric Compose UI rule asserts enabled/disabled button semantics and status banner text across states including RETURNING_DOCK.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/screens/DashboardScreenControlTest.kt::testButtonEnablementMatrixAndOfflineBadgeAcrossAllControlStates, testClickDispatchAndFeedbackBannersInLightAndDarkThemes, testEndToEndViewModelAndSimulatorInteractionViaComposeClicks (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-208.2",
@@ -325,7 +354,8 @@
       "test_oracle": "TEST-CTRL-215: Compose UI assertions verify simulator_badge remains displayed across light/dark themes and all modes/states.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/screens/DashboardScreenControlTest.kt::testClickDispatchAndFeedbackBannersInLightAndDarkThemes, testButtonEnablementMatrixAndOfflineBadgeAcrossAllControlStates, testDisplayedMilestoneVersionLabelSynchronizedWithStringsAndUiState (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-208.3",
@@ -335,7 +365,8 @@
       "test_oracle": "TEST-CTRL-215: Robolectric createComposeRule() executes inside ./gradlew testDebugUnitTest via gradle_test_adapter producing fresh JUnit XML within 180s.",
       "implementation_task": "Task 4, Task 5",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/build/test-results/testDebugUnitTest/TEST-com.weback.robot.ui.screens.DashboardScreenControlTest.xml (4 tests, 0 failures, 0 skipped)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-208.4",
@@ -345,7 +376,8 @@
       "test_oracle": "TEST-CTRL-216: spec_validator.py, lintDebug, assembleDebug, and apk_validator.py pass under unchanged policies/checks.json.",
       "implementation_task": "Task 5",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "evidence_ref": "artifacts/verification/fct002-candidate-verify-replacement/report.json (7/7 checks PASS under unchanged policies/checks.json)",
+      "status": "VERIFIED"
     }
   ]
 }
