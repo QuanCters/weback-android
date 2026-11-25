@@ -2,24 +2,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "change_id": "FCT-004",
   "milestone": "FCT-004",
-  "title": "Controlled Connectivity Pilot (Read-Only Spec Baseline)",
-  "version": "1.0.0",
+  "title": "Controlled Connectivity Pilot (Bounded Security Calibration)",
+  "version": "1.1.0",
   "risk_ceiling": "T4",
   "planned_mapping_coverage": 100.0,
   "verified_execution_coverage": 0.0,
   "summary": {
     "total_requirements": 8,
-    "total_acceptance_criteria": 19,
-    "total_acceptance_tests": 14,
+    "total_acceptance_criteria": 21,
+    "total_acceptance_tests": 18,
     "total_tasks": 6
   },
   "acceptance_criteria": [
     {
       "ac_id": "AC-401.1",
       "requirement_id": "REQ-PILOT-401",
-      "description": "PilotAuthorizationGate defaults to Disabled (OfflineSimulator) on startup and in all automated test suites, preserving SimulatorRobotTransport and OFFLINE badge.",
+      "description": "PilotAuthorizationGate defaults to Disabled (OfflineDefault) at startup and in all automated suites, preserving SimulatorRobotTransport and OFFLINE badge without restoring authorization on process restart.",
       "validation_test_id": "TEST-PILOT-401",
-      "test_oracle": "TEST-PILOT-401, TEST-PILOT-402: DefaultAppContainer boots in OfflineDefault with zero network I/O.",
+      "test_oracle": "TEST-PILOT-401, TEST-PILOT-402: DefaultAppContainer boots in OfflineDefault with zero network I/O and zero restart restoration.",
       "implementation_task": "Task 1, Task 4",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -27,9 +27,19 @@
     {
       "ac_id": "AC-401.2",
       "requirement_id": "REQ-PILOT-401",
-      "description": "Authorized pilot sessions require explicit PilotAuthorizationContext with non-empty authorizationId, readOnlyMode = true, bounded observationWindowMs, and exact endpoint config.",
+      "description": "Authorized pilot sessions require an immutable PilotAuthorizationContext binding authorizationId, candidate/APK identity, test account scope, target robot identity, permitted operations, approved endpoints, readOnlyMode=true, request budgets, and monotonic deadline; expired, mismatched, or incomplete contexts are rejected fail-closed.",
       "validation_test_id": "TEST-PILOT-401",
-      "test_oracle": "TEST-PILOT-401: Missing or non-read-only PilotAuthorizationContext rejected fail-closed before any network call.",
+      "test_oracle": "TEST-PILOT-401: Missing, expired, incomplete, or mismatched PilotAuthorizationContext rejected fail-closed before any network call.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-401.3",
+      "requirement_id": "REQ-PILOT-401",
+      "description": "Governance separates G3 implementation, T4 build/policy, and external live-pilot authorizations without unnecessary PKI; UI checkbox cannot substitute for external approval and trust limitations are documented.",
+      "validation_test_id": "TEST-PILOT-401",
+      "test_oracle": "TEST-PILOT-401: UI-only consent flag without external human approval metadata rejected by PilotAuthorizationGate.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -37,9 +47,9 @@
     {
       "ac_id": "AC-402.1",
       "requirement_id": "REQ-PILOT-402",
-      "description": "AuthorizedPilotEndpointTrustPolicy restricts auth to exact grit-cloud.(cn|com) /prod/oauth origins and validates dynamic api_url/wss_url against pinned or human-confirmed https/wss :443 origins.",
+      "description": "AuthorizedPilotEndpointTrustPolicy restricts auth to exact grit-cloud.(cn|com):443/prod/oauth origins, enforces https/wss port 443 only, and rejects userinfo, credential query/fragments, wildcards, redirects, and proxies.",
       "validation_test_id": "TEST-PILOT-403",
-      "test_oracle": "TEST-PILOT-403: Rejects unpinned unconfirmed origins, wildcards, cleartext schemes, non-443 ports, and 3xx redirects.",
+      "test_oracle": "TEST-PILOT-403: Rejects non-443 ports, wrong auth paths, wildcards, cleartext schemes, userinfo, query secrets, 3xx redirects, and proxies.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -47,15 +57,25 @@
     {
       "ac_id": "AC-402.2",
       "requirement_id": "REQ-PILOT-402",
-      "description": "validateResolvedAddresses rejects loopback, link-local/metadata, RFC1918 private, multicast, and unspecified IPs while enforcing Proxy.NO_PROXY and followRedirects(false).",
+      "description": "Unapproved dynamic api_url/wss_url origins keep sessions strictly quarantined (AwaitingOriginConfirmation without publishing Authenticated, persisting tokens, or forwarding headers) and require verified provenance plus explicit authorization rather than human confirmation alone.",
       "validation_test_id": "TEST-PILOT-403",
-      "test_oracle": "TEST-PILOT-403: Synthetic DNS test proves 127.0.0.1, 10.0.0.1, 172.16.0.1, 192.168.1.1, 169.254.169.254, ::1, and fe80::1 are blocked before connect.",
-      "implementation_task": "Task 2",
+      "test_oracle": "TEST-PILOT-403: Unpinned dynamic origin pauses in quarantine with zero token forwarding/persistence; UI confirmation alone without provenance/auth is rejected.",
+      "implementation_task": "Task 2, Task 3",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
     },
     {
       "ac_id": "AC-402.3",
+      "requirement_id": "REQ-PILOT-402",
+      "description": "Explicit IPv4/IPv6 special-use CIDR validation checks all resolved DNS addresses and connection destination against loopback, link-local/metadata, RFC1918, ULA, CGNAT, IPv4-mapped IPv6, multicast, and unspecified ranges using injected DNS fixtures and hermetic loopback adapters.",
+      "validation_test_id": "TEST-PILOT-415",
+      "test_oracle": "TEST-PILOT-415: Injected DNS fixture tests prove 127.0.0.1, 10.0.0.1, 172.16.0.1, 192.168.1.1, 100.64.0.1, 169.254.169.254, 0.0.0.0, 224.0.0.1, ::1, fe80::1, fc00::1, fd00:ec2::254, and ::ffff:127.0.0.1/10.0.0.1/169.254.169.254 are blocked before connect.",
+      "implementation_task": "Task 2",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-402.4",
       "requirement_id": "REQ-PILOT-402",
       "description": "Pilot OkHttpClient uses standard Android platform TLS 1.2/1.3 TrustManager and HostnameVerifier, failing closed on SSLHandshakeException with zero trust-all or global SSL overrides.",
       "validation_test_id": "TEST-PILOT-404",
@@ -67,9 +87,9 @@
     {
       "ac_id": "AC-403.1",
       "requirement_id": "REQ-PILOT-403",
-      "description": "Pilot auth probe records sanitized protocol metadata and aborts immediately on ChallengeRequired (UNK-AUTH-04) without CAPTCHA bypass.",
+      "description": "Pilot auth probe records allowlisted protocol metadata without raw request/response logging and aborts immediately on ChallengeRequired (UNK-AUTH-04) without CAPTCHA automation.",
       "validation_test_id": "TEST-PILOT-405",
-      "test_oracle": "TEST-PILOT-405: MockWebServer challenge response maps cleanly to AuthFailureReason.ChallengeRequired and aborts pilot.",
+      "test_oracle": "TEST-PILOT-405: MockWebServer challenge response maps cleanly to AuthFailureReason.ChallengeRequired with zero raw body logs and zero CAPTCHA automation.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -77,9 +97,9 @@
     {
       "ac_id": "AC-403.2",
       "requirement_id": "REQ-PILOT-403",
-      "description": "Pilot auth uses Utf8TlsDefault exclusively (UNK-AUTH-05) and aborts to ProtocolMismatchAbort on rejection without silently switching to legacy MD5.",
+      "description": "Pilot auth uses Utf8TlsDefault exclusively (UNK-AUTH-05) with DisabledPasswordlessRefreshStrategy active, treating login rejection as observed failure without MD5 fallback or passwordless refresh.",
       "validation_test_id": "TEST-PILOT-405",
-      "test_oracle": "TEST-PILOT-405: MockWebServer rejection verifies zero MD5 fallback dispatch and fail-closed abort.",
+      "test_oracle": "TEST-PILOT-405: MockWebServer rejection verifies zero MD5 fallback dispatch, zero passwordless refresh, and fail-closed abort.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -87,9 +107,9 @@
     {
       "ac_id": "AC-404.1",
       "requirement_id": "REQ-PILOT-404",
-      "description": "Opt-in pilot sign-in UI uses mutable CharArray secret input (PasswordVisualTransformation, autoCorrectEnabled=false), wipes CharArray in finally, and retains zero plaintext password in ViewModel.",
+      "description": "Opt-in pilot sign-in UI uses mutable CharArray secret input (PasswordVisualTransformation, autoCorrectEnabled=false, FLAG_SECURE screenshot protection), wipes CharArray on submit/cancel/error/screen exit, and retains zero plaintext password in ViewModel or SavedState.",
       "validation_test_id": "TEST-PILOT-406",
-      "test_oracle": "TEST-PILOT-406: Robolectric Compose test verifies CharArray zeroed post-dispatch and ViewModel state holds zero password.",
+      "test_oracle": "TEST-PILOT-406: Robolectric Compose test verifies FLAG_SECURE lifecycle, CharArray zeroing on submit/cancel/error/dispose, and zero password in ViewModel/SavedState.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -97,9 +117,9 @@
     {
       "ac_id": "AC-404.2",
       "requirement_id": "REQ-PILOT-404",
-      "description": "KeystoreAeadTokenStore persists only PersistedSessionRecord via AndroidKeyStore AES-256-GCM while SessionCoordinator preserves conservative ReauthenticationRequired on cold restart.",
+      "description": "KeystoreAeadTokenStore persists only PersistedSessionRecord via AndroidKeyStore AES-256-GCM while SessionCoordinator preserves conservative ReauthenticationRequired on cold restart and PilotAuthorizationGate boots Disabled.",
       "validation_test_id": "TEST-PILOT-406",
-      "test_oracle": "TEST-PILOT-406: Persistence boundary test confirms zero password/MD5 on disk and safe restart reauthentication.",
+      "test_oracle": "TEST-PILOT-406: Persistence boundary test confirms zero password/MD5/authorization on disk and safe restart state.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -107,9 +127,9 @@
     {
       "ac_id": "AC-405.1",
       "requirement_id": "REQ-PILOT-405",
-      "description": "Specification defines governed T4 transition delta for AndroidManifest.xml (INTERNET only) and mode-scoped apk_validator.py preserving non-waivable security checks.",
+      "description": "Specification defines the complete FCT-004B separate offline vs pilot build transition proposal, unified apk_validator.py --connectivity-policy {offline,pilot} CLI, negative tests, and post-merge policy retirement procedure.",
       "validation_test_id": "TEST-PILOT-407",
-      "test_oracle": "TEST-PILOT-407, TEST-PILOT-414: Transition plan verified and enforced prior to live pilot build.",
+      "test_oracle": "TEST-PILOT-407, TEST-PILOT-414: FCT-004B transition proposal complete and verified before any live pilot build.",
       "implementation_task": "Task 5, Task 6",
       "check_id": "spec-hygiene",
       "status": "PLANNED"
@@ -117,9 +137,9 @@
     {
       "ac_id": "AC-405.2",
       "requirement_id": "REQ-PILOT-405",
-      "description": "Until the separate T4 transition PR is authorized, AndroidManifest.xml (INTERNET-free) and policies/checks.json remain unmodified.",
+      "description": "Until separate FCT-004B authorization, AndroidManifest.xml (INTERNET-free), Gradle variants, policies/checks.json, verification/, and CI workflows remain unmodified with TRANSITION_AUTHORIZATION inactive.",
       "validation_test_id": "TEST-PILOT-407",
-      "test_oracle": "TEST-PILOT-407: Spec baseline keeps AndroidManifest.xml and policies/checks.json unchanged (7/7 checks PASS).",
+      "test_oracle": "TEST-PILOT-407: Spec & FCT-004A baselines keep AndroidManifest.xml and policies/checks.json unchanged (7/7 checks PASS).",
       "implementation_task": "Task 5",
       "check_id": "apk-validation",
       "status": "PLANNED"
@@ -127,9 +147,9 @@
     {
       "ac_id": "AC-406.1",
       "requirement_id": "REQ-PILOT-406",
-      "description": "SessionCoordinator and DeviceInventoryRepository enforce sessionEpoch isolation across pilot sign-in, user_thing_list_get, replacement, and logout.",
-      "validation_test_id": "TEST-PILOT-408",
-      "test_oracle": "TEST-PILOT-408: MockWebServer epoch test discards stale HTTP/WS callbacks on logout or account switch.",
+      "description": "PilotSessionController and SessionCoordinator enforce sessionEpoch isolation, 1 login attempt, 0 password retries, 1 inventory request, retryOnConnectionFailure=false, and 15s HTTP callTimeout.",
+      "validation_test_id": "TEST-PILOT-417",
+      "test_oracle": "TEST-PILOT-408, TEST-PILOT-417: MockWebServer epoch & budget tests prove 1 login, 0 auto retries, 1 inventory cap, and 15s HTTP callTimeout.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -137,9 +157,9 @@
     {
       "ac_id": "AC-406.2",
       "requirement_id": "REQ-PILOT-406",
-      "description": "DeviceCapabilityClassifier permits read-only live telemetry subscription strictly for verified LaserSlam (MvpSupportedShadowWs) devices.",
+      "description": "DeviceCapabilityClassifier permits read-only live telemetry subscription strictly for verified LaserSlam (MvpSupportedShadowWs) devices matching PilotAuthorizationContext target robot identity.",
       "validation_test_id": "TEST-PILOT-408",
-      "test_oracle": "TEST-PILOT-408, TEST-PILOT-414: Non-laser/peripheral/camera/unknown devices rejected for WS telemetry subscription.",
+      "test_oracle": "TEST-PILOT-408, TEST-PILOT-414: Non-laser/peripheral/camera/unknown and mismatched-identity devices rejected for WS telemetry subscription.",
       "implementation_task": "Task 3, Task 6",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -147,9 +167,9 @@
     {
       "ac_id": "AC-406.3",
       "requirement_id": "REQ-PILOT-406",
-      "description": "Pilot UI displays read-only device identity verification metadata (nickname, normalized sub_type, isAdmin, ControlCompatibility, redacted thing_name) without raw tokens.",
+      "description": "Pilot UI displays clear offline/mock labeling, authorization summary, endpoint review, read-only device inventory, selected robot status, connection state, and monotonic observation timer without raw tokens.",
       "validation_test_id": "TEST-PILOT-409",
-      "test_oracle": "TEST-PILOT-409: Robolectric Compose card test verifies device identity display with zero secret exposure.",
+      "test_oracle": "TEST-PILOT-409: Robolectric Compose card test verifies full PilotReadinessSheet display with zero secret exposure.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -157,7 +177,7 @@
     {
       "ac_id": "AC-407.1",
       "requirement_id": "REQ-PILOT-407",
-      "description": "OkHttpWebSocketTransport enforces (sessionEpoch, connectionGeneration) fencing, active selected thing_name filtering, and read-only thing_status_update hydration.",
+      "description": "Pilot WS boundary enforces (sessionEpoch, connectionGeneration) fencing, 1 initial WS connection, active selected thing_name filtering, and read-only thing_status_update hydration, stopping if app-level subscription messages are required.",
       "validation_test_id": "TEST-PILOT-410",
       "test_oracle": "TEST-PILOT-410, TEST-PILOT-414: MockWebServer WS test + authorized pilot observation verify bounded telemetry hydration.",
       "implementation_task": "Task 3, Task 6",
@@ -167,9 +187,9 @@
     {
       "ac_id": "AC-407.2",
       "requirement_id": "REQ-PILOT-407",
-      "description": "Pilot ConnectionConfig enforces bounded retries (maxReconnectAttempts <= 3, >= 4000ms delay), zero retries on 401/403/3xx, and automatic disconnect when observationWindowMs expires.",
-      "validation_test_id": "TEST-PILOT-410",
-      "test_oracle": "TEST-PILOT-410: Virtual-time MockWebServer test confirms 3-retry cap, auth short-circuit, and observation-window auto-disconnect.",
+      "description": "Pilot session enforces cumulative <= 3 WS reconnect attempts (never reset on successful reconnect), >= 4000ms delay, zero retries on 401/403/3xx, and automatic disconnect on monotonic observation deadline (<= 30m).",
+      "validation_test_id": "TEST-PILOT-417",
+      "test_oracle": "TEST-PILOT-410, TEST-PILOT-417: Virtual-time MockWebServer tests confirm cumulative 3-reconnect cap across reconnects, auth short-circuit, and monotonic deadline disconnect.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -177,9 +197,9 @@
     {
       "ac_id": "AC-408.1",
       "requirement_id": "REQ-PILOT-408",
-      "description": "One-tap Emergency Disconnect & Wipe increments sessionEpoch, closes WS (1000), clears inventory & TokenStore, locks PilotAuthorizationGate, and restores OFFLINE SimulatorRobotTransport.",
+      "description": "Non-blocking 9-step Emergency Disconnect immediately revokes network/auth admission without waiting for disk I/O, cancels active HTTP/jobs/WS, clears inventory & TokenStore, restores OFFLINE simulator, blocks late callbacks, and reports incomplete storage cleanup honestly.",
       "validation_test_id": "TEST-PILOT-412",
-      "test_oracle": "TEST-PILOT-412, TEST-PILOT-414: Kill switch integration test verifies full teardown and immediate OFFLINE reversion.",
+      "test_oracle": "TEST-PILOT-412, TEST-PILOT-418, TEST-PILOT-414: Kill switch & cancellation tests verify immediate non-blocking revocation across all active phases, late-callback immunity, and honest partial-cleanup reporting.",
       "implementation_task": "Task 3, Task 6",
       "check_id": "android-smoke-test",
       "status": "PLANNED"
@@ -187,17 +207,17 @@
     {
       "ac_id": "AC-408.2",
       "requirement_id": "REQ-PILOT-408",
-      "description": "ReadOnlyPilotGuard structurally blocks all outbound robot control commands (Clean, Pause, Resume, Dock, send_to_device) on live cloud transports during FCT-004.",
-      "validation_test_id": "TEST-PILOT-411",
-      "test_oracle": "TEST-PILOT-411: Every outbound robot command during pilot returns CommandResult.Rejected with zero live WS sends.",
-      "implementation_task": "Task 1",
+      "description": "Capability-restricted pilot transport boundary permits only login & user_thing_list_get HTTP ops, blocks all outbound WS application text/binary messages while preserving RFC 6455 control frames, isolates offline simulator commands, and treats unexpected physical command attempts as pilot-abort events.",
+      "validation_test_id": "TEST-PILOT-416",
+      "test_oracle": "TEST-PILOT-411, TEST-PILOT-416: Direct adapter, malformed payload, unknown op, and MockWebServer frame capture tests prove zero unauthorized outbound traffic reaches network.",
+      "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
     },
     {
       "ac_id": "AC-408.3",
       "requirement_id": "REQ-PILOT-408",
-      "description": "PilotSanitizedExporter scrubs jwt_token, headers, passwords, emails, and device identifiers via SecretRedactor, and rollback to frozen FCT-003 APK is documented.",
+      "description": "PilotSanitizedExporter exports allowlisted diagnostics scrubbed via SecretRedactor with zero raw request/response logging, and rollback to frozen FCT-003 APK is documented.",
       "validation_test_id": "TEST-PILOT-413",
       "test_oracle": "TEST-PILOT-413: Redaction export test asserts zero raw secrets/PII in captured pilot diagnostics.",
       "implementation_task": "Task 2, Task 6",

@@ -8,58 +8,86 @@
 
 ## 1. Architectural Extension Over FCT-003
 
-`FCT-004` preserves 100% of `FCT-003` pure-Kotlin domain isolation (`C-002`), `SessionCoordinator` commit/epoch serialization, `KeystoreAeadTokenStore` (`ADR-003`), and `SimulatorRobotTransport` default boot behavior, adding a **strictly opt-in, read-only pilot layer**:
+`FCT-004` / `FCT-004A` preserves 100% of `FCT-003` pure-Kotlin domain isolation (`C-002`), `SessionCoordinator` commit/epoch serialization, `KeystoreAeadTokenStore` (`ADR-003`), and `SimulatorRobotTransport` default offline boot behavior, adding a **strictly opt-in, capability-restricted, read-only pilot layer**:
 
 ```text
 app/src/main/java/com/weback/robot/
 ├── domain/pilot/                    [PURE KOTLIN]
-│   ├── PilotModels.kt               (PilotAuthorizationContext, PilotModeState, ReadOnlyTelemetrySnapshot, PilotAbortReason)
-│   └── ReadOnlyPilotGuard.kt        (Blocks outbound send_to_device commands while readOnlyMode == true)
+│   ├── PilotModels.kt               (PilotAuthorizationContext, PilotRequestBudgets, PilotModeState,
+│   │                                 PilotAbortReason, PilotEmergencyDisconnectResult, ReadOnlyTelemetrySnapshot)
+│   ├── PilotAuthorizationGate.kt    (Default-disabled gate, immutable context validation, monotonic deadline)
+│   └── ReadOnlyPilotGuard.kt        (Structural command guard; live command attempt -> Reject + PilotAbort)
 ├── security/
-│   ├── AuthorizedPilotEndpointTrustPolicy.kt (Exact CN/Global auth origins + pinned/human-confirmed api_url/wss_url; public IP check)
-│   └── PilotSanitizedExporter.kt    (Combines DiagnosticLogger ring buffer + SecretRedactor for safe pilot evidence export)
+│   ├── AuthorizedPilotEndpointTrustPolicy.kt (Exact auth + /prod/oauth, pinned/provenance-verified dynamic origins,
+│   │                                          explicit IPv4/IPv6 CIDR + socket destination validation, 15s callTimeout)
+│   └── PilotSanitizedExporter.kt    (Allowlisted DiagnosticLogger + SecretRedactor evidence export)
+├── protocol/pilot/
+│   └── PilotReadOnlyTransportBoundary.kt (Capability-restricted HTTP op validator + ReadOnlyWebSocketTransport
+│                                          blocking all outbound app text/binary frames while preserving WS control frames)
 ├── app/pilot/
-│   └── PilotSessionController.kt    (Coordinates PilotAuthorizationGate, Emergency Disconnect & Wipe, observation window timer)
+│   └── PilotSessionController.kt    (Bounded budgets, cumulative WS reconnect cap, active HTTP Call cancellation,
+│                                     quarantined dynamic origin gate, 9-step non-blocking Emergency Disconnect)
 └── ui/pilot/
-    └── PilotReadinessSheet.kt       (Opt-in Compose UI: Authorization summary, ephemeral CharArray sign-in, read-only device/telemetry card, Kill Switch)
+    └── PilotReadinessSheet.kt       (Opt-in Compose UI: Auth summary, FLAG_SECURE synthetic CharArray entry,
+                                      endpoint review, read-only inventory, selected status, timer, Kill Switch)
 ```
 
 ---
 
 ## 2. Detailed Component Contracts
 
-### 2.1 `PilotAuthorizationGate` & `AuthorizedPilotEndpointTrustPolicy` (`REQ-PILOT-401`, `REQ-PILOT-402`)
-1. **Default State:** App boots with `PilotModeState.OfflineDefault` (`SimulatorRobotTransport` active, `"OFFLINE"` badge visible, zero network I/O).
-2. **Exact Auth Origins:** `RegionEndpointRouter` resolves `https://user.grit-cloud.cn/prod/oauth` (`+86`/`0086`) or `https://user.grit-cloud.com/prod/oauth` (other valid calling codes). `AuthorizedPilotEndpointTrustPolicy` accepts **only** those exact `(scheme = "https", host, port = 443)` origins for login.
-3. **Dynamic `api_url` / `wss_url` Handling (`UNK-AUTH-07`):**
-   - Step A: `UriValidator.validateEndpoint(url, allowLoopbackCleartext = false)` rejects non-`https`/`wss`, non-`443` explicit ports, userinfo, and credential query params.
-   - Step B: If `PilotAuthorizationContext.pinnedApiOrigin` / `pinnedWssOrigin` are provided in the signed Pilot Authorization Form, `AuthorizedPilotEndpointTrustPolicy` requires exact `(scheme, host, port)` equality.
-   - Step C: If unpinned prior to first pilot observation, `OkHttpAuthGateway` extracts ONLY the normalized origin `(scheme, host, port)` (zero token forwarding) and pauses in `PilotModeState.AwaitingOriginConfirmation` until the human operator confirms or rejects the exact origin in UI before any inventory/WS call is dispatched.
-4. **Public Unicast IP Enforcement:** Custom OkHttp `Dns` validates every resolved `InetAddress` is NOT `isLoopbackAddress`, `isSiteLocalAddress` (RFC1918), `isLinkLocalAddress` (`169.254.0.0/16` metadata), `isAnyLocalAddress`, or `isMulticastAddress`, failing closed with `UnknownHostException` before TCP/TLS socket open.
-5. **TLS Hygiene (`UNK-AUTH-08`):** Standard Android platform `TrustManager` + `HostnameVerifier` (`TLS 1.2/1.3`), `.followRedirects(false)`, `.followSslRedirects(false)`, `.proxy(Proxy.NO_PROXY)`.
+### 2.1 `PilotModels`, `PilotAuthorizationGate` & `ReadOnlyPilotGuard` (`SEC-401`, `SEC-402`)
+1. **Default State & Zero Restart Restoration:** `PilotAuthorizationGate` starts in `PilotModeState.OfflineDefault` (`SimulatorRobotTransport` active, `"OFFLINE"` badge visible, zero network I/O). Context is held strictly in volatile memory and never serialized to `TokenStore` or `SavedStateHandle`.
+2. **Immutable `PilotAuthorizationContext` Validation:** `PilotAuthorizationGate.activate(context, expectedRuntimeIdentity, nowElapsedMs)` rejects fail-closed if:
+   - `authorizationId` is blank or external human approval metadata (`approvedByProductOwner`, `approvedByLeadMaintainer`) is blank;
+   - `readOnlyMode != true` or `physicalRobotCommandsPermitted != false` or `permittedOperations` contains anything outside `{"login", "user_thing_list_get", "ws_telemetry_observe"}`;
+   - `candidateCommitSha`, `expectedApplicationId`, `expectedVersionName`, or `expectedApkSha256` is blank or mismatches runtime `ExpectedCandidateIdentity`;
+   - `accountScopeType != DEDICATED_ISOLATED_TEST_ACCOUNT`, `authorizedRegionCallingCode` fails calling-code format, or `authorizedAccountAlias` is blank;
+   - `expectedSubTypeFamily != "LaserSlam"` or `expectedTargetThingName` is blank;
+   - `approvedAuthOrigin` is not `https://user.grit-cloud.cn:443` or `https://user.grit-cloud.com:443` (path `/prod/oauth`), or `pinnedApiOrigin`/`pinnedWssOrigin` (when provided) violate `https`/`wss` `:443`;
+   - Budgets exceed `SEC-404` caps (`maxLoginAttempts > 1`, `maxPasswordRetries > 0`, `maxCaptchaAutomation > 0`, `maxInventoryRequests > 1`, `maxInitialWsConnections > 1`, `maxWsReconnectAttempts > 3`, `httpCallTimeoutMs !in 1..15_000`, `observationWindowMs !in 1..1_800_000`, `maxPhysicalRobotCommands > 0`);
+   - `nowElapsedMs >= observationDeadlineElapsedMs` or deadline exceeds `authorizedAtElapsedMs + observationWindowMs`.
+3. **Structural Read-Only Boundary (`SEC-402`):**
+   - `PilotHttpOperationGuard` enforces an allowlist of `{"login", "user_thing_list_get"}` on request `opt` payloads before any pilot HTTP request is built/dispatched; any other `opt` (including `"send_to_device"` or malformed JSON) is rejected before network I/O.
+   - `PilotReadOnlyWebSocketTransport` wraps `RealtimeSessionTransport` / `OkHttpWebSocketTransport` without exposing `sendOutbound(payload, epoch)` or any `ByteString` send API to `PilotSessionController` or `PilotReadinessSheet`. Calling `sendOutbound` (or `sendApplicationBinary`) directly on the pilot boundary returns `false`, transmits zero frames, and invokes `onUnexpectedCommandAttempt` -> `PilotSessionController.abortPilot(PilotAbortReason.UnexpectedOutboundCommandAttempt)`. OkHttp continues handling RFC 6455 Ping/Pong/Close protocol control frames natively at the framing layer.
+   - `ReadOnlyPilotGuard` wraps command dispatch when pilot mode is active, returning `CommandResult.Rejected(TRANSPORT_REJECTED, ...)` AND triggering pilot abort on any unexpected live physical robot command attempt, while leaving `SimulatorRobotTransport` completely isolated and functional in offline mode.
 
-### 2.2 Ephemeral Credential Entry & Unknown-Resolution Probes (`REQ-PILOT-403`, `REQ-PILOT-404`)
-- `PilotReadinessSheet` collects `regionCallingCode`, `account`, and `password` (`CharArray`), configures `KeyboardType.Password` and `autoCorrectEnabled = false`, and passes `AuthCredentials` ephemerally into `SessionCoordinator.signIn()`. `AuthCredentials.wipeSecret()` executes in `finally`.
-- `OkHttpAuthGateway` records a sanitized `PilotProbeOutcome`: HTTP status, `BaseResponse.code`, `expired_time`, TLS protocol/cipher suite, and observed `api_url`/`wss_url` origins (never raw headers/tokens/passwords).
-- Any `ChallengeRequired` (`UNK-AUTH-04`) or `Utf8TlsDefault` rejection (`UNK-AUTH-05`) aborts the pilot cleanly without CAPTCHA automation or silent MD5 downgrade.
+### 2.2 `AuthorizedPilotEndpointTrustPolicy` & Quarantined Origin Resolution (`SEC-403`)
+1. **Exact Auth Origin + Path:** `authorizeAuthRequest(url)` requires `https`, host `user.grit-cloud.cn` or `user.grit-cloud.com` (or injected loopback test override in hermetic test instances), explicit/default port `443`, exact path `/prod/oauth`, zero userinfo, and zero credential query/fragment parameters.
+2. **Quarantined Dynamic Origin Handling (`UNK-AUTH-07`):**
+   - **Resolving `FCT-003` vs `FCT-004`:** `OkHttpAuthGateway` retains immediate rejection (`AuthFailureReason.UntrustedEndpoint`) whenever `EndpointTrustPolicy.authorize(apiUrl/wssUrl)` returns `Untrusted`, guaranteeing `SessionCoordinator` never enters `SessionState.Authenticated` and `TokenStore` never saves unapproved sessions.
+   - When `PilotAuthorizationContext` has unpinned `api_url` / `wss_url`, a dedicated pilot quarantine evaluator validates syntax (`https`/`wss`, `:443`, no userinfo/query secrets, non-special-use host/IP), extracts ONLY normalized `(scheme, host, port)` origins, discards/quarantines the unapproved response without publishing `SessionState.Authenticated`, persisting tokens, or forwarding `"token"`/`"region"`, and transitions `PilotModeState` to `AwaitingOriginConfirmation(observedApiOrigin, observedWssOrigin, provenanceVerified = false)`.
+   - Acceptance of an observed dynamic origin requires BOTH (a) verified endpoint provenance (`OriginProvenanceVerifier`: cryptographic/signed manifest or approved origin provenance record, NEVER human UI confirmation alone) AND (b) an updated explicit `PilotAuthorizationContext` pinning those exact origins. Clicking a UI confirmation alone transitions only if provenance + updated authorization are satisfied; otherwise the pilot remains quarantined or aborts.
+3. **Explicit IPv4 & IPv6 Special-Use Address Isolation (`IpAddressPolicy`):**
+   - Inspects raw 4-byte IPv4 and 16-byte IPv6 addresses directly (not relying solely on `InetAddress` convenience predicates):
+   - Rejects IPv4 `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10` (CGNAT), `127.0.0.0/8`, `169.254.0.0/16` (link-local/metadata), `172.16.0.0/12`, `192.0.0.0/24`, `192.0.2.0/24`, `192.88.99.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`, `224.0.0.0/4`, and `240.0.0.0/4`.
+   - Rejects IPv6 `::/128`, `::1/128`, `::ffff:0:0/96` (extracting trailing 4 bytes and applying all IPv4 special-use checks), `64:ff9b::/96`, `64:ff9b:1::/48`, `100::/64`, `2001::/32`, `2001:2::/48`, `2001:db8::/32`, `2002::/16`, `fc00::/7` (ULA), `fe80::/10`, `fec0::/10`, and `ff00::/8`.
+   - Validates ALL resolved addresses in `Dns` AND verifies the actual connected socket destination IP via OkHttp `EventListener.connectStart` / `connectionAcquired` before HTTP/WS traffic proceeds.
+4. **Hardened Pilot `OkHttpClient`:** Platform default `TrustManager` + `HostnameVerifier`, `.followRedirects(false)`, `.followSslRedirects(false)`, `.retryOnConnectionFailure(false)`, `.proxy(Proxy.NO_PROXY)`, `.callTimeout(15_000L, TimeUnit.MILLISECONDS)`.
 
-### 2.3 Read-Only Inventory, Capability Gate & Telemetry (`REQ-PILOT-406`, `REQ-PILOT-407`, `REQ-PILOT-408`)
-- `DeviceInventoryRepository.refreshInventory()` fetches `user_thing_list_get`, classifies every item via `DeviceCapabilityClassifier`, and presents the read-only list (`nickname`, normalized `subType`, `category`, `compatibility`, `isAdmin`).
-- Only items with `ControlCompatibility.MvpSupportedShadowWs` (`LaserSlam`) may be selected for read-only `OkHttpWebSocketTransport.connect(session, epoch)`.
-- `ReadOnlyPilotGuard` wraps `RobotTransport` / UI command dispatch while pilot mode is active: any `Clean`, `Pause`, `Resume`, or `Dock` command targeting live cloud returns `CommandResult.Rejected(TRANSPORT_REJECTED, "Read-only FCT-004 pilot blocks physical robot commands")`.
-- `ConnectionConfig` sets `maxReconnectAttempts = 3`, `reconnectDelayMs = 4_000L`, and `PilotSessionController` schedules an observation-window deadline timer triggering automatic `emergencyDisconnectAndWipe()`.
+### 2.3 `PilotSessionController`, Cumulative Budgets & Non-Blocking Emergency Disconnect (`SEC-404`)
+1. **Cumulative Budget Tracker:** Tracks `loginAttemptsUsed` (cap `1`), `inventoryRequestsUsed` (cap `1`), `initialWsConnectionsUsed` (cap `1`), and `cumulativeWsReconnectsUsed` (cap `3` across the entire pilot session; **never** reset on `ConnectionState.Connected`), plus monotonic observation deadline job (`<= 1_800_000ms`).
+2. **9-Step Non-Blocking `emergencyDisconnectAndWipe(reason)`:**
+   1. Immediately lock `PilotAuthorizationGate`, increment `pilotEpoch`, and deny all future network admission under short `commitLock` (never awaiting disk I/O).
+   2. Cancel all tracked active HTTP `Call` instances and pending network coroutines.
+   3. Cancel reconnect and monotonic observation deadline jobs.
+   4. Close/cancel active `PilotReadOnlyWebSocketTransport` (`1000` + `cancel`).
+   5. Invalidate `SessionCoordinator` ownership (`signOut()` / `invalidateForEpoch()`).
+   6. Wipe `DeviceInventoryRepository` and selected device state (via epoch advance).
+   7. Execute `NonCancellable` `TokenStore.clear()` without blocking steps 1–4.
+   8. Restore `PilotModeState.OfflineDefault` (`SimulatorRobotTransport` active).
+   9. Return `PilotEmergencyDisconnectResult(networkRevokedImmediately = true, storageCleared = ..., incompleteStorageReason = ...)` so partial storage cleanup is reported honestly.
+   - Any late callback arriving with `callbackPilotEpoch != currentPilotEpoch` is dropped cleanly and cannot reactivate a revoked pilot.
 
-### 2.4 Emergency Disconnect & Wipe (`REQ-PILOT-408`)
-Invoking `PilotSessionController.emergencyDisconnectAndWipe(reason)`:
-1. Cancels pilot observation timer and locks `PilotAuthorizationGate` back to `Disabled`.
-2. Calls `SessionCoordinator.signOut()` (increments `sessionEpoch`, closes `OkHttpWebSocketTransport(1000)`, wipes `DeviceInventoryRepository`, executes `NonCancellable` `TokenStore.clear()`).
-3. Switches active UI surface back to offline `SimulatorRobotTransport` (`OFFLINE` badge) and exports a redacted `PilotSanitizedReport`.
+### 2.4 `PilotReadinessSheet` & `PilotSanitizedExporter` (`SEC-406`)
+- **`PilotReadinessSheet`:** Opt-in sheet/panel on `DashboardScreen` preserving FCT-002 offline controls intact. Clearly displays `"OFFLINE / SIMULATOR"` vs `"MOCK / BOUNDED PILOT"` labeling, `PilotAuthorizationContext` summary, `FLAG_SECURE`-protected synthetic credential entry (`CharArray` wiped on submit, cancel, error, and `DisposableEffect.onDispose`), quarantined origin review (reject/provenance status), read-only device inventory, selected `LaserSlam` status, connection state, monotonic observation countdown, and prominent **Emergency Disconnect & Wipe** button.
+- **`PilotSanitizedExporter`:** Exports allowlisted `DiagnosticEvent` records, probe metadata, and emergency disconnect status scrubbed through `SecretRedactor` with zero raw requests, response bodies, tokens, or passwords.
 
 ---
 
-## 3. Future `T4` Policy & Manifest Transition Delta (Not Activated in Spec PR)
+## 3. Future `FCT-004B` Build & Policy Transition Design (`SEC-405` — Proposal Only)
 
-When implementation PR `FCT-004` is separately authorized for live pilot builds:
-1. **`app/src/main/AndroidManifest.xml`:** Add `<uses-permission android:name="android.permission.INTERNET" />` only under the approved `T4` transition PR (keeping `android:usesCleartextTraffic="false"` and `android:allowBackup="false"`).
-2. **`verification/checks/apk_validator.py`:** Add explicit `--allow-internet-pilot` policy mode (controlled solely by `policies/checks.json` transition) while continuing to reject all other permissions (`ACCESS_FINE_LOCATION`, `BLUETOOTH*`, `ACCESS_WIFI_STATE`, etc.) and all prohibited vendor binaries/DEX packages.
-3. **`policies/checks.json`:** Update via `TRANSITION_AUTHORIZATION` (`verification/checks/transition.py`) with dual Product Owner + Lead Maintainer approval.
+1. **`app/build.gradle.kts` (FCT-004B only):** Define an explicit `pilot` `buildType` (inheriting debug signing, `matchingFallbacks = listOf("debug")`) or flavor separation keeping `assembleDebug` (`app/build/outputs/apk/debug/app-debug.apk`) strictly `INTERNET`-free while producing `app/build/outputs/apk/pilot/app-pilot.apk` for authorized pilot testing.
+2. **`app/src/pilot/AndroidManifest.xml` (FCT-004B only):** Declares strictly `<uses-permission android:name="android.permission.INTERNET" />` while inheriting `usesCleartextTraffic="false"`, `allowBackup="false"`, and `networkSecurityConfig` from `src/main/AndroidManifest.xml`.
+3. **`verification/checks/apk_validator.py` (FCT-004B only):** Add `--connectivity-policy` (`choices=["offline", "pilot"]`, `default="offline"`). `offline` forbids `INTERNET`; `pilot` permits ONLY `INTERNET` + `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` while keeping all location/BT/Wi-Fi permissions, cleartext, backup, signature, DEX, and vendor-binary checks strictly enforced.
+4. **`policies/checks.json` & `TRANSITION_AUTHORIZATION`:** Activated solely via candidate-specific `TRANSITION_AUTHORIZATION` + dual human sign-off (`PO` + `Lead Maintainer`), followed by post-merge `APPROVED_POLICY_SHA256` rotation and retirement of `TRANSITION_AUTHORIZATION`.
