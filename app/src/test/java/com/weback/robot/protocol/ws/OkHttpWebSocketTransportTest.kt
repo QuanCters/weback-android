@@ -40,6 +40,8 @@ class OkHttpWebSocketTransportTest {
     fun testWsUpgradeHeadersTelemetryStall401ShortCircuitAndConnectedExpiry() = runTest {
         val server = MockWebServer()
         server.start(InetAddress.getByName("127.0.0.1"), 0)
+        val serverSocketRef = arrayOfNulls<WebSocket>(1)
+        var transport: OkHttpWebSocketTransport? = null
         try {
             val wsOrigin = UriValidator.NormalizedOrigin("ws", "127.0.0.1", server.port)
             val httpOrigin = UriValidator.NormalizedOrigin("http", "127.0.0.1", server.port)
@@ -49,7 +51,6 @@ class OkHttpWebSocketTransportTest {
             val dispatchers = TestDispatcherProvider(StandardTestDispatcher(testScheduler))
 
             val openLatch = CountDownLatch(1)
-            val serverSocketRef = arrayOfNulls<WebSocket>(1)
             server.enqueue(
                 MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                     override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -59,11 +60,15 @@ class OkHttpWebSocketTransportTest {
                         // Cross-device telemetry for unselected robot_99 must be ignored
                         webSocket.send("""{"notify_info":"thing_status_update","thing_name":"robot_99","working_status":"Fault","battery_level":5}""")
                     }
+
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                        webSocket.close(code, reason)
+                    }
                 })
             )
 
             var invalidatedReason: com.weback.robot.domain.model.AuthFailureReason? = null
-            val transport = OkHttpWebSocketTransport(
+            transport = OkHttpWebSocketTransport(
                 trustPolicy = trustPolicy,
                 authClock = authClock,
                 dispatchers = dispatchers,
@@ -113,6 +118,8 @@ class OkHttpWebSocketTransportTest {
             transport.close()
             assertEquals(ConnectionState.Closed, transport.connectionState.value)
         } finally {
+            transport?.close()
+            serverSocketRef[0]?.let { runCatching { it.close(1000, "Test teardown") } }
             server.shutdown()
         }
     }

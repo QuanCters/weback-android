@@ -41,6 +41,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -51,6 +52,8 @@ class ReviewRegressionTest {
     fun testSelectDeviceAfterWsConnectDoesNotBreakGenerationAndSendStallSchedulesOnce() = runTest {
         val server = MockWebServer()
         server.start(InetAddress.getByName("127.0.0.1"), 0)
+        val sockets = CopyOnWriteArrayList<WebSocket>()
+        var transport: OkHttpWebSocketTransport? = null
         try {
             val wsOrigin = UriValidator.NormalizedOrigin("ws", "127.0.0.1", server.port)
             val httpOrigin = UriValidator.NormalizedOrigin("http", "127.0.0.1", server.port)
@@ -61,11 +64,14 @@ class ReviewRegressionTest {
 
             val open1 = CountDownLatch(1)
             val open2 = CountDownLatch(1)
-            val sockets = mutableListOf<WebSocket>()
             server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     sockets.add(webSocket)
                     open1.countDown()
+                }
+
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(code, reason)
                 }
             }))
             server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
@@ -73,9 +79,13 @@ class ReviewRegressionTest {
                     sockets.add(webSocket)
                     open2.countDown()
                 }
+
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(code, reason)
+                }
             }))
 
-            val transport = OkHttpWebSocketTransport(
+            transport = OkHttpWebSocketTransport(
                 trustPolicy = policy,
                 authClock = clock,
                 dispatchers = dispatchers,
@@ -127,6 +137,8 @@ class ReviewRegressionTest {
 
             transport.close()
         } finally {
+            transport?.close()
+            sockets.forEach { runCatching { it.close(1000, "Test teardown") } }
             server.shutdown()
         }
     }
