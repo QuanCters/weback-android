@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "change_id": "FCT-002",
+  "milestone": "FCT-002",
+  "title": "Simulated Robot Control",
+  "version": "1.0.0",
+  "planned_mapping_coverage": 100.0,
+  "verified_execution_coverage": 0.0,
+  "metrics": {
+    "planned_ac_count": 24,
+    "verified_ac_count": 0,
+    "executed_ac_count": 0,
+    "device_dependent_not_run_count": 0,
+    "verified_coverage_percent": 0.0,
+    "executed_coverage_percent": 0.0,
+    "total_executed_or_verified_percent": 0.0,
+    "planned_scenario_count": 16,
+    "discovered_executable_test_count": 0,
+    "executed_test_count": 0,
+    "ac_mapping_coverage_percent": 100.0,
+    "verified_ac_execution_coverage_status": "PLANNED_SPEC_BASELINE_G3_READY"
+  },
+  "summary": {
+    "total_requirements": 8,
+    "total_acceptance_criteria": 24,
+    "total_acceptance_tests": 16,
+    "total_tasks": 5
+  },
+  "acceptance_criteria": [
+    {
+      "ac_id": "AC-201.1",
+      "requirement_id": "REQ-CTRL-201",
+      "description": "Pure Kotlin domain defines RobotCommand (CLEAN, PAUSE, RESUME, DOCK) with canonical wire status mapping (Clean, Pause, GoHome).",
+      "validation_test_id": "TEST-CTRL-201",
+      "test_oracle": "TEST-CTRL-201: JUnit asserts exact wire tokens for all 4 commands matching SPEC-PROT-01 and SPEC-STATE-01.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-201.2",
+      "requirement_id": "REQ-CTRL-201",
+      "description": "RobotMode explicitly models DOCK, CLEAN, PAUSED, RETURNING_DOCK, CHARGING, DORMANT, IDLE, and FAULT.",
+      "validation_test_id": "TEST-CTRL-202",
+      "test_oracle": "TEST-CTRL-202: JUnit verifies all 8 RobotMode enum values and docked classification semantics.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-201.3",
+      "requirement_id": "REQ-CTRL-201",
+      "description": "Package com.weback.robot.domain contains zero android.*, androidx.*, kotlinx.serialization, or okhttp3.* imports.",
+      "validation_test_id": "TEST-CTRL-201",
+      "test_oracle": "TEST-CTRL-201: Static source scan test enforces pure Kotlin domain dependency boundary.",
+      "implementation_task": "Task 1, Task 5",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-202.1",
+      "requirement_id": "REQ-CTRL-202",
+      "description": "RobotStateMachine accepts authorized transitions for CLEAN, PAUSE, RESUME, and DOCK deterministically.",
+      "validation_test_id": "TEST-CTRL-203",
+      "test_oracle": "TEST-CTRL-203: Table-driven JUnit verifies all valid (sourceMode, command) pairs return Accepted with expected target mode.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-202.2",
+      "requirement_id": "REQ-CTRL-202",
+      "description": "Unauthorized transitions and commands while FAULT or errorCode != 0 return TransitionDecision.Rejected without mutating RobotState.",
+      "validation_test_id": "TEST-CTRL-204",
+      "test_oracle": "TEST-CTRL-204: Negative transition matrix verifies INVALID_TRANSITION and FAULT_ACTIVE rejections leave RobotState unchanged.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-202.3",
+      "requirement_id": "REQ-CTRL-202",
+      "description": "Submitting CLEAN or RESUME with batteryPercentage < 15 returns Rejected(LOW_BATTERY) without mutating state.",
+      "validation_test_id": "TEST-CTRL-204",
+      "test_oracle": "TEST-CTRL-204: Boundary JUnit at batteryPercentage = 14 verifies deterministic LOW_BATTERY rejection.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-203.1",
+      "requirement_id": "REQ-CTRL-203",
+      "description": "Domain defines sealed CommandExecutionState (Idle, Pending, Acknowledged, Rejected) with unique monotonic commandId.",
+      "validation_test_id": "TEST-CTRL-205",
+      "test_oracle": "TEST-CTRL-205: JUnit verifies sealed hierarchy, immutability, and unique commandId emission.",
+      "implementation_task": "Task 1, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-203.2",
+      "requirement_id": "REQ-CTRL-203",
+      "description": "Dispatching a valid command emits Pending prior to ack while holding committed mode unchanged until transport confirms.",
+      "validation_test_id": "TEST-CTRL-205",
+      "test_oracle": "TEST-CTRL-205: StandardTestDispatcher virtual-time timeline verifies Pending before ackDelayMs and Acknowledged + updated mode after advanceTimeBy.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-203.3",
+      "requirement_id": "REQ-CTRL-203",
+      "description": "Transport failure transitions CommandExecutionState cleanly from Pending to Rejected while keeping last confirmed RobotState.",
+      "validation_test_id": "TEST-CTRL-206",
+      "test_oracle": "TEST-CTRL-206: Fault-injected simulator verifies Pending -> Rejected transition with non-blank reason and unchanged mode.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-204.1",
+      "requirement_id": "REQ-CTRL-204",
+      "description": "Duplicate command submission while same command is Pending does not dispatch a second RobotTransport call.",
+      "validation_test_id": "TEST-CTRL-207",
+      "test_oracle": "TEST-CTRL-207: Spy transport counter asserts exactly 1 sendCommand call on double-dispatch during Pending.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-204.2",
+      "requirement_id": "REQ-CTRL-204",
+      "description": "Conflicting command submission while Pending is blocked without dispatching a second transport call and exposes busy conflict notice.",
+      "validation_test_id": "TEST-CTRL-208",
+      "test_oracle": "TEST-CTRL-208: Virtual-time conflict sequence asserts 0 extra transport sends, preserved Pending command, and non-null busyConflictNotice.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-204.3",
+      "requirement_id": "REQ-CTRL-204",
+      "description": "After Pending settles to Acknowledged or Rejected, subsequent valid commands execute cleanly without stale lockup.",
+      "validation_test_id": "TEST-CTRL-208",
+      "test_oracle": "TEST-CTRL-208: Sequential command execution verifies subsequent DOCK succeeds immediately after CLEAN settlement.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-205.1",
+      "requirement_id": "REQ-CTRL-205",
+      "description": "RobotTransport exposes suspend fun sendCommand(RobotCommand): CommandResult and StateFlow<RobotState>.",
+      "validation_test_id": "TEST-CTRL-209",
+      "test_oracle": "TEST-CTRL-209: Contract tests verify serialized CommandResult delivery and monotonic StateFlow emissions.",
+      "implementation_task": "Task 2",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-205.2",
+      "requirement_id": "REQ-CTRL-205",
+      "description": "SimulatorRobotTransport injects DispatcherProvider and virtual-time intervals driving RETURNING_DOCK -> CHARGING -> DOCK deterministically.",
+      "validation_test_id": "TEST-CTRL-210",
+      "test_oracle": "TEST-CTRL-210: StandardTestDispatcher runTest advances virtual clock cleanly through RETURNING_DOCK, CHARGING, and DOCK.",
+      "implementation_task": "Task 2",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-205.3",
+      "requirement_id": "REQ-CTRL-205",
+      "description": "SimulatorRobotTransport supports deterministic test failure injection without reflection, sleep, or network I/O.",
+      "validation_test_id": "TEST-CTRL-209",
+      "test_oracle": "TEST-CTRL-209: Simulator test verifies nextCommandRejection hooks produce structured CommandResult.Rejected outcomes cleanly.",
+      "implementation_task": "Task 2",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-206.1",
+      "requirement_id": "REQ-CTRL-206",
+      "description": "RobotState enforces batteryPercentage in 0..100 and simulator drain/charge clamps cleanly with auto-return below 15%.",
+      "validation_test_id": "TEST-CTRL-211",
+      "test_oracle": "TEST-CTRL-211: Boundary and virtual-time tests verify IllegalArgumentException outside 0..100, non-negative drain, and clamp at 100.",
+      "implementation_task": "Task 1, Task 2",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-206.2",
+      "requirement_id": "REQ-CTRL-206",
+      "description": "RobotState.isDocked equals true if and only if mode is DOCK or CHARGING.",
+      "validation_test_id": "TEST-CTRL-212",
+      "test_oracle": "TEST-CTRL-212: Exhaustive enum test checks isDocked across all 8 RobotMode values.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-206.3",
+      "requirement_id": "REQ-CTRL-206",
+      "description": "Control transitions preserve robot name and dustbin status, and errorCode != 0 enforces fault safety.",
+      "validation_test_id": "TEST-CTRL-212",
+      "test_oracle": "TEST-CTRL-212: Multi-step transition sequence asserts metadata preservation and fault guard activation on errorCode != 0.",
+      "implementation_task": "Task 1, Task 2",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-207.1",
+      "requirement_id": "REQ-CTRL-207",
+      "description": "ControlAvailability.from derives canClean, canPause, canResume, canDock directly from RobotStateMachine and Pending state.",
+      "validation_test_id": "TEST-CTRL-213",
+      "test_oracle": "TEST-CTRL-213: Independent truth table asserts exact ControlAvailability booleans across all modes, low battery, fault, and Pending.",
+      "implementation_task": "Task 1, Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-207.2",
+      "requirement_id": "REQ-CTRL-207",
+      "description": "DashboardViewModel exposes unidirectional onIntent(DashboardIntent) updating StateFlow<RobotUiState> via injected DispatcherProvider.",
+      "validation_test_id": "TEST-CTRL-213",
+      "test_oracle": "TEST-CTRL-213: MVI ViewModel contract tests verify deterministic StateFlow updates across all intent variants.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-207.3",
+      "requirement_id": "REQ-CTRL-207",
+      "description": "DismissCommandFeedback resets transient feedback banner to Idle without mutating telemetry or halting simulation.",
+      "validation_test_id": "TEST-CTRL-214",
+      "test_oracle": "TEST-CTRL-214: JUnit verifies DismissCommandFeedback clears commandState/busyConflictNotice while preserving RobotState.",
+      "implementation_task": "Task 3",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-208.1",
+      "requirement_id": "REQ-CTRL-208",
+      "description": "DashboardScreen renders Material 3 Clean/Pause/Resume/Dock controls bound to ControlAvailability and visible command_status_banner.",
+      "validation_test_id": "TEST-CTRL-215",
+      "test_oracle": "TEST-CTRL-215: Robolectric Compose UI rule asserts enabled/disabled button semantics and status banner text across states.",
+      "implementation_task": "Task 4",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-208.2",
+      "requirement_id": "REQ-CTRL-208",
+      "description": "DashboardScreen persistently renders OFFLINE simulator_badge and simulator wording across all control transitions.",
+      "validation_test_id": "TEST-CTRL-215",
+      "test_oracle": "TEST-CTRL-215: Compose UI assertions verify simulator_badge remains displayed during DOCK, CLEAN, PAUSED, Pending, and Rejected states.",
+      "implementation_task": "Task 4",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    },
+    {
+      "ac_id": "AC-208.3",
+      "requirement_id": "REQ-CTRL-208",
+      "description": "Robolectric Jetpack Compose UI tests execute cleanly within android-unit-tests without emulator dependency, verifying controls and offline badge.",
+      "validation_test_id": "TEST-CTRL-215",
+      "test_oracle": "TEST-CTRL-215: Robolectric createComposeRule() executes inside ./gradlew testDebugUnitTest verifying button enablement matrix and simulator badge.",
+      "implementation_task": "Task 4, Task 5",
+      "check_id": "android-unit-tests",
+      "status": "PLANNED"
+    }
+  ]
+}
