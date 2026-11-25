@@ -1,12 +1,26 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "change_id": "FCT-004",
-  "milestone": "FCT-004",
-  "title": "Controlled Connectivity Pilot (Bounded Security Calibration)",
-  "version": "1.1.0",
+  "milestone": "FCT-004A",
+  "title": "Controlled Connectivity Pilot (Bounded Offline Pilot Implementation)",
+  "version": "1.2.0",
   "risk_ceiling": "T4",
   "planned_mapping_coverage": 100.0,
-  "verified_execution_coverage": 0.0,
+  "verified_execution_coverage": 95.24,
+  "metrics": {
+    "planned_ac_count": 21,
+    "verified_ac_count": 20,
+    "executed_ac_count": 20,
+    "device_dependent_not_run_count": 1,
+    "verified_coverage_percent": 95.24,
+    "executed_coverage_percent": 95.24,
+    "total_executed_or_verified_percent": 95.24,
+    "planned_scenario_count": 18,
+    "discovered_executable_test_count": 122,
+    "executed_test_count": 122,
+    "ac_mapping_coverage_percent": 100.0,
+    "verified_ac_execution_coverage_status": "OFFLINE_VERIFIED_LIVE_PILOT_NOT_RUN"
+  },
   "summary": {
     "total_requirements": 8,
     "total_acceptance_criteria": 21,
@@ -22,7 +36,8 @@
       "test_oracle": "TEST-PILOT-401, TEST-PILOT-402: DefaultAppContainer boots in OfflineDefault with zero network I/O and zero restart restoration.",
       "implementation_task": "Task 1, Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/pilot/PilotAuthorizationGateTest.kt::testDefaultsToDisabledAndNeverRestoresAcrossRestart; app/src/test/java/com/weback/robot/ui/pilot/PilotSignInSheetTest.kt::testDefaultContainerStartsOfflineAndNeverAutoEnablesPilot (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-401.2",
@@ -32,7 +47,8 @@
       "test_oracle": "TEST-PILOT-401: Missing, expired, incomplete, or mismatched PilotAuthorizationContext rejected fail-closed before any network call.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/pilot/PilotAuthorizationGateTest.kt::testRejectsExpiredMismatchedAndIncompleteContexts, testEnforcesMonotonicDeadlineAndRevocation (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-401.3",
@@ -42,7 +58,8 @@
       "test_oracle": "TEST-PILOT-401: UI-only consent flag without external human approval metadata rejected by PilotAuthorizationGate.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/pilot/PilotAuthorizationGateTest.kt::testRejectsMissingExternalApprovalAndUiCheckboxSubstitution (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-402.1",
@@ -52,7 +69,8 @@
       "test_oracle": "TEST-PILOT-403: Rejects non-443 ports, wrong auth paths, wildcards, cleartext schemes, userinfo, query secrets, 3xx redirects, and proxies.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicyTest.kt::testEnforcesExactAuthOriginAndPathAndRejectsDowngrades (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-402.2",
@@ -62,7 +80,8 @@
       "test_oracle": "TEST-PILOT-403: Unpinned dynamic origin pauses in quarantine with zero token forwarding/persistence; UI confirmation alone without provenance/auth is rejected.",
       "implementation_task": "Task 2, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicyTest.kt::testEnforcesPinnedDynamicOriginsAndQuarantinesUnpinnedWithoutTrustingHumanClickAlone; app/src/test/java/com/weback/robot/app/pilot/PilotInventoryCapabilityTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-402.3",
@@ -72,7 +91,8 @@
       "test_oracle": "TEST-PILOT-415: Injected DNS fixture tests prove 127.0.0.1, 10.0.0.1, 172.16.0.1, 192.168.1.1, 100.64.0.1, 169.254.169.254, 0.0.0.0, 224.0.0.1, ::1, fe80::1, fc00::1, fd00:ec2::254, and ::ffff:127.0.0.1/10.0.0.1/169.254.169.254 are blocked before connect.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/PilotIpAddressIsolationTest.kt::testRejectsAllIpv4AndIpv6SpecialUseRangesIncludingUlaCgnatAndMappedIpv6, testInjectedDnsFixtureBlocksNonGlobalDestinationBeforeSocketConnect (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-402.4",
@@ -82,7 +102,8 @@
       "test_oracle": "TEST-PILOT-404: TLS hygiene & static source scan verify zero trust-all verifiers or global SSL mutations and fail-closed handshake rejection.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/PilotTlsHygieneTest.kt::testPilotClientEnforcesTimeoutNoRetryNoRedirectNoProxyAndFailsOnUntrustedTls; EndpointTrustAndRedirectTest.kt::testMainSourcesContainNoGlobalSslMutationOrTrustAllTlsOrEncryptedPrefs (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-403.1",
@@ -92,7 +113,8 @@
       "test_oracle": "TEST-PILOT-405: MockWebServer challenge response maps cleanly to AuthFailureReason.ChallengeRequired with zero raw body logs and zero CAPTCHA automation.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/PilotProtocolProbeTest.kt::testCaptchaAbortsWithoutAutomationAndUtf8RejectionAbortsWithoutMd5Fallback (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-403.2",
@@ -102,7 +124,8 @@
       "test_oracle": "TEST-PILOT-405: MockWebServer rejection verifies zero MD5 fallback dispatch, zero passwordless refresh, and fail-closed abort.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/PilotProtocolProbeTest.kt::testCaptchaAbortsWithoutAutomationAndUtf8RejectionAbortsWithoutMd5Fallback (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-404.1",
@@ -112,7 +135,8 @@
       "test_oracle": "TEST-PILOT-406: Robolectric Compose test verifies FLAG_SECURE lifecycle, CharArray zeroing on submit/cancel/error/dispose, and zero password in ViewModel/SavedState.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/pilot/PilotSignInSheetTest.kt::testFlagSecureAndCharArrayWipeOnSubmitCancelErrorAndExit (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-404.2",
@@ -122,7 +146,8 @@
       "test_oracle": "TEST-PILOT-406: Persistence boundary test confirms zero password/MD5/authorization on disk and safe restart state.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/pilot/PilotSignInSheetTest.kt::testDefaultContainerStartsOfflineAndNeverAutoEnablesPilot; KeystoreAeadTokenStoreTest.kt; SessionTimeSemanticsTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-405.1",
@@ -132,7 +157,8 @@
       "test_oracle": "TEST-PILOT-407, TEST-PILOT-414: FCT-004B transition proposal complete and verified before any live pilot build.",
       "implementation_task": "Task 5, Task 6",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "evidence_ref": "specs/changes/FCT-004/proposal.md §5, specs/changes/FCT-004/design.md §3; spec_validator.py PASS",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-405.2",
@@ -142,7 +168,8 @@
       "test_oracle": "TEST-PILOT-407: Spec & FCT-004A baselines keep AndroidManifest.xml and policies/checks.json unchanged (7/7 checks PASS).",
       "implementation_task": "Task 5",
       "check_id": "apk-validation",
-      "status": "PLANNED"
+      "evidence_ref": "apk_validator.py PASS on INTERNET-free app-debug.apk; zero edits to AndroidManifest.xml, policies/, verification/, .github/workflows/",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-406.1",
@@ -152,7 +179,8 @@
       "test_oracle": "TEST-PILOT-408, TEST-PILOT-417: MockWebServer epoch & budget tests prove 1 login, 0 auto retries, 1 inventory cap, and 15s HTTP callTimeout.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/PilotBudgetEnforcementTest.kt; app/src/test/java/com/weback/robot/security/PilotTlsHygieneTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-406.2",
@@ -162,7 +190,8 @@
       "test_oracle": "TEST-PILOT-408, TEST-PILOT-414: Non-laser/peripheral/camera/unknown and mismatched-identity devices rejected for WS telemetry subscription.",
       "implementation_task": "Task 3, Task 6",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/PilotInventoryCapabilityTest.kt::testQuarantinesUnpinnedOriginsAndFiltersNonLaserOrMismatchedTargetDevice (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-406.3",
@@ -172,7 +201,8 @@
       "test_oracle": "TEST-PILOT-409: Robolectric Compose card test verifies full PilotReadinessSheet display with zero secret exposure.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/pilot/PilotDeviceIdentityCardTest.kt::testDisplaysAuthSummaryEndpointReviewInventoryStatusTimerAndEmergencyDisconnect (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-407.1",
@@ -182,7 +212,8 @@
       "test_oracle": "TEST-PILOT-410, TEST-PILOT-414: MockWebServer WS test + authorized pilot observation verify bounded telemetry hydration.",
       "implementation_task": "Task 3, Task 6",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/PilotWebSocketBoundsTest.kt::testReadOnlyWsHydrationAndAutomaticDisconnectOnMonotonicObservationDeadline (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-407.2",
@@ -192,7 +223,8 @@
       "test_oracle": "TEST-PILOT-410, TEST-PILOT-417: Virtual-time MockWebServer tests confirm cumulative 3-reconnect cap across reconnects, auth short-circuit, and monotonic deadline disconnect.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/PilotBudgetEnforcementTest.kt::testEnforcesOneLoginOneInventoryAndCumulativeReconnectCapWithoutResettingOnOpen; PilotWebSocketBoundsTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-408.1",
@@ -202,7 +234,8 @@
       "test_oracle": "TEST-PILOT-412, TEST-PILOT-418, TEST-PILOT-414: Kill switch & cancellation tests verify immediate non-blocking revocation across all active phases, late-callback immunity, and honest partial-cleanup reporting.",
       "implementation_task": "Task 3, Task 6",
       "check_id": "android-smoke-test",
-      "status": "PLANNED"
+      "evidence_ref": "Offline unit/MockWebServer tests PilotKillSwitchTest & PilotEmergencyCancellationTest PASS; physical-device TEST-PILOT-414 remains NOT_RUN pending FCT-004B + external auth",
+      "status": "NOT_RUN"
     },
     {
       "ac_id": "AC-408.2",
@@ -212,7 +245,8 @@
       "test_oracle": "TEST-PILOT-411, TEST-PILOT-416: Direct adapter, malformed payload, unknown op, and MockWebServer frame capture tests prove zero unauthorized outbound traffic reaches network.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/pilot/ReadOnlyPilotGuardTest.kt; app/src/test/java/com/weback/robot/protocol/pilot/PilotStructuralBoundaryTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-408.3",
@@ -222,7 +256,8 @@
       "test_oracle": "TEST-PILOT-413: Redaction export test asserts zero raw secrets/PII in captured pilot diagnostics.",
       "implementation_task": "Task 2, Task 6",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/PilotSanitizedExporterTest.kt::testExportsAllowlistedDiagnosticsAndScrubsAllSecretsAndPii (PASS)",
+      "status": "VERIFIED"
     }
   ]
 }

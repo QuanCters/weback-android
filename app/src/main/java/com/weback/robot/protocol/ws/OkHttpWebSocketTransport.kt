@@ -51,7 +51,8 @@ class OkHttpWebSocketTransport(
     private val connectionConfig: ConnectionConfig = ConnectionConfig(),
     private val logger: DiagnosticLogger = NoOpDiagnosticLogger,
     private val client: OkHttpClient = OkHttpSecurityGuard.buildHardenedClient(trustPolicy),
-    private val onSessionInvalidated: (Long, AuthFailureReason) -> Unit = { _, _ -> }
+    private val onSessionInvalidated: (Long, AuthFailureReason) -> Unit = { _, _ -> },
+    private val resetReconnectAttemptOnOpen: Boolean = true
 ) : RealtimeSessionTransport {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -227,6 +228,32 @@ class OkHttpWebSocketTransport(
         socketToClose?.close(NORMAL_CLOSE_CODE, "Session invalidated")
     }
 
+    /**
+     * Unconditionally revokes and tears down any active or pending WebSocket connection
+     * without requiring an exact epoch match (`SEC-404` Emergency Disconnect race guard).
+     */
+    fun forceInvalidate(reason: ConnectivityError) {
+        val (socketToClose, wasConnecting) = synchronized(commitLock) {
+            if (isClosed) return
+            val connecting = _connectionState.value is ConnectionState.Connecting
+            activeEpoch++
+            activeGeneration++
+            activeSession = null
+            activeSelectedDevice = null
+            _robotState.value = RobotState()
+            cancelJobsLocked()
+            val s = activeSocket
+            activeSocket = null
+            _connectionState.value = ConnectionState.Disconnected(reason)
+            s to connecting
+        }
+        if (wasConnecting) {
+            socketToClose?.cancel()
+        } else {
+            socketToClose?.close(NORMAL_CLOSE_CODE, "Emergency disconnect")
+        }
+    }
+
     override fun close() {
         val socketToClose = synchronized(commitLock) {
             if (isClosed) return
@@ -272,7 +299,9 @@ class OkHttpWebSocketTransport(
                             1 // expired before open settled
                         } else {
                             lastActivityElapsedMs = nowMs
-                            reconnectAttempt = 0
+                            if (resetReconnectAttemptOnOpen) {
+                                reconnectAttempt = 0
+                            }
                             activeSocket = webSocket
                             _connectionState.value = ConnectionState.Connected(epoch, generation)
                             2
@@ -303,10 +332,26 @@ class OkHttpWebSocketTransport(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                logger.log(
+                    DiagnosticEvent(
+                        category = "WS_CLOSING",
+                        httpStatus = code,
+                        sessionEpoch = epoch,
+                        connectionGeneration = generation
+                    )
+                )
                 webSocket.close(code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                logger.log(
+                    DiagnosticEvent(
+                        category = "WS_CLOSED",
+                        httpStatus = code,
+                        sessionEpoch = epoch,
+                        connectionGeneration = generation
+                    )
+                )
                 synchronized(commitLock) {
                     if (isClosed || epoch != activeEpoch || generation != activeGeneration) return
                     activeSocket = null
