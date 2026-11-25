@@ -121,5 +121,15 @@ class KeystoreAeadTokenStoreTamperTest {
         val restartedStore = KeystoreAeadTokenStore(storageDir = dir, cipherProvider = provider)
         assertTrue(restartedStore.load() is TokenLoadResult.CorruptedOrInvalidated)
         assertFalse(File(dir, KeystoreAeadTokenStore.SESSION_FILE_NAME).exists())
+
+        // Keystore deleteKey() failure during clear() MUST NOT be suppressed even when blob file deletes cleanly
+        assertTrue(store.save(sampleRecord()) is TokenSaveResult.Success)
+        val failingKeyDeleteProvider = object : AeadCipherProvider by provider {
+            override fun deleteKey(): KeyDeletionResult = KeyDeletionResult.Failure("SIMULATED_KEYSTORE_ERR")
+        }
+        val failingKeyStore = KeystoreAeadTokenStore(storageDir = dir, cipherProvider = failingKeyDeleteProvider)
+        val keyDeleteClear = failingKeyStore.clear()
+        assertTrue(keyDeleteClear is TokenClearResult.Failure)
+        assertTrue((keyDeleteClear as TokenClearResult.Failure).safeCategory.contains("KEYSTORE_DELETE_FAILED"))
     }
 }

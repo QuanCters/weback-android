@@ -24,22 +24,26 @@ import com.weback.robot.security.TokenSaveResult
 import com.weback.robot.security.TokenStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
  * Coordinates single-flight authentication, dual-clock lifetime enforcement, `sessionEpoch`
- * fencing, and serialized persistent storage commits (`IC-302`, `SEC-304`).
+ * fencing, explicit account replacement, and serialized persistent storage commits (`IC-302`, `SEC-304`).
  *
  * Locking discipline:
  * - [commitLock] is held strictly for atomic in-memory state/epoch updates (never across I/O or delays).
  * - [persistenceMutex] serializes ALL `TokenStore` save/load/clear side effects in monotonic order
- *   alongside `sessionEpoch` validation so checking epoch before and after disk I/O is backed by
- *   true serialized write ordering without blocking `signOut()` behind network delays.
+ *   alongside `sessionEpoch` validation without blocking invalidations behind network delays.
+ * - `signOut()` and `invalidateForEpoch()` wrap BOTH `persistenceMutex` acquisition and storage
+ *   cleanup inside [NonCancellable] so cancellation while waiting for the lock cannot drop cleanup,
+ *   without placing any network I/O inside a non-cancellable block.
  */
 class SessionCoordinator(
     private val authGateway: AuthGateway,
@@ -58,6 +62,7 @@ class SessionCoordinator(
 
     private var activeEpoch: Long = 1L
     private var committedStorageEpoch: Long = 0L
+    private var requiresPriorStorageClearBeforeActivation: Boolean = false
     private var inFlightSignInKey: String? = null
     private var inFlightSignInEpoch: Long = 0L
     private var inFlightSignInDeferred: CompletableDeferred<AuthResult>? = null
@@ -92,19 +97,27 @@ class SessionCoordinator(
         snapshotListeners.forEach { runCatching { it(invalidatedEpoch, reason) } }
     }
 
+    /**
+     * Explicitly switches/replaces the active account session, revoking prior in-memory authorization
+     * and wiping prior persistent session storage before initiating or activating the replacement login.
+     */
+    suspend fun switchAccount(credentials: AuthCredentials): AuthResult = signIn(credentials)
+
     suspend fun signIn(credentials: AuthCredentials): AuthResult {
         val accountKey = "${credentials.regionCallingCode.trim()}|${credentials.account.trim()}"
 
         // Collapse concurrent signIn calls for the exact same account into one dispatch,
-        // while allowing a different account (Account A -> B switch) to supersede cleanly.
+        // while allowing a different account (Account A -> B replacement) to supersede cleanly.
         val (joinExisting, attemptEpoch, myDeferred, listenersToNotify, previousEpochToInvalidate) = synchronized(commitLock) {
             val existing = inFlightSignInDeferred
             if (existing != null && !existing.isCompleted && inFlightSignInKey == accountKey) {
                 SignInAdmission(existing, inFlightSignInEpoch, null, emptyList(), null)
             } else {
-                val prevEpoch = activeEpoch
+                val hasActiveOrPrior = activeEpoch > 1L || _sessionState.value !is SessionState.SignedOut
+                val prevEpoch = if (hasActiveOrPrior) activeEpoch else null
                 val newEpoch = ++activeEpoch
                 _sessionState.value = SessionState.Authenticating
+                inFlightRefreshDeferred = null
                 val deferred = CompletableDeferred<AuthResult>()
                 inFlightSignInKey = accountKey
                 inFlightSignInEpoch = newEpoch
@@ -128,6 +141,14 @@ class SessionCoordinator(
 
         val deferred = myDeferred!!
         return try {
+            // Invalidate any prior account storage BEFORE attempting replacement auth or activating a new session
+            val preAuthClearError = clearPriorStorageBeforeReplacement(attemptEpoch)
+            if (preAuthClearError != null) {
+                credentials.wipeSecret()
+                deferred.complete(preAuthClearError)
+                return preAuthClearError
+            }
+
             val gatewayResult = try {
                 authGateway.signIn(credentials)
             } finally {
@@ -175,6 +196,57 @@ class SessionCoordinator(
         }
     }
 
+    private suspend fun clearPriorStorageBeforeReplacement(attemptEpoch: Long): AuthResult.Failure? {
+        return withContext(NonCancellable) {
+            persistenceMutex.withLock {
+                val (stillCurrent, mustWipe) = synchronized(commitLock) {
+                    val current = activeEpoch == attemptEpoch
+                    val dirtyOrCommitted = requiresPriorStorageClearBeforeActivation || committedStorageEpoch in 1 until attemptEpoch
+                    current to (current && dirtyOrCommitted)
+                }
+                if (!stillCurrent) {
+                    return@withLock AuthResult.Failure(
+                        AuthFailureReason.TokenExpiredOrRevoked,
+                        "Session superseded prior to replacement storage cleanup"
+                    )
+                }
+                if (!mustWipe) {
+                    return@withLock null
+                }
+                when (val clearRes = tokenStore.clear()) {
+                    TokenClearResult.Success -> {
+                        synchronized(commitLock) {
+                            requiresPriorStorageClearBeforeActivation = false
+                            if (committedStorageEpoch < attemptEpoch) {
+                                committedStorageEpoch = 0L
+                            }
+                        }
+                        null
+                    }
+                    is TokenClearResult.Failure -> {
+                        synchronized(commitLock) {
+                            requiresPriorStorageClearBeforeActivation = true
+                            if (activeEpoch == attemptEpoch) {
+                                _sessionState.value = SessionState.SignedOut
+                            }
+                        }
+                        logger.log(
+                            DiagnosticEvent(
+                                category = "REPLACEMENT_CLEAR_FAILED",
+                                sessionEpoch = attemptEpoch,
+                                errorCategory = clearRes.safeCategory
+                            )
+                        )
+                        AuthResult.Failure(
+                            AuthFailureReason.StorageFailure,
+                            "Prior session cleanup failed (${clearRes.safeCategory})"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private data class SignInAdmission(
         val existing: CompletableDeferred<AuthResult>?,
         val attemptEpoch: Long,
@@ -183,14 +255,19 @@ class SessionCoordinator(
         val previousEpoch: Long?
     )
 
+    private enum class CommitOutcome {
+        COMMITTED,
+        EXPIRED_AFTER_SAVE,
+        SUPERSEDED_OR_CANCELLED
+    }
+
     private suspend fun commitAuthenticatedSession(
         session: SessionCredentials,
         capturedEpoch: Long,
         advanceEpochOnCommit: Boolean = false
     ): AuthResult {
-        val snap = timeProvider.snapshot()
-        val nowElapsed = snap.elapsedRealtimeMs
-        if (TokenExpiryPolicy.evaluateInProcess(session, nowElapsed) == LifetimeEvaluation.EXPIRED_OR_INVALID) {
+        val preSnap = timeProvider.snapshot()
+        if (TokenExpiryPolicy.evaluateInProcess(session, preSnap.elapsedRealtimeMs) == LifetimeEvaluation.EXPIRED_OR_INVALID) {
             synchronized(commitLock) {
                 if (activeEpoch == capturedEpoch) {
                     _sessionState.value = SessionState.ReauthenticationRequired(
@@ -202,29 +279,58 @@ class SessionCoordinator(
             return AuthResult.Failure(AuthFailureReason.TokenExpiredOrRevoked, "Received expired or invalid session")
         }
 
-        val record = PersistedSessionRecord(
-            jwtToken = session.jwtToken,
-            apiUrl = session.apiUrl,
-            wssUrl = session.wssUrl,
-            regionName = session.regionName,
-            expiresInSeconds = session.expiresInSeconds,
-            issuedAtEpochMs = snap.wallEpochMs,
-            lastSeenEpochMs = snap.wallEpochMs,
-            issuedAtElapsedRealtimeMs = snap.elapsedRealtimeMs,
-            bootGenerationId = snap.bootGenerationId,
-            accountAliasRedacted = session.accountAliasRedacted,
-            syntheticRefreshToken = session.syntheticRefreshToken
-        )
-
         return persistenceMutex.withLock {
-            // Check BEFORE touching disk inside serialized persistence worker (IC-302)
-            val preWriteValid = synchronized(commitLock) { activeEpoch == capturedEpoch }
+            // Check ownership & expiry BEFORE touching disk inside serialized persistence worker (IC-302, FIX-303)
+            val preWriteValid = synchronized(commitLock) { activeEpoch == capturedEpoch } && currentCoroutineContext().isActive
             if (!preWriteValid) {
                 return@withLock AuthResult.Failure(
                     AuthFailureReason.TokenExpiredOrRevoked,
                     "Session superseded before durable persistence"
                 )
             }
+
+            val writeSnap = timeProvider.snapshot()
+            if (writeSnap.wallEpochMs <= 0L ||
+                TokenExpiryPolicy.evaluateInProcess(session, writeSnap.elapsedRealtimeMs) == LifetimeEvaluation.EXPIRED_OR_INVALID
+            ) {
+                val shouldWipePrior = synchronized(commitLock) {
+                    if (activeEpoch == capturedEpoch) {
+                        _sessionState.value = stateMachine.toReauthenticationRequired(
+                            epoch = capturedEpoch,
+                            reason = AuthFailureReason.TokenExpiredOrRevoked
+                        )
+                    }
+                    requiresPriorStorageClearBeforeActivation || committedStorageEpoch in 1 until capturedEpoch
+                }
+                if (shouldWipePrior) {
+                    withContext(NonCancellable) {
+                        if (tokenStore.clear() is TokenClearResult.Success) {
+                            synchronized(commitLock) { requiresPriorStorageClearBeforeActivation = false }
+                        }
+                    }
+                }
+                return@withLock AuthResult.Failure(
+                    AuthFailureReason.TokenExpiredOrRevoked,
+                    "Session expired or invalid prior to persistence"
+                )
+            }
+
+            // Preserve original token lifetime anchor (`session.issuedAtElapsedMs` + `session.priorElapsedMs`)
+            // rather than overwriting elapsed lifetime with persistence-time snapshot (`FIX-303`).
+            val record = PersistedSessionRecord(
+                jwtToken = session.jwtToken,
+                apiUrl = session.apiUrl,
+                wssUrl = session.wssUrl,
+                regionName = session.regionName,
+                expiresInSeconds = session.expiresInSeconds,
+                issuedAtEpochMs = writeSnap.wallEpochMs,
+                lastSeenEpochMs = writeSnap.wallEpochMs,
+                issuedAtElapsedRealtimeMs = session.issuedAtElapsedMs,
+                bootGenerationId = writeSnap.bootGenerationId,
+                accountAliasRedacted = session.accountAliasRedacted,
+                syntheticRefreshToken = session.syntheticRefreshToken,
+                priorElapsedMs = session.priorElapsedMs
+            )
 
             val saveResult = withContext(NonCancellable) {
                 tokenStore.save(record)
@@ -235,10 +341,20 @@ class SessionCoordinator(
                     if (activeEpoch == capturedEpoch) {
                         _sessionState.value = SessionState.SignedOut
                     }
-                    committedStorageEpoch < capturedEpoch
+                    requiresPriorStorageClearBeforeActivation || committedStorageEpoch in 1 until capturedEpoch
                 }
                 if (shouldWipePriorBlob) {
-                    withContext(NonCancellable) { tokenStore.clear() }
+                    withContext(NonCancellable) {
+                        when (tokenStore.clear()) {
+                            TokenClearResult.Success -> synchronized(commitLock) {
+                                requiresPriorStorageClearBeforeActivation = false
+                                if (committedStorageEpoch < capturedEpoch) committedStorageEpoch = 0L
+                            }
+                            is TokenClearResult.Failure -> synchronized(commitLock) {
+                                requiresPriorStorageClearBeforeActivation = true
+                            }
+                        }
+                    }
                 }
                 logger.log(
                     DiagnosticEvent(
@@ -253,29 +369,61 @@ class SessionCoordinator(
                 )
             }
 
-            // Re-verify epoch inside persistenceMutex AFTER disk save
-            val (committed, finalEpoch, epochListenersSnap) = synchronized(commitLock) {
-                if (activeEpoch == capturedEpoch) {
-                    val targetEpoch = if (advanceEpochOnCommit) ++activeEpoch else capturedEpoch
-                    committedStorageEpoch = targetEpoch
-                    _sessionState.value = stateMachine.toAuthenticated(session, targetEpoch)
-                    Triple(true, targetEpoch, if (advanceEpochOnCommit) epochListeners.toList() else emptyList())
-                } else {
-                    Triple(false, capturedEpoch, emptyList())
+            // Re-verify epoch, cancellation state, AND post-save token expiration (`FIX-303`)
+            val postSaveSnap = timeProvider.snapshot()
+            val postEval = TokenExpiryPolicy.evaluateInProcess(session, postSaveSnap.elapsedRealtimeMs)
+            val callerActive = currentCoroutineContext().isActive
+
+            val (outcome, finalEpoch, epochListenersSnap) = synchronized(commitLock) {
+                when {
+                    activeEpoch == capturedEpoch && callerActive && postEval != LifetimeEvaluation.EXPIRED_OR_INVALID -> {
+                        val targetEpoch = if (advanceEpochOnCommit) ++activeEpoch else capturedEpoch
+                        committedStorageEpoch = targetEpoch
+                        requiresPriorStorageClearBeforeActivation = true
+                        _sessionState.value = stateMachine.toAuthenticated(session, targetEpoch)
+                        Triple(
+                            CommitOutcome.COMMITTED,
+                            targetEpoch,
+                            if (advanceEpochOnCommit) epochListeners.toList() else emptyList()
+                        )
+                    }
+                    activeEpoch == capturedEpoch && postEval == LifetimeEvaluation.EXPIRED_OR_INVALID -> {
+                        _sessionState.value = stateMachine.toReauthenticationRequired(
+                            epoch = capturedEpoch,
+                            reason = AuthFailureReason.TokenExpiredOrRevoked
+                        )
+                        requiresPriorStorageClearBeforeActivation = true
+                        Triple(CommitOutcome.EXPIRED_AFTER_SAVE, capturedEpoch, emptyList())
+                    }
+                    else -> {
+                        Triple(CommitOutcome.SUPERSEDED_OR_CANCELLED, capturedEpoch, emptyList())
+                    }
                 }
             }
 
-            if (!committed) {
-                // Epoch changed while write occurred; clean up stale record if nothing newer superseded storage
+            if (outcome != CommitOutcome.COMMITTED) {
+                // Clean up stale or expired record if nothing newer committed storage
                 withContext(NonCancellable) {
                     val stillSafeToWipe = synchronized(commitLock) { committedStorageEpoch <= capturedEpoch }
                     if (stillSafeToWipe) {
-                        tokenStore.clear()
+                        when (tokenStore.clear()) {
+                            TokenClearResult.Success -> synchronized(commitLock) {
+                                requiresPriorStorageClearBeforeActivation = false
+                                if (committedStorageEpoch <= capturedEpoch) committedStorageEpoch = 0L
+                            }
+                            is TokenClearResult.Failure -> synchronized(commitLock) {
+                                requiresPriorStorageClearBeforeActivation = true
+                            }
+                        }
                     }
                 }
                 return@withLock AuthResult.Failure(
                     AuthFailureReason.TokenExpiredOrRevoked,
-                    "Session invalidated during persistence"
+                    if (outcome == CommitOutcome.EXPIRED_AFTER_SAVE) {
+                        "Session expired during persistence"
+                    } else {
+                        "Session invalidated during persistence"
+                    }
                 )
             }
 
@@ -300,25 +448,38 @@ class SessionCoordinator(
         notifyEpochListeners(logoutEpoch, listeners)
         notifyInvalidationListeners(prevEpoch, AuthFailureReason.TokenExpiredOrRevoked, invListeners)
 
-        return persistenceMutex.withLock {
-            val shouldClear = synchronized(commitLock) { committedStorageEpoch < logoutEpoch }
-            if (!shouldClear) {
-                return@withLock LogoutResult.DurableSuccess
-            }
-            val clearResult = withContext(NonCancellable) {
-                tokenStore.clear()
-            }
-            when (clearResult) {
-                TokenClearResult.Success -> LogoutResult.DurableSuccess
-                is TokenClearResult.Failure -> {
-                    logger.log(
-                        DiagnosticEvent(
-                            category = "LOGOUT_CLEAR_FAILED",
-                            sessionEpoch = logoutEpoch,
-                            errorCategory = clearResult.safeCategory
+        // Wrap persistenceMutex acquisition + clear() inside NonCancellable (`FIX-301`)
+        return withContext(NonCancellable) {
+            persistenceMutex.withLock {
+                val shouldClear = synchronized(commitLock) {
+                    requiresPriorStorageClearBeforeActivation || committedStorageEpoch < logoutEpoch
+                }
+                if (!shouldClear) {
+                    return@withLock LogoutResult.DurableSuccess
+                }
+                when (val clearResult = tokenStore.clear()) {
+                    TokenClearResult.Success -> {
+                        synchronized(commitLock) {
+                            requiresPriorStorageClearBeforeActivation = false
+                            if (committedStorageEpoch < logoutEpoch) {
+                                committedStorageEpoch = 0L
+                            }
+                        }
+                        LogoutResult.DurableSuccess
+                    }
+                    is TokenClearResult.Failure -> {
+                        synchronized(commitLock) {
+                            requiresPriorStorageClearBeforeActivation = true
+                        }
+                        logger.log(
+                            DiagnosticEvent(
+                                category = "LOGOUT_CLEAR_FAILED",
+                                sessionEpoch = logoutEpoch,
+                                errorCategory = clearResult.safeCategory
+                            )
                         )
-                    )
-                    LogoutResult.IncompleteStorageClear(clearResult.safeCategory)
+                        LogoutResult.IncompleteStorageClear(clearResult.safeCategory)
+                    }
                 }
             }
         }
@@ -331,6 +492,12 @@ class SessionCoordinator(
         val invalidationListeners: List<(Long, AuthFailureReason) -> Unit>
     )
 
+    /**
+     * Inspects any persisted session artifact on startup and conservatively transitions to
+     * [SessionState.ReauthenticationRequired] (never silently restoring an active [SessionState.Authenticated]
+     * session in FCT-003 so combined storage/tombstone/Keystore deletion failures cannot resurrect
+     * logged-out credentials on restart, `FIX-302`).
+     */
     suspend fun restoreSession(): SessionState {
         return persistenceMutex.withLock {
             val (restoreEpoch, epochListenersSnap) = synchronized(commitLock) {
@@ -338,10 +505,10 @@ class SessionCoordinator(
                 e to epochListeners.toList()
             }
             notifyEpochListeners(restoreEpoch, epochListenersSnap)
-            val loaded = tokenStore.load()
-            when (loaded) {
+            when (tokenStore.load()) {
                 TokenLoadResult.Empty -> {
                     synchronized(commitLock) {
+                        requiresPriorStorageClearBeforeActivation = false
                         if (activeEpoch == restoreEpoch) {
                             _sessionState.value = SessionState.SignedOut
                         }
@@ -350,6 +517,7 @@ class SessionCoordinator(
                 }
                 is TokenLoadResult.CorruptedOrInvalidated -> {
                     synchronized(commitLock) {
+                        requiresPriorStorageClearBeforeActivation = true
                         if (activeEpoch == restoreEpoch) {
                             _sessionState.value = stateMachine.toReauthenticationRequired(
                                 epoch = restoreEpoch,
@@ -360,46 +528,24 @@ class SessionCoordinator(
                     }
                 }
                 is TokenLoadResult.Loaded -> {
-                    val snap = timeProvider.snapshot()
-                    val decision = TokenExpiryPolicy.evaluatePersistedRestore(
-                        record = loaded.record,
-                        nowEpochMs = snap.wallEpochMs,
-                        nowElapsedRealtimeMs = snap.elapsedRealtimeMs,
-                        currentBootGenerationId = snap.bootGenerationId
-                    )
-                    when (decision) {
-                        is PersistedRestoreDecision.Reauthenticate -> {
-                            withContext(NonCancellable) { tokenStore.clear() }
-                            synchronized(commitLock) {
-                                if (activeEpoch == restoreEpoch) {
-                                    _sessionState.value = stateMachine.toReauthenticationRequired(
-                                        epoch = restoreEpoch,
-                                        reason = AuthFailureReason.TokenExpiredOrRevoked
-                                    )
-                                }
-                                _sessionState.value
-                            }
+                    val clearResult = withContext(NonCancellable) { tokenStore.clear() }
+                    synchronized(commitLock) {
+                        requiresPriorStorageClearBeforeActivation = clearResult is TokenClearResult.Failure
+                        if (clearResult is TokenClearResult.Success) {
+                            committedStorageEpoch = 0L
                         }
-                        is PersistedRestoreDecision.Restore -> {
-                            val restoredSession = SessionCredentials(
-                                jwtToken = loaded.record.jwtToken,
-                                apiUrl = loaded.record.apiUrl,
-                                wssUrl = loaded.record.wssUrl,
-                                regionName = loaded.record.regionName,
-                                expiresInSeconds = loaded.record.expiresInSeconds,
-                                issuedAtElapsedMs = snap.elapsedRealtimeMs,
-                                priorElapsedMs = decision.priorElapsedMs,
-                                accountAliasRedacted = loaded.record.accountAliasRedacted,
-                                syntheticRefreshToken = loaded.record.syntheticRefreshToken
+                        if (activeEpoch == restoreEpoch) {
+                            val reason = if (clearResult is TokenClearResult.Failure) {
+                                AuthFailureReason.StorageFailure
+                            } else {
+                                AuthFailureReason.TokenExpiredOrRevoked
+                            }
+                            _sessionState.value = stateMachine.toReauthenticationRequired(
+                                epoch = restoreEpoch,
+                                reason = reason
                             )
-                            synchronized(commitLock) {
-                                if (activeEpoch == restoreEpoch) {
-                                    committedStorageEpoch = restoreEpoch
-                                    _sessionState.value = stateMachine.toAuthenticated(restoredSession, restoreEpoch)
-                                }
-                                _sessionState.value
-                            }
                         }
+                        _sessionState.value
                     }
                 }
             }
@@ -466,11 +612,23 @@ class SessionCoordinator(
                     invalidateForEpoch(capturedEpoch, refreshed.reason)
                     refreshed
                 }
-                is AuthResult.Success -> commitAuthenticatedSession(
-                    session = refreshed.session,
-                    capturedEpoch = capturedEpoch,
-                    advanceEpochOnCommit = true
-                )
+                is AuthResult.Success -> {
+                    // Only grant a new lifetime if the gateway actually issued a distinct new session token (`FIX-303`)
+                    val effectiveSession = if (refreshed.session.jwtToken == sessionToRefresh.jwtToken) {
+                        refreshed.session.copy(
+                            issuedAtElapsedMs = sessionToRefresh.issuedAtElapsedMs,
+                            priorElapsedMs = sessionToRefresh.priorElapsedMs,
+                            expiresInSeconds = minOf(refreshed.session.expiresInSeconds, sessionToRefresh.expiresInSeconds)
+                        )
+                    } else {
+                        refreshed.session
+                    }
+                    commitAuthenticatedSession(
+                        session = effectiveSession,
+                        capturedEpoch = capturedEpoch,
+                        advanceEpochOnCommit = true
+                    )
+                }
             }
             deferred.complete(settled)
             settled
@@ -523,11 +681,31 @@ class SessionCoordinator(
         notifyEpochListeners(newEpoch, listeners)
         notifyInvalidationListeners(expectedEpoch, reason, invListeners)
 
-        persistenceMutex.withLock {
-            val shouldWipe = synchronized(commitLock) { committedStorageEpoch < newEpoch }
-            if (shouldWipe) {
-                withContext(NonCancellable) {
-                    tokenStore.clear()
+        // Wrap persistenceMutex acquisition + clear() inside NonCancellable (`FIX-301`)
+        withContext(NonCancellable) {
+            persistenceMutex.withLock {
+                val shouldWipe = synchronized(commitLock) {
+                    requiresPriorStorageClearBeforeActivation || committedStorageEpoch < newEpoch
+                }
+                if (shouldWipe) {
+                    when (val clearRes = tokenStore.clear()) {
+                        TokenClearResult.Success -> synchronized(commitLock) {
+                            requiresPriorStorageClearBeforeActivation = false
+                            if (committedStorageEpoch < newEpoch) committedStorageEpoch = 0L
+                        }
+                        is TokenClearResult.Failure -> {
+                            synchronized(commitLock) {
+                                requiresPriorStorageClearBeforeActivation = true
+                            }
+                            logger.log(
+                                DiagnosticEvent(
+                                    category = "INVALIDATION_CLEAR_FAILED",
+                                    sessionEpoch = newEpoch,
+                                    errorCategory = clearRes.safeCategory
+                                )
+                            )
+                        }
+                    }
                 }
             }
         }

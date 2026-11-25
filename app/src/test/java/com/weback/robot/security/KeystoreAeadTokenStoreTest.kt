@@ -111,8 +111,10 @@ internal class InMemoryJcaAeadCipherProvider : AeadCipherProvider {
         return cipher.doFinal(ciphertextWithTag)
     }
 
-    override fun deleteKey() {
+    override fun deleteKey(): KeyDeletionResult {
         deleteKeyCalled = true
+        val hadKey = secretKey != null
         secretKey = null
+        return if (hadKey) KeyDeletionResult.Deleted else KeyDeletionResult.NotPresent
     }
 }

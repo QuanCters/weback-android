@@ -2,6 +2,8 @@ package com.weback.robot.app.session
 
 import com.weback.robot.core.BootSessionTimeProvider
 import com.weback.robot.core.BootTimeSnapshot
+import com.weback.robot.domain.auth.PersistedRestoreDecision
+import com.weback.robot.domain.auth.TokenExpiryPolicy
 import com.weback.robot.domain.model.AuthCredentials
 import com.weback.robot.domain.model.AuthFailureReason
 import com.weback.robot.domain.model.AuthResult
@@ -74,14 +76,37 @@ class SessionTimeSemanticsTest {
                 AuthResult.Failure(AuthFailureReason.InvalidCredentials, "unused")
         }
 
-        // Same boot, +1_000_000ms elapsed -> restored with priorElapsedMs = 1_000_000L (NOT reset to 0!)
+        // Same boot, +1_000_000ms elapsed -> TokenExpiryPolicy preserves priorElapsedMs = 1_000_000L (NOT reset to 0!),
+        // while SessionCoordinator.restoreSession() conservatively disables auto-activation (`FIX-302`) and wipes storage.
         time.elapsedMs = 1_010_000L
         time.wallMs = 1_700_001_000_000L
+        val sameBootDecision = TokenExpiryPolicy.evaluatePersistedRestore(
+            record = store.record!!,
+            nowEpochMs = time.wallMs,
+            nowElapsedRealtimeMs = time.elapsedMs,
+            currentBootGenerationId = time.bootId
+        )
+        assertTrue(sameBootDecision is PersistedRestoreDecision.Restore)
+        assertEquals(1_000_000L, (sameBootDecision as PersistedRestoreDecision.Restore).priorElapsedMs)
+
         val coordinator1 = SessionCoordinator(dummyGateway, store, time)
-        val state1 = coordinator1.restoreSession() as SessionState.Authenticated
-        assertEquals(1_000_000L, state1.session.priorElapsedMs)
+        val state1 = coordinator1.restoreSession()
+        assertTrue("FCT-003 conservative startup requires reauthentication", state1 is SessionState.ReauthenticationRequired)
+        assertNull(store.record)
 
         // Device reboot -> ReauthenticationRequired and store wiped
+        store.record = PersistedSessionRecord(
+            jwtToken = farExpJwt,
+            apiUrl = "http://127.0.0.1:80/api",
+            wssUrl = "ws://127.0.0.1:80/ws",
+            regionName = "us-east-1",
+            expiresInSeconds = 3600L,
+            issuedAtEpochMs = 1_700_000_000_000L,
+            lastSeenEpochMs = 1_700_000_100_000L,
+            issuedAtElapsedRealtimeMs = 10_000L,
+            bootGenerationId = "boot_10",
+            accountAliasRedacted = "u***@example.invalid"
+        )
         time.bootId = "boot_11"
         time.elapsedMs = 2_000L
         val coordinator2 = SessionCoordinator(dummyGateway, store, time)

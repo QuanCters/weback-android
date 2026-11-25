@@ -74,6 +74,7 @@ object TokenExpiryPolicy {
         currentBootGenerationId: String?
     ): PersistedRestoreDecision {
         if (record.expiresInSeconds <= 0L ||
+            record.priorElapsedMs < 0L ||
             record.issuedAtEpochMs <= 0L ||
             record.lastSeenEpochMs < record.issuedAtEpochMs ||
             record.jwtToken.isBlank() ||
@@ -103,7 +104,9 @@ object TokenExpiryPolicy {
             return PersistedRestoreDecision.Reauthenticate(RestoreRejectionReason.REBOOT_OR_UNKNOWN_BOOT)
         }
 
-        val priorElapsedMs = checkedSub(nowElapsedRealtimeMs, issuedRealtimeMs)
+        val sinceIssuedMs = checkedSub(nowElapsedRealtimeMs, issuedRealtimeMs)
+            ?: return PersistedRestoreDecision.Reauthenticate(RestoreRejectionReason.ARITHMETIC_OVERFLOW)
+        val priorElapsedMs = checkedAdd(record.priorElapsedMs, sinceIssuedMs)
             ?: return PersistedRestoreDecision.Reauthenticate(RestoreRejectionReason.ARITHMETIC_OVERFLOW)
         val expiryThresholdMs = checkedMul(record.expiresInSeconds, 1_000L)
             ?: return PersistedRestoreDecision.Reauthenticate(RestoreRejectionReason.ARITHMETIC_OVERFLOW)

@@ -20,8 +20,8 @@
     "executed_coverage_percent": 96.875,
     "total_executed_or_verified_percent": 96.875,
     "planned_scenario_count": 21,
-    "discovered_executable_test_count": 94,
-    "executed_test_count": 94,
+    "discovered_executable_test_count": 100,
+    "executed_test_count": 100,
     "ac_mapping_coverage_percent": 100.0,
     "verified_ac_execution_coverage_status": "OFFLINE_VERIFIED_DEVICE_KEYSTORE_NOT_RUN"
   },
@@ -90,12 +90,12 @@
     {
       "ac_id": "AC-302.3",
       "requirement_id": "REQ-AUTH-302",
-      "description": "Negative auth responses (HTTP 401/403/5xx, 3xx redirects, malformed JSON, code != 1, empty/untrusted token/URLs/region, expired_time <= 0) fail closed to AuthResult.Failure without mutating active sessions.",
+      "description": "Pure AuthGateway negative validation fails closed to AuthResult.Failure without mutating active SessionCoordinator state, while SessionCoordinator account replacement follows AC-303.2 prior-storage cleanup rules.",
       "validation_test_id": "TEST-AUTH-303",
-      "test_oracle": "TEST-AUTH-303: Fault-injected MockWebServer negative response matrix verifies AuthResult.Failure and preserved prior valid session state.",
+      "test_oracle": "TEST-AUTH-303, TEST-AUTH-311: Fault-injected MockWebServer gateway matrix leaves active coordinator intact; SessionCoordinator account replacement clears prior storage.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/auth/OkHttpAuthGatewayNegativeTest.kt::testRejects401_403_500_302_MalformedAndUntrustedUrls (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/auth/OkHttpAuthGatewayNegativeTest.kt::testRejects401_403_500_302_MalformedAndUntrustedUrls; app/src/test/java/com/weback/robot/app/session/T4SecurityRemediationRegressionTest.kt::fix304_failedAccountReplacementWipesPriorAccountAndGatewayNegativeRemainsSideEffectFree (PASS)",
       "status": "VERIFIED"
     },
     {
@@ -112,23 +112,23 @@
     {
       "ac_id": "AC-303.2",
       "requirement_id": "REQ-AUTH-303",
-      "description": "Serialized persistence contract (persistenceMutex + epoch-fenced store ops) requires TokenStore.save() before durable Authenticated, clears caches/WS/storage under NonCancellable cleanup on signOut, rejects failed-clear durable logout, and blocks failed-logout restart resurrection.",
+      "description": "Serialized persistence contract wraps signOut/invalidateForEpoch persistenceMutex acquisition + clear() inside NonCancellable, rejects failed-save/expired-after-save commits, wipes prior storage before account replacement, and prevents failed-logout restart resurrection.",
       "validation_test_id": "TEST-AUTH-304",
-      "test_oracle": "TEST-AUTH-304: Fault-injected TokenStore save/clear failure, cancellation, and post-failed-logout restart simulation tests verify durable commit ordering.",
+      "test_oracle": "TEST-AUTH-304: Lock-wait cancellation, delayed-save expiry, account replacement wipe/failure, and restart safety tests verify durable commit ordering.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/PersistenceOrderingFaultTest.kt::testLogoutDuringSuspendedSaveAndStaleClearNeverOverwritesNewerAccount; SessionCoordinatorTest.kt::testFailedSaveAndFailedClearFailClosed; ReviewRegressionTest.kt::testTransientInventoryErrorPreservesLoadedStateAndRefreshAdvancesEpochAndSaveFailureClearsOldBlob (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/T4SecurityRemediationRegressionTest.kt::fix301_cancellationWhileWaitingForPersistenceLockStillExecutesDurableClear, fix301_invalidateForEpochCancelledBeforeLockAcquisitionAndStaleClearNeverDeletesNewerAccount, fix302_combinedDeleteTombstoneAndKeystoreFailureOnLogoutNeverSilentlyRestoresOnRestart; PersistenceOrderingFaultTest.kt (PASS)",
       "status": "VERIFIED"
     },
     {
       "ac_id": "AC-303.3",
       "requirement_id": "REQ-AUTH-303",
-      "description": "sessionEpoch and persistence ordering govern TokenStore operations, concurrent signIn/refresh, logout during login/persist, Account A->B switching, late HTTP/401 callbacks, inventory caches, selected device, WS instances, and telemetry.",
+      "description": "sessionEpoch and persistence ordering govern TokenStore operations, concurrent signIn/refresh, logout/invalidation cancellation, Account A->B replacement/failures, late HTTP/401 callbacks, inventory caches, selected device, WS instances, and telemetry.",
       "validation_test_id": "TEST-AUTH-311",
-      "test_oracle": "TEST-AUTH-311, TEST-AUTH-304: Rapid Account A->B switch and late-epoch HTTP/401 callback tests verify superseded epoch effects are discarded without mutating Account B.",
+      "test_oracle": "TEST-AUTH-311, TEST-AUTH-304: Account replacement failure, cleanup failure, single-flight duplicate login, and late-epoch callback tests verify superseded epoch isolation.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/CrossAccountIsolationTest.kt::testRapidAccountSwitchDiscardsStaleAccountInventoryAndSelection; SessionCoordinatorTest.kt::testAccountSwitchAndLate401EpochIsolation (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/CrossAccountIsolationTest.kt; T4SecurityRemediationRegressionTest.kt::fix304_storageCleanupFailureDuringReplacementBlocksNewSessionDuplicateSingleFlightAndLateAccountAIgnored; SessionCoordinatorTest.kt (PASS)",
       "status": "VERIFIED"
     },
     {
@@ -145,31 +145,31 @@
     {
       "ac_id": "AC-304.2",
       "requirement_id": "REQ-AUTH-304",
-      "description": "PersistedSessionRecord never resets lifetime on reload, preserves remaining lifetime on verified same-boot restart, transitions to ReauthenticationRequired on device reboot or clock rollback, and ignores unverified JWT claims.",
+      "description": "PersistedSessionRecord preserves original issuedAtElapsedRealtimeMs and priorElapsedMs; TokenExpiryPolicy keeps same-boot/reboot/rollback checked arithmetic testable while SessionCoordinator.restoreSession() conservatively disables auto-activation in FCT-003.",
       "validation_test_id": "TEST-AUTH-310",
-      "test_oracle": "TEST-AUTH-310: Deterministic restart (priorElapsedMs preserved), reboot, clock rollback, and unverified JWT exp claim ignore tests verify conservative ReauthenticationRequired.",
+      "test_oracle": "TEST-AUTH-310: Same-boot priorElapsedMs preservation, delayed persistence, reboot/rollback rejection, conservative startup ReauthenticationRequired, and ignored JWT exp claim verified.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/SessionTimeSemanticsTest.kt::testRestoreSameBootPreservesLifetimeAndRebootOrRollbackRequiresReauth; TokenExpiryPolicyTest.kt::testSameBootProcessRestartPreservesRemainingLifetimeAndIgnoresJwtExpClaim, testRebootUnknownBootAndClockRollbackFailClosed (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/SessionTimeSemanticsTest.kt::testRestoreSameBootPreservesLifetimeAndRebootOrRollbackRequiresReauth; T4SecurityRemediationRegressionTest.kt::fix303_delayedPersistencePreservesOriginalLifetimeRejectsExpiredAndGuardsRefreshOverflow; TokenExpiryPolicyTest.kt (PASS)",
       "status": "VERIFIED"
     },
     {
       "ac_id": "AC-304.3",
       "requirement_id": "REQ-AUTH-304",
-      "description": "Optional RefreshGrantStrategy remains synthetic/disabled in production (defaulting to ReauthenticationRequired), and plaintext passwords/MD5 digests are never persisted or replayed.",
+      "description": "Optional RefreshGrantStrategy remains synthetic/disabled in production (defaulting to ReauthenticationRequired), grants new lifetime only when a distinct new token is issued, and persists/replays zero passwords or MD5 digests.",
       "validation_test_id": "TEST-AUTH-305",
-      "test_oracle": "TEST-AUTH-305: Synthetic single-flight refresh test and production-disabled ReauthenticationRequired default verify zero password/MD5 storage or replay.",
+      "test_oracle": "TEST-AUTH-305: Synthetic single-flight refresh, same-token non-extension check, and production-disabled ReauthenticationRequired default verify zero password/MD5 storage or replay.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/SessionTimeSemanticsTest.kt::testProductionRefreshDisabledDefaultsToReauthAndSyntheticRefreshCollapses; ReviewRegressionTest.kt (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/SessionTimeSemanticsTest.kt::testProductionRefreshDisabledDefaultsToReauthAndSyntheticRefreshCollapses; T4SecurityRemediationRegressionTest.kt::fix303_delayedPersistencePreservesOriginalLifetimeRejectsExpiredAndGuardsRefreshOverflow; ReviewRegressionTest.kt (PASS)",
       "status": "VERIFIED"
     },
     {
       "ac_id": "AC-305.1",
       "requirement_id": "REQ-AUTH-305",
-      "description": "KeystoreAeadTokenStore uses non-exportable AndroidKeyStore AES-256-GCM (randomizedEncryptionRequired, cipher-generated 12B IV, 128-bit tag, canonical AAD, 29..16384B bounds, atomic replace in noBackupFilesDir) with zero EncryptedSharedPreferences or software fallback.",
+      "description": "KeystoreAeadTokenStore uses non-exportable AndroidKeyStore AES-256-GCM (randomizedEncryptionRequired, cipher-generated 12B IV, 128-bit tag, canonical AAD, 29..16384B bounds, ATOMIC_MOVE with explicit non-atomic rename fallback in noBackupFilesDir) with zero EncryptedSharedPreferences or software fallback.",
       "validation_test_id": "TEST-AUTH-306",
-      "test_oracle": "TEST-AUTH-306: AEAD storage test verifies envelope layout, distinct cipher-generated 12B IVs, AAD binding, atomic replacement, and zero EncryptedSharedPreferences/software fallback.",
+      "test_oracle": "TEST-AUTH-306: AEAD storage test verifies envelope layout, distinct cipher-generated 12B IVs, AAD binding, replacement, and zero EncryptedSharedPreferences/software fallback.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
       "evidence_ref": "app/src/test/java/com/weback/robot/security/KeystoreAeadTokenStoreTest.kt::testAeadEnvelopeRoundTripDistinctCipherGeneratedIvsAndNoBackupFilesDir (PASS)",
@@ -178,12 +178,12 @@
     {
       "ac_id": "AC-305.2",
       "requirement_id": "REQ-AUTH-305",
-      "description": "Missing key w/ orphaned blob, AEADBadTagException, KeyPermanentlyInvalidatedException, out-of-bounds size, bad schema version, or post-decrypt validation error deletes blob/invalidated key and fails closed; mutable buffers are wiped in finally blocks.",
+      "description": "Missing key w/ orphaned blob, AEADBadTagException, KeyPermanentlyInvalidatedException, out-of-bounds size, bad schema version, post-decrypt validation error, and KeyDeletionResult/clear failures fail closed with explicit error categories without suppressing deleteKey() errors; mutable buffers wiped in finally.",
       "validation_test_id": "TEST-AUTH-307",
-      "test_oracle": "TEST-AUTH-307: Bit-flip, version/AAD mismatch, truncation/oversize, missing key, invalidation, bad post-decrypt JSON, and I/O fault tests verify atomic wipe and fail-closed errors.",
+      "test_oracle": "TEST-AUTH-307: Bit-flip, version/AAD mismatch, truncation/oversize, missing key, invalidation, bad post-decrypt JSON, deleteKey() error propagation, and POSIX read-only combined failure tests pass.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/security/KeystoreAeadTokenStoreTamperTest.kt::testTamperBitFlipBadVersionOversizeTruncationAndMissingKeyFailClosed, testPostDecryptMalformedRecordAndClearFailureTombstonePreventSilentRestore (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/KeystoreAeadTokenStoreTamperTest.kt::testTamperBitFlipBadVersionOversizeTruncationAndMissingKeyFailClosed, testPostDecryptMalformedRecordAndClearFailureTombstonePreventSilentRestore; T4SecurityRemediationRegressionTest.kt::fix302_combinedDeleteTombstoneAndKeystoreFailureOnLogoutNeverSilentlyRestoresOnRestart (PASS)",
       "status": "VERIFIED"
     },
     {
@@ -200,9 +200,9 @@
     {
       "ac_id": "AC-305.4",
       "requirement_id": "REQ-AUTH-305",
-      "description": "Hardware-backed Keystore protection is verified on a real Android >= 12 device via KeyInfo.getSecurityLevel() (TEE/StrongBox), remaining NOT_RUN in offline CI without an authorized device and blocking T4 hardware/release closure.",
+      "description": "Hardware-backed Keystore protection is verified on a real Android >= 12 device via KeyInfo.getSecurityLevel() (TEE/StrongBox), missing-key orphaned blob rejection, fresh key recreation, and cleanup verification, remaining NOT_RUN in offline CI without an authorized device.",
       "validation_test_id": "TEST-AUTH-312",
-      "test_oracle": "TEST-AUTH-312: Device instrumentation test checks KeyInfo.getSecurityLevel() in {TRUSTED_ENVIRONMENT, STRONGBOX} (NOT_RUN in offline CI when no authorized device attached).",
+      "test_oracle": "TEST-AUTH-312: Device instrumentation test checks persistence, KeyInfo.getSecurityLevel() in {TRUSTED_ENVIRONMENT, STRONGBOX}, key deletion, orphaned blob rejection (MISSING_KEYSTORE_KEY, distinct from KeyPermanentlyInvalidatedException), fresh key creation, and verified cleanup.",
       "implementation_task": "Task 2, Task 6",
       "check_id": "android-smoke-test",
       "evidence_ref": "app/src/androidTest/java/com/weback/robot/security/KeystoreHardwareSecurityLevelTest.kt (compiled via assembleDebugAndroidTest; NOT_RUN without authorized physical Android >= 12 device)",
@@ -376,12 +376,12 @@
     {
       "ac_id": "AC-310.3",
       "requirement_id": "REQ-CONN-310",
-      "description": "All existing 54 FCT-001/FCT-002 unit and Robolectric Compose UI tests plus 7-check policy execution remain non-regressed.",
+      "description": "All existing FCT-001/FCT-002 unit and Robolectric Compose UI tests plus FCT-003 security suites and 7-check policy execution remain non-regressed.",
       "validation_test_id": "TEST-CONN-307",
-      "test_oracle": "TEST-CONN-307: Full testDebugUnitTest + 7-check candidate pipeline confirms all 54 FCT-001/FCT-002 regressions and spec-hygiene pass.",
+      "test_oracle": "TEST-CONN-307: Full testDebugUnitTest + 7-check candidate pipeline confirms all regressions and spec-hygiene pass.",
       "implementation_task": "Task 5, Task 6",
       "check_id": "spec-hygiene",
-      "evidence_ref": "94/94 unit & Robolectric tests PASS across 33 suites + 7/7 candidate checks PASS",
+      "evidence_ref": "100/100 unit & Robolectric tests PASS across 34 suites + 7/7 candidate checks PASS",
       "status": "VERIFIED"
     }
   ]

@@ -4,15 +4,19 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import com.weback.robot.domain.model.PersistedSessionRecord
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.nio.CharBuffer
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.security.UnrecoverableKeyException
 import java.util.Arrays
@@ -30,10 +34,16 @@ data class EncryptedPayload(
 class MissingKeystoreKeyException(message: String) : Exception(message)
 class PermanentlyInvalidatedKeyException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+sealed interface KeyDeletionResult {
+    data object Deleted : KeyDeletionResult
+    data object NotPresent : KeyDeletionResult
+    data class Failure(val safeCategory: String) : KeyDeletionResult
+}
+
 interface AeadCipherProvider {
     fun encrypt(plaintext: ByteArray, aad: ByteArray): EncryptedPayload
     fun decrypt(iv: ByteArray, ciphertextWithTag: ByteArray, aad: ByteArray): ByteArray
-    fun deleteKey()
+    fun deleteKey(): KeyDeletionResult
 }
 
 /**
@@ -73,27 +83,33 @@ class AndroidKeystoreAeadCipherProvider(
         return generator.generateKey()
     }
 
+    private fun recreateKeyOrThrow(cause: Throwable? = null): SecretKey {
+        val deleteResult = deleteKey()
+        if (deleteResult is KeyDeletionResult.Failure) {
+            throw IllegalStateException(
+                "Unable to delete invalidated AndroidKeyStore key (${deleteResult.safeCategory})",
+                cause
+            )
+        }
+        return loadOrCreateKey(createIfMissing = true)
+            ?: throw IllegalStateException("Unable to recreate AndroidKeyStore key after invalidation", cause)
+    }
+
     override fun encrypt(plaintext: ByteArray, aad: ByteArray): EncryptedPayload {
         var key = try {
             loadOrCreateKey(createIfMissing = true)
                 ?: throw IllegalStateException("Unable to generate AndroidKeyStore key")
         } catch (e: PermanentlyInvalidatedKeyException) {
-            deleteKey()
-            loadOrCreateKey(createIfMissing = true)
-                ?: throw IllegalStateException("Unable to recreate AndroidKeyStore key after invalidation", e)
+            recreateKeyOrThrow(e)
         }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         try {
             cipher.init(Cipher.ENCRYPT_MODE, key)
-        } catch (_: KeyPermanentlyInvalidatedException) {
-            deleteKey()
-            key = loadOrCreateKey(createIfMissing = true)
-                ?: throw IllegalStateException("Unable to recreate AndroidKeyStore key after invalidation")
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            key = recreateKeyOrThrow(e)
             cipher.init(Cipher.ENCRYPT_MODE, key)
-        } catch (_: UnrecoverableKeyException) {
-            deleteKey()
-            key = loadOrCreateKey(createIfMissing = true)
-                ?: throw IllegalStateException("Unable to recreate AndroidKeyStore key after unrecoverable state")
+        } catch (e: UnrecoverableKeyException) {
+            key = recreateKeyOrThrow(e)
             cipher.init(Cipher.ENCRYPT_MODE, key)
         }
         val iv = cipher.iv
@@ -120,12 +136,21 @@ class AndroidKeystoreAeadCipherProvider(
         }
     }
 
-    override fun deleteKey() {
-        runCatching {
+    override fun deleteKey(): KeyDeletionResult {
+        return try {
             val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-            if (ks.containsAlias(keyAlias)) {
+            if (!ks.containsAlias(keyAlias)) {
+                KeyDeletionResult.NotPresent
+            } else {
                 ks.deleteEntry(keyAlias)
+                if (ks.containsAlias(keyAlias)) {
+                    KeyDeletionResult.Failure("KEYSTORE_ALIAS_STILL_PRESENT")
+                } else {
+                    KeyDeletionResult.Deleted
+                }
             }
+        } catch (e: Throwable) {
+            KeyDeletionResult.Failure("KEYSTORE_DELETE_${e::class.java.simpleName.uppercase()}")
         }
     }
 
@@ -140,10 +165,18 @@ class AndroidKeystoreAeadCipherProvider(
 /**
  * ADR-003 encrypted session persistence store.
  *
- * Security / threat-model limitation (`IC-302`): AES-256-GCM guarantees confidentiality and integrity
- * under the device's AndroidKeyStore key, but AEAD alone cannot prevent filesystem-level snapshot replay
- * of an older valid encrypted blob prior to expiration or key deletion/rotation; mitigation relies on
- * Keystore alias cleanup + invalidation tombstones + dual-clock expiry + server revocation.
+ * Persistence replacement behavior (`FIX-302`): Uses write-temp-fsync plus
+ * `Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)` on filesystems supporting atomic move,
+ * falling back to target delete + `renameTo` ONLY when `AtomicMoveNotSupportedException` is raised
+ * (the fallback is non-atomic across process crash windows).
+ *
+ * Security / threat-model limitation (`IC-302`, `FIX-302`): AES-256-GCM guarantees confidentiality and
+ * integrity under the device's AndroidKeyStore key, but AEAD alone cannot prevent filesystem-level
+ * snapshot replay of an older valid encrypted blob prior to expiration or key deletion/rotation;
+ * furthermore, if encrypted record deletion, invalidation tombstone creation, and Keystore alias
+ * deletion all fail simultaneously prior to process restart, local storage alone cannot prove a prior
+ * logout occurred — which is why `FCT-003` conservatively disables automatic session restoration in
+ * `SessionCoordinator.restoreSession()`.
  */
 class KeystoreAeadTokenStore(
     private val storageDir: File,
@@ -169,7 +202,8 @@ class KeystoreAeadTokenStore(
         val issuedAtElapsedRealtimeMs: Long? = null,
         val bootGenerationId: String? = null,
         val accountAliasRedacted: String,
-        val syntheticRefreshToken: String? = null
+        val syntheticRefreshToken: String? = null,
+        val priorElapsedMs: Long = 0L
     )
 
     private val targetFile: File get() = File(storageDir, SESSION_FILE_NAME)
@@ -198,7 +232,8 @@ class KeystoreAeadTokenStore(
                 issuedAtElapsedRealtimeMs = record.issuedAtElapsedRealtimeMs,
                 bootGenerationId = record.bootGenerationId,
                 accountAliasRedacted = record.accountAliasRedacted,
-                syntheticRefreshToken = record.syntheticRefreshToken
+                syntheticRefreshToken = record.syntheticRefreshToken,
+                priorElapsedMs = record.priorElapsedMs
             )
             plaintextBytes = json.encodeToString(dto).toByteArray(Charsets.UTF_8)
             val encrypted = cipherProvider.encrypt(plaintextBytes, CANONICAL_AAD_BYTES)
@@ -215,13 +250,22 @@ class KeystoreAeadTokenStore(
             System.arraycopy(encrypted.ciphertextWithTag, 0, envelopeBytes, 1 + IV_BYTES, encrypted.ciphertextWithTag.size)
 
             writeAtomically(envelopeBytes)
-            // Clear any prior logout tombstone only AFTER atomic replacement; fail if tombstone cannot be cleared
+            // Clear any prior logout tombstone only AFTER target replacement; fail if tombstone cannot be cleared
             if (tombstoneFile.exists() && !performDelete(tombstoneFile) && tombstoneFile.exists()) {
                 return TokenSaveResult.Failure("TOMBSTONE_CLEAR_FAILED")
             }
             TokenSaveResult.Success
+        } catch (ce: CancellationException) {
+            runCatching { if (tempFile.exists()) performDelete(tempFile) }
+            throw ce
+        } catch (e: GeneralSecurityException) {
+            runCatching { if (tempFile.exists()) performDelete(tempFile) }
+            TokenSaveResult.Failure("SAVE_KEY_CRYPTO_${e::class.java.simpleName.uppercase()}")
+        } catch (e: IOException) {
+            runCatching { if (tempFile.exists()) performDelete(tempFile) }
+            TokenSaveResult.Failure("SAVE_STORAGE_IO_${e::class.java.simpleName.uppercase()}")
         } catch (t: Throwable) {
-            runCatching { if (tempFile.exists()) tempFile.delete() }
+            runCatching { if (tempFile.exists()) performDelete(tempFile) }
             TokenSaveResult.Failure("SAVE_${t::class.java.simpleName.uppercase()}")
         } finally {
             plaintextBytes?.let { Arrays.fill(it, 0.toByte()) }
@@ -279,26 +323,43 @@ class KeystoreAeadTokenStore(
                 issuedAtElapsedRealtimeMs = dto.issuedAtElapsedRealtimeMs,
                 bootGenerationId = dto.bootGenerationId,
                 accountAliasRedacted = dto.accountAliasRedacted,
-                syntheticRefreshToken = dto.syntheticRefreshToken
+                syntheticRefreshToken = dto.syntheticRefreshToken,
+                priorElapsedMs = dto.priorElapsedMs
             )
             if (!isValidRecordFields(record)) {
                 wipeBlobAndTombstone()
                 return TokenLoadResult.CorruptedOrInvalidated("POST_DECRYPT_VALIDATION_FAILED")
             }
             TokenLoadResult.Loaded(record)
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (_: MissingKeystoreKeyException) {
             wipeBlobAndTombstone()
             TokenLoadResult.CorruptedOrInvalidated("MISSING_KEYSTORE_KEY")
         } catch (_: PermanentlyInvalidatedKeyException) {
             wipeBlobAndTombstone()
-            cipherProvider.deleteKey()
-            TokenLoadResult.CorruptedOrInvalidated("KEY_PERMANENTLY_INVALIDATED")
+            val keyDel = cipherProvider.deleteKey()
+            val cat = if (keyDel is KeyDeletionResult.Failure) {
+                "KEY_PERMANENTLY_INVALIDATED_AND_DELETE_FAILED"
+            } else {
+                "KEY_PERMANENTLY_INVALIDATED"
+            }
+            TokenLoadResult.CorruptedOrInvalidated(cat)
         } catch (_: AEADBadTagException) {
             wipeBlobAndTombstone()
             TokenLoadResult.CorruptedOrInvalidated("AEAD_AUTHENTICATION_FAILED")
+        } catch (_: SerializationException) {
+            wipeBlobAndTombstone()
+            TokenLoadResult.CorruptedOrInvalidated("PAYLOAD_DECODE_FAILED")
+        } catch (_: IOException) {
+            wipeBlobAndTombstone()
+            TokenLoadResult.CorruptedOrInvalidated("STORAGE_READ_FAILED")
+        } catch (_: GeneralSecurityException) {
+            wipeBlobAndTombstone()
+            TokenLoadResult.CorruptedOrInvalidated("KEYSTORE_CRYPTO_FAILED")
         } catch (_: Throwable) {
             wipeBlobAndTombstone()
-            TokenLoadResult.CorruptedOrInvalidated("DECODE_OR_IO_ERROR")
+            TokenLoadResult.CorruptedOrInvalidated("UNEXPECTED_STORAGE_FAILURE")
         } finally {
             rawBytes?.let { Arrays.fill(it, 0.toByte()) }
             decryptedBytes?.let { Arrays.fill(it, 0.toByte()) }
@@ -308,29 +369,57 @@ class KeystoreAeadTokenStore(
     }
 
     override suspend fun clear(): TokenClearResult {
-        var allCleared = true
+        var filesDeleted = true
         runCatching {
             if (tempFile.exists() && !performDelete(tempFile)) {
-                allCleared = false
+                filesDeleted = false
             }
             if (targetFile.exists() && !performDelete(targetFile)) {
-                allCleared = false
+                filesDeleted = false
             }
         }.onFailure {
-            allCleared = false
+            filesDeleted = false
         }
 
-        if (!allCleared || targetFile.exists()) {
-            // Write fail-closed invalidation tombstone & drop Keystore key so restart cannot restore blob
-            runCatching {
-                if (!storageDir.exists()) storageDir.mkdirs()
-                tombstoneFile.writeText("INVALIDATED")
+        val blobStillExists = tempFile.exists() || targetFile.exists() || !filesDeleted
+        val keyDeleteResult = cipherProvider.deleteKey()
+        val keyDeleteFailed = keyDeleteResult is KeyDeletionResult.Failure
+
+        if (blobStillExists) {
+            val tombstoneWritten = try {
+                if (!storageDir.exists() && !storageDir.mkdirs()) {
+                    false
+                } else {
+                    FileOutputStream(tombstoneFile).use { fos ->
+                        fos.write("INVALIDATED".toByteArray(Charsets.UTF_8))
+                        fos.flush()
+                        fos.fd.sync()
+                    }
+                    tombstoneFile.exists()
+                }
+            } catch (_: Throwable) {
+                false
             }
-            cipherProvider.deleteKey()
-            return TokenClearResult.Failure("CLEAR_FILE_DELETE_FAILED")
+            val safeCategory = when {
+                !tombstoneWritten && keyDeleteFailed -> "CLEAR_BLOB_TOMBSTONE_AND_KEY_DELETE_FAILED"
+                !tombstoneWritten -> "CLEAR_BLOB_AND_TOMBSTONE_WRITE_FAILED"
+                keyDeleteFailed -> "CLEAR_BLOB_AND_KEY_DELETE_FAILED_TOMBSTONE_ACTIVE"
+                else -> "CLEAR_FILE_DELETE_FAILED_TOMBSTONE_ACTIVE"
+            }
+            return TokenClearResult.Failure(safeCategory)
         }
 
-        runCatching { if (tombstoneFile.exists()) performDelete(tombstoneFile) }
+        if (keyDeleteFailed) {
+            return TokenClearResult.Failure("CLEAR_KEYSTORE_DELETE_FAILED")
+        }
+
+        val tombstoneCleared = runCatching {
+            !tombstoneFile.exists() || performDelete(tombstoneFile)
+        }.getOrDefault(false) && !tombstoneFile.exists()
+        if (!tombstoneCleared) {
+            return TokenClearResult.Failure("CLEAR_TOMBSTONE_DELETE_FAILED")
+        }
+
         return TokenClearResult.Success
     }
 
@@ -349,7 +438,9 @@ class KeystoreAeadTokenStore(
     }
 
     private fun writeAtomically(bytes: ByteArray) {
-        if (tempFile.exists()) tempFile.delete()
+        if (tempFile.exists() && !performDelete(tempFile)) {
+            throw IOException("Cannot remove stale temporary token file")
+        }
         FileOutputStream(tempFile).use { fos ->
             fos.write(bytes)
             fos.flush()
@@ -363,11 +454,11 @@ class KeystoreAeadTokenStore(
                 StandardCopyOption.REPLACE_EXISTING
             )
         } catch (_: AtomicMoveNotSupportedException) {
-            if (targetFile.exists() && !targetFile.delete()) {
-                throw IllegalStateException("Cannot replace existing token file")
+            if (targetFile.exists() && !performDelete(targetFile)) {
+                throw IOException("Cannot replace existing token file during non-atomic fallback")
             }
             if (!tempFile.renameTo(targetFile)) {
-                throw IllegalStateException("Atomic rename fallback failed")
+                throw IOException("Rename fallback failed")
             }
         }
     }
@@ -376,6 +467,8 @@ class KeystoreAeadTokenStore(
         if (record.jwtToken.isBlank() ||
             record.regionName.isBlank() ||
             record.expiresInSeconds <= 0L ||
+            record.priorElapsedMs < 0L ||
+            (record.issuedAtElapsedRealtimeMs != null && record.issuedAtElapsedRealtimeMs < 0L) ||
             record.issuedAtEpochMs <= 0L ||
             record.lastSeenEpochMs < record.issuedAtEpochMs
         ) {

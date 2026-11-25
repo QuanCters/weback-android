@@ -79,14 +79,15 @@ data class PersistedSessionRecord(
     val issuedAtElapsedRealtimeMs: Long?,
     val bootGenerationId: String?,
     val accountAliasRedacted: String,
-    val syntheticRefreshToken: String? = null
+    val syntheticRefreshToken: String? = null,
+    val priorElapsedMs: Long = 0L
 ) {
     override fun toString(): String =
         "PersistedSessionRecord(jwtToken='[REDACTED]', apiUrl='$apiUrl', wssUrl='$wssUrl', " +
             "regionName='$regionName', expiresInSeconds=$expiresInSeconds, " +
             "issuedAtEpochMs=$issuedAtEpochMs, lastSeenEpochMs=$lastSeenEpochMs, " +
-            "issuedAtElapsedRealtimeMs=$issuedAtElapsedRealtimeMs, bootGenerationId=$bootGenerationId, " +
-            "accountAliasRedacted='$accountAliasRedacted', " +
+            "issuedAtElapsedRealtimeMs=$issuedAtElapsedRealtimeMs, priorElapsedMs=$priorElapsedMs, " +
+            "bootGenerationId=$bootGenerationId, accountAliasRedacted='$accountAliasRedacted', " +
             "syntheticRefreshToken=${if (syntheticRefreshToken == null) "null" else "'[REDACTED]'"})"
 }
 
