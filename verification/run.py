@@ -155,8 +155,7 @@ def main():
             print(f"Error: Could not resolve candidate tree metadata: {e}", file=sys.stderr)
             sys.exit(2)
 
-        raw_event = args.event_name if args.event_name is not None else os.environ.get("GITHUB_EVENT_NAME")
-        event_name = raw_event.strip() if isinstance(raw_event, str) and raw_event.strip() else None
+        event_name = args.event_name.strip() if isinstance(args.event_name, str) and args.event_name.strip() else None
 
         if event_name is not None and event_name not in ("pull_request", "push"):
             print(f"Error: Unsupported event context '{event_name}'. Must be 'pull_request' or 'push'.", file=sys.stderr)
@@ -176,7 +175,7 @@ def main():
 
         if env.get("TRANSITION_AUTHORIZATION", "").strip() and not event_name:
             print(
-                "Error: Explicit --event-name ('pull_request' or 'push') or GITHUB_EVENT_NAME is required "
+                "Error: Explicit --event-name ('pull_request' or 'push') is required "
                 "for authoritative transition verification.",
                 file=sys.stderr
             )

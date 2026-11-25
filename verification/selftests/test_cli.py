@@ -11,7 +11,7 @@ class TestCliRunner(unittest.TestCase):
     def _clean_env() -> dict[str, str]:
         return {
             k: v for k, v in os.environ.items()
-            if k not in ("APPROVED_POLICY_SHA256", "TRANSITION_AUTHORIZATION")
+            if k not in ("APPROVED_POLICY_SHA256", "TRANSITION_AUTHORIZATION", "GITHUB_EVENT_NAME")
         }
 
     def test_cli_help(self):
