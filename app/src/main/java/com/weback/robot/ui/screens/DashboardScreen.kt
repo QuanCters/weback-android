@@ -1,5 +1,6 @@
 package com.weback.robot.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -264,11 +264,6 @@ fun ControlsCard(
     uiState: RobotUiState,
     onIntent: (DashboardIntent) -> Unit
 ) {
-    val cleanCd = stringResource(id = R.string.cd_clean_button)
-    val pauseCd = stringResource(id = R.string.cd_pause_button)
-    val resumeCd = stringResource(id = R.string.cd_resume_button)
-    val dockCd = stringResource(id = R.string.cd_dock_button)
-
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -297,7 +292,6 @@ fun ControlsCard(
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .testTag("btn_clean")
-                        .semantics { contentDescription = cleanCd }
                 ) {
                     Text(text = stringResource(id = R.string.action_clean))
                 }
@@ -309,7 +303,6 @@ fun ControlsCard(
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .testTag("btn_pause")
-                        .semantics { contentDescription = pauseCd }
                 ) {
                     Text(text = stringResource(id = R.string.action_pause))
                 }
@@ -326,7 +319,6 @@ fun ControlsCard(
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .testTag("btn_resume")
-                        .semantics { contentDescription = resumeCd }
                 ) {
                     Text(text = stringResource(id = R.string.action_resume))
                 }
@@ -338,7 +330,6 @@ fun ControlsCard(
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .testTag("btn_dock")
-                        .semantics { contentDescription = dockCd }
                 ) {
                     Text(text = stringResource(id = R.string.action_dock))
                 }
@@ -384,7 +375,6 @@ fun CommandFeedbackCard(
         )
     }
 
-    val dismissCd = stringResource(id = R.string.cd_dismiss_feedback)
     val canDismiss = cmdState is CommandExecutionState.Acknowledged ||
         cmdState is CommandExecutionState.Rejected ||
         uiState.busyConflictNotice != null
@@ -434,9 +424,7 @@ fun CommandFeedbackCard(
                 if (canDismiss) {
                     TextButton(
                         onClick = { onIntent(DashboardIntent.DismissCommandFeedback) },
-                        modifier = Modifier
-                            .testTag("btn_dismiss_feedback")
-                            .semantics { contentDescription = dismissCd }
+                        modifier = Modifier.testTag("btn_dismiss_feedback")
                     ) {
                         Text(
                             text = stringResource(id = R.string.action_dismiss),
@@ -448,7 +436,8 @@ fun CommandFeedbackCard(
 
             uiState.busyConflictNotice?.let { notice ->
                 Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -457,7 +446,7 @@ fun CommandFeedbackCard(
                     Text(
                         text = notice,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
                         modifier = Modifier.padding(10.dp)
                     )
                 }

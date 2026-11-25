@@ -52,6 +52,7 @@ class DashboardViewModelTest {
         assertTrue(state.isDustbinClean)
         assertTrue(state.isSimulator)
         assertEquals("v0.1.0-alpha (FCT-001 Foundation)", state.appVersion)
+        transport.close()
     }
 
     @Test
@@ -74,6 +75,7 @@ class DashboardViewModelTest {
         assertFalse(state.isDocked)
         assertFalse(state.isDustbinClean)
         assertTrue(state.isSimulator)
+        transport.close()
     }
 
     @Test

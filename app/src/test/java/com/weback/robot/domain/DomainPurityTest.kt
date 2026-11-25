@@ -18,20 +18,22 @@ class DomainPurityTest {
         val ktFiles = domainDir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
         assertTrue("Expected Kotlin source files in domain package", ktFiles.isNotEmpty())
 
-        val prohibitedPrefixes = listOf(
-            "import android.",
-            "import androidx.",
-            "import kotlinx.coroutines.",
-            "import kotlinx.serialization.",
-            "import okhttp3."
+        val prohibitedTokens = listOf(
+            "android.",
+            "androidx.",
+            "kotlinx.",
+            "okhttp3."
         )
 
         val violations = mutableListOf<String>()
         for (file in ktFiles) {
             file.readLines().forEachIndexed { idx, line ->
                 val trimmed = line.trim()
-                for (prefix in prohibitedPrefixes) {
-                    if (trimmed.startsWith(prefix)) {
+                if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) {
+                    return@forEachIndexed
+                }
+                for (token in prohibitedTokens) {
+                    if (trimmed.contains(token)) {
                         violations.add("${file.name}:${idx + 1}: $trimmed")
                     }
                 }
@@ -39,7 +41,7 @@ class DomainPurityTest {
         }
 
         assertTrue(
-            "Prohibited imports detected in com.weback.robot.domain: $violations",
+            "Prohibited framework/network references detected in com.weback.robot.domain: $violations",
             violations.isEmpty()
         )
     }

@@ -357,7 +357,18 @@ class SimulatorRobotTransportTest {
         assertEquals(CommandRejectionReason.TRANSPORT_REJECTED, (rejected as CommandResult.Rejected).reason)
         assertEquals(RobotMode.DOCK, transport.robotState.value.mode)
 
-        // Next valid command succeeds cleanly (one-shot cleared)
+        // One-shot exception injection propagates, leaves state unchanged, and releases stateMutex
+        transport.injectNextCommandException(IllegalStateException("Simulated transport exception"))
+        var caughtException: Throwable? = null
+        try {
+            transport.sendCommand(RobotCommand.CLEAN)
+        } catch (ex: IllegalStateException) {
+            caughtException = ex
+        }
+        assertEquals("Simulated transport exception", caughtException?.message)
+        assertEquals(RobotMode.DOCK, transport.robotState.value.mode)
+
+        // Next valid command succeeds cleanly (both one-shot hooks cleared and mutex released)
         val acked = transport.sendCommand(RobotCommand.CLEAN)
         assertTrue(acked is CommandResult.Acknowledged)
         assertEquals(RobotMode.CLEAN, transport.robotState.value.mode)

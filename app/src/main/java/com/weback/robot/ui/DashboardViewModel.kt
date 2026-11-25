@@ -76,7 +76,15 @@ class DashboardViewModel(
     private val stateLock = Any()
 
     private var nextCommandId: Long = 1L
+    private var telemetryVersion: Long = 0L
     private var committedRobotState: RobotState = robotTransport.robotState.value
+    private var activePendingSnapshot: PendingSnapshot? = null
+
+    private data class PendingSnapshot(
+        val commandId: Long,
+        val submittedState: RobotState,
+        val submittedTelemetryVersion: Long
+    )
 
     private val _uiState = MutableStateFlow(
         buildUiState(
@@ -91,6 +99,9 @@ class DashboardViewModel(
         scope.launch(dispatchers.main) {
             robotTransport.robotState.collect { newState ->
                 synchronized(stateLock) {
+                    if (newState != committedRobotState) {
+                        telemetryVersion += 1L
+                    }
                     committedRobotState = newState
                     val current = _uiState.value
                     _uiState.value = buildUiState(
@@ -116,7 +127,14 @@ class DashboardViewModel(
         }
 
         val pendingCommandId: Long? = synchronized(stateLock) {
-            committedRobotState = robotTransport.robotState.value
+            if (!scope.isActive) {
+                return@synchronized null
+            }
+            val latestTransport = robotTransport.robotState.value
+            if (latestTransport != committedRobotState) {
+                telemetryVersion += 1L
+                committedRobotState = latestTransport
+            }
             val current = _uiState.value
             val currentCmd = current.commandState
             if (currentCmd is CommandExecutionState.Pending) {
@@ -148,6 +166,11 @@ class DashboardViewModel(
                     null
                 }
                 is TransitionDecision.Accepted -> {
+                    activePendingSnapshot = PendingSnapshot(
+                        commandId = cmdId,
+                        submittedState = committedRobotState,
+                        submittedTelemetryVersion = telemetryVersion
+                    )
                     _uiState.value = buildUiState(
                         robotState = committedRobotState,
                         commandState = CommandExecutionState.Pending(
@@ -201,7 +224,7 @@ class DashboardViewModel(
     }
 
     private fun dispatchPendingCommand(command: RobotCommand, commandId: Long) {
-        scope.launch(dispatchers.main) {
+        val job = scope.launch(dispatchers.main) {
             try {
                 val result = withTimeout(commandTimeoutMs) {
                     robotTransport.sendCommand(command)
@@ -232,6 +255,11 @@ class DashboardViewModel(
                 )
             }
         }
+        job.invokeOnCompletion { cause ->
+            if (cause is CancellationException) {
+                cleanupCancelledPending(commandId)
+            }
+        }
     }
 
     internal fun settleCommandResult(
@@ -244,10 +272,19 @@ class DashboardViewModel(
             if (currentCmd !is CommandExecutionState.Pending || currentCmd.commandId != commandId) {
                 return
             }
+            val snapshot = activePendingSnapshot
+            activePendingSnapshot = null
 
             when (result) {
                 is CommandResult.Acknowledged -> {
-                    committedRobotState = result.resultingState
+                    val latestTransport = robotTransport.robotState.value
+                    val telemetryMovedForward = snapshot != null &&
+                        (telemetryVersion > snapshot.submittedTelemetryVersion || latestTransport != snapshot.submittedState)
+                    committedRobotState = if (telemetryMovedForward) {
+                        latestTransport
+                    } else {
+                        result.resultingState
+                    }
                     _uiState.value = buildUiState(
                         robotState = committedRobotState,
                         commandState = CommandExecutionState.Acknowledged(
@@ -287,6 +324,7 @@ class DashboardViewModel(
             if (currentCmd !is CommandExecutionState.Pending || currentCmd.commandId != commandId) {
                 return
             }
+            activePendingSnapshot = null
             committedRobotState = robotTransport.robotState.value
             _uiState.value = buildUiState(
                 robotState = committedRobotState,
@@ -308,6 +346,7 @@ class DashboardViewModel(
             if (currentCmd !is CommandExecutionState.Pending || currentCmd.commandId != commandId) {
                 return
             }
+            activePendingSnapshot = null
             committedRobotState = robotTransport.robotState.value
             _uiState.value = buildUiState(
                 robotState = committedRobotState,

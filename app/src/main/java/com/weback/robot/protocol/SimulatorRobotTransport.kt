@@ -43,6 +43,8 @@ class SimulatorRobotTransport(
     override val robotState: StateFlow<RobotState> = _robotState.asStateFlow()
 
     private var stateGeneration: Long = 0L
+
+    @Volatile
     private var activeSimulationJob: Job? = null
     private var nextCommandRejection: CommandResult.Rejected? = null
     private var nextCommandException: Throwable? = null
@@ -138,9 +140,9 @@ class SimulatorRobotTransport(
 
     override fun close() {
         closed = true
+        scope.cancel()
         activeSimulationJob?.cancel()
         activeSimulationJob = null
-        scope.cancel()
     }
 
     private fun commitStateLocked(candidate: RobotState) {
@@ -150,7 +152,12 @@ class SimulatorRobotTransport(
         activeSimulationJob?.cancel()
         activeSimulationJob = null
         if (!closed) {
-            activeSimulationJob = launchSimulationForStateLocked(normalized, stateGeneration)
+            val launched = launchSimulationForStateLocked(normalized, stateGeneration)
+            if (closed) {
+                launched?.cancel()
+            } else {
+                activeSimulationJob = launched
+            }
         }
     }
 

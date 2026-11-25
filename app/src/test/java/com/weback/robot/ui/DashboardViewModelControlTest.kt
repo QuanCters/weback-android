@@ -21,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,6 +95,7 @@ class DashboardViewModelControlTest {
             ControlAvailability(canClean = true, canPause = false, canResume = false, canDock = false),
             viewModel.uiState.value.controls
         )
+        assertTrue(viewModel.uiState.value.statusSummary.contains("Offline"))
 
         // Dispatch CLEAN: immediately Pending at t=0, mode stays DOCK, all controls locked
         viewModel.onIntent(DashboardIntent.Clean)
@@ -526,5 +528,63 @@ class DashboardViewModelControlTest {
         assertEquals(ControlAvailability.ALL_DISABLED, viewModel.uiState.value.controls)
 
         transport.close()
+    }
+
+    @Test
+    fun testAcknowledgedSettlementDoesNotRollbackNewerTelemetry() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val spy = SpyTransport(RobotState(mode = RobotMode.DOCK, batteryPercentage = 100))
+        spy.handler = { _, state ->
+            val ackedState = state.value.copy(mode = RobotMode.CLEAN)
+            // Simulate transport advancing to FAULT right after producing ackedState,
+            // and collector observing FAULT before settleCommandResult completes.
+            val faultedState = ackedState.copy(mode = RobotMode.FAULT, errorCode = 9002)
+            spy.emitTelemetry(faultedState)
+            yield()
+            CommandResult.Acknowledged(ackedState)
+        }
+        val viewModel = DashboardViewModel(
+            robotTransport = spy,
+            dispatchers = TestDispatcherProvider(dispatcher),
+            coroutineScope = backgroundScope,
+            clock = clock()
+        )
+        runCurrent()
+
+        viewModel.onIntent(DashboardIntent.Clean)
+        runCurrent()
+
+        assertEquals(RobotMode.FAULT, viewModel.uiState.value.mode)
+        assertEquals(9002, viewModel.uiState.value.errorCode)
+        assertTrue(viewModel.uiState.value.isFault)
+        assertTrue(viewModel.uiState.value.statusSummary.contains("9002"))
+        assertEquals(ControlAvailability.ALL_DISABLED, viewModel.uiState.value.controls)
+    }
+
+    @Test
+    fun testPreStartAndInactiveScopeCancellationNeverLeavesPendingStuck() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val spy = SpyTransport(RobotState(mode = RobotMode.DOCK, batteryPercentage = 100))
+        val vmScope = CoroutineScope(SupervisorJob() + dispatcher)
+        val viewModel = DashboardViewModel(
+            robotTransport = spy,
+            dispatchers = TestDispatcherProvider(dispatcher),
+            coroutineScope = vmScope,
+            clock = clock()
+        )
+        runCurrent()
+
+        // Cancel scope immediately after onIntent BEFORE runCurrent() enters the coroutine body
+        viewModel.onIntent(DashboardIntent.Clean)
+        assertTrue(viewModel.uiState.value.commandState is CommandExecutionState.Pending)
+        vmScope.cancel()
+        runCurrent()
+        assertEquals(0, spy.sendCount)
+        assertEquals(CommandExecutionState.Idle, viewModel.uiState.value.commandState)
+        assertTrue(viewModel.uiState.value.controls.canClean)
+
+        // Calling onIntent on an already-cancelled scope must not admit Pending
+        viewModel.onIntent(DashboardIntent.Clean)
+        assertEquals(CommandExecutionState.Idle, viewModel.uiState.value.commandState)
     }
 }

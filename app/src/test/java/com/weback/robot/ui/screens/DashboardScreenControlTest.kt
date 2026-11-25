@@ -140,6 +140,15 @@ class DashboardScreenControlTest {
                 .performScrollTo()
                 .assertTextContains(scenario.state.mode.name)
 
+            if (scenario.state.isFault || scenario.state.errorCode != 0) {
+                composeTestRule.onNodeWithTag("robot_error_text")
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                    .assertTextContains(scenario.state.errorCode.toString(), substring = true)
+            } else {
+                composeTestRule.onNodeWithTag("robot_error_text").assertDoesNotExist()
+            }
+
             val cleanNode = composeTestRule.onNodeWithTag("btn_clean").performScrollTo()
             val pauseNode = composeTestRule.onNodeWithTag("btn_pause").performScrollTo()
             val resumeNode = composeTestRule.onNodeWithTag("btn_resume").performScrollTo()
@@ -261,7 +270,7 @@ class DashboardScreenControlTest {
         scheduler.advanceTimeBy(300L)
         scheduler.runCurrent()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("robot_mode_text").assertTextContains("CLEAN")
+        composeTestRule.onNodeWithTag("robot_mode_text").performScrollTo().assertTextContains("CLEAN")
         composeTestRule.onNodeWithTag("btn_pause").performScrollTo().assertIsEnabled()
         composeTestRule.onNodeWithTag("btn_dock").performScrollTo().assertIsEnabled()
 
@@ -270,7 +279,7 @@ class DashboardScreenControlTest {
         scheduler.advanceTimeBy(300L)
         scheduler.runCurrent()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("robot_mode_text").assertTextContains("PAUSED")
+        composeTestRule.onNodeWithTag("robot_mode_text").performScrollTo().assertTextContains("PAUSED")
         composeTestRule.onNodeWithTag("btn_resume").performScrollTo().assertIsEnabled()
 
         // Tap Dock -> ack -> RETURNING_DOCK -> controls locked
@@ -278,9 +287,9 @@ class DashboardScreenControlTest {
         scheduler.advanceTimeBy(300L)
         scheduler.runCurrent()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("robot_mode_text").assertTextContains("RETURNING_DOCK")
-        composeTestRule.onNodeWithTag("btn_clean").assertIsNotEnabled()
-        composeTestRule.onNodeWithTag("btn_dock").assertIsNotEnabled()
+        composeTestRule.onNodeWithTag("robot_mode_text").performScrollTo().assertTextContains("RETURNING_DOCK")
+        composeTestRule.onNodeWithTag("btn_clean").performScrollTo().assertIsNotEnabled()
+        composeTestRule.onNodeWithTag("btn_dock").performScrollTo().assertIsNotEnabled()
         composeTestRule.onNodeWithTag("simulator_badge").assertIsDisplayed()
 
         // Dismiss post-settlement Acknowledged banner via UI button -> resets banner to Ready
@@ -290,7 +299,6 @@ class DashboardScreenControlTest {
             .performScrollTo()
             .assertTextContains("Ready", substring = true)
 
-        // Tap Resume when PAUSED vs Pending dismiss preserves Pending lock:
         // Advance to CHARGING -> tap Clean -> tap conflicting Dock while Pending -> dismiss notice -> Pending stays locked
         scheduler.advanceTimeBy(1_000L)
         scheduler.runCurrent()
