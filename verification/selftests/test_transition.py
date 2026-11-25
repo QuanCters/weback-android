@@ -476,5 +476,273 @@ class TestPolicyTransitionStateMachine(unittest.TestCase):
         self.assertEqual(ctx.expected_policy_sha256, self.canonical_sha)
         self.assertEqual(len(ctx.expected_required_checks), 7)
 
+    def test_11_e2e_runner_squash_merge_lifecycle_TEST_TRN_011(self):
+        """Scenario 11: Real subprocess runner -> auditor E2E lifecycle across PR, squash-merge push, tamper rejections, and policy retirement."""
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "CI Tester"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "ci@weback.local"], cwd=repo, check=True)
+
+            pol_dir = repo / "policies"
+            pol_dir.mkdir(parents=True)
+
+            # Lightweight deterministic checks (independent of Android compilation)
+            baseline_policy = {
+                "version": 1,
+                "checks": [
+                    {
+                        "id": "spec-hygiene",
+                        "type": "command",
+                        "argv": ["python3", "-c", "print('spec ok')"],
+                        "timeout_seconds": 10,
+                        "required": True
+                    },
+                    {
+                        "id": "harness-selftests",
+                        "type": "test_suite",
+                        "argv": [
+                            "python3", "-c",
+                            "import json; print('TEST_SUMMARY_JSON: ' + json.dumps({'total': 2, 'passed': 2, 'failures': 0, 'errors': 0, 'skipped': 0}))"
+                        ],
+                        "timeout_seconds": 10,
+                        "required": True
+                    }
+                ]
+            }
+            baseline_bytes = json.dumps(baseline_policy, indent=2).encode("utf-8")
+            baseline_sha = compute_sha256_bytes(baseline_bytes)
+
+            expanded_policy = {
+                "version": 1,
+                "checks": baseline_policy["checks"] + [
+                    {
+                        "id": "apk-validation",
+                        "type": "command",
+                        "argv": ["python3", "-c", "print('apk ok')"],
+                        "timeout_seconds": 10,
+                        "required": True
+                    }
+                ]
+            }
+            expanded_bytes = json.dumps(expanded_policy, indent=2).encode("utf-8")
+            expanded_sha = compute_sha256_bytes(expanded_bytes)
+
+            # 1. Initial baseline commit
+            (pol_dir / "checks.baseline.json").write_bytes(baseline_bytes)
+            (pol_dir / "checks.json").write_bytes(baseline_bytes)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "baseline"], cwd=repo, check=True, capture_output=True)
+            base_branch = subprocess.run(["git", "branch", "--show-current"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            base_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+            # 2. Feature candidate containing expanded policy
+            subprocess.run(["git", "checkout", "-b", "feature/expand"], cwd=repo, check=True, capture_output=True)
+            (pol_dir / "checks.json").write_bytes(expanded_bytes)
+            (repo / "feature.txt").write_text("feature payload\n")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "expand policy"], cwd=repo, check=True, capture_output=True)
+
+            # 3. Exact authorized candidate SHA, base SHA, and tree SHA
+            cand_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            cand_tree = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            auth = {
+                "candidate_sha": cand_sha,
+                "target_base_sha": base_sha,
+                "candidate_tree_sha": cand_tree,
+                "canonical_policy_sha256": expanded_sha,
+                "policy_file": "policies/checks.json",
+                "retired_policies": [baseline_sha],
+                "required_checks": ["spec-hygiene", "harness-selftests", "apk-validation"]
+            }
+
+            run_script = str(Path("verification/run.py").resolve())
+            evidence_script = str(Path("verification/checks/evidence.py").resolve())
+            clean_env = {
+                k: v for k, v in os.environ.items()
+                if k not in ("APPROVED_POLICY_SHA256", "TRANSITION_AUTHORIZATION", "GITHUB_EVENT_NAME")
+            }
+            pr_env = dict(clean_env)
+            pr_env["APPROVED_POLICY_SHA256"] = baseline_sha
+            pr_env["TRANSITION_AUTHORIZATION"] = json.dumps(auth)
+
+            # 4. Execute actual candidate runner with pull_request context
+            pr_run = subprocess.run(
+                [
+                    sys.executable, run_script,
+                    "--lane", "candidate",
+                    "--event-name", "pull_request",
+                    "--base-ref", base_sha,
+                    "--run-id", "e2e-pr-run",
+                    "--repo-dir", str(repo)
+                ],
+                capture_output=True,
+                text=True,
+                env=pr_env
+            )
+            self.assertEqual(pr_run.returncode, 0, f"PR runner failed:\nstdout={pr_run.stdout}\nstderr={pr_run.stderr}")
+            self.assertIn("Verdict: PASS", pr_run.stdout)
+
+            # 5. Audit actual generated PR report via evidence.py CLI
+            pr_report = repo / "artifacts" / "verification" / "e2e-pr-run" / "report.json"
+            pr_audit = subprocess.run(
+                [
+                    sys.executable, evidence_script,
+                    "--report", str(pr_report),
+                    "--require-candidate",
+                    "--expected-run-id", "e2e-pr-run",
+                    "--expected-sha", cand_sha,
+                    "--expected-base-sha", base_sha,
+                    "--expected-policy-sha256", baseline_sha,
+                    "--expected-required-checks", "spec-hygiene", "harness-selftests", "apk-validation",
+                    "--policy", str(repo / "policies" / "checks.json"),
+                    "--event-name", "pull_request",
+                    "--expected-tree-sha", cand_tree,
+                    "--parent-shas", base_sha
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(repo),
+                env=pr_env
+            )
+            self.assertEqual(pr_audit.returncode, 0, f"PR audit failed:\nstdout={pr_audit.stdout}\nstderr={pr_audit.stderr}")
+
+            # 6. Perform a real local squash merge
+            subprocess.run(["git", "checkout", base_branch], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "merge", "--squash", "feature/expand"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "Squash merge expanded policy"], cwd=repo, check=True, capture_output=True)
+            squash_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            squash_tree = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            squash_parents = subprocess.run(["git", "rev-parse", "HEAD^@"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip().splitlines()
+            self.assertNotEqual(squash_sha, cand_sha)
+            self.assertNotEqual(squash_sha, base_sha)
+            self.assertEqual(squash_tree, cand_tree)
+            self.assertEqual(squash_parents, [base_sha])
+
+            # 7. Execute actual candidate runner with push context on squash-merged commit
+            push_run = subprocess.run(
+                [
+                    sys.executable, run_script,
+                    "--lane", "candidate",
+                    "--event-name", "push",
+                    "--base-ref", base_sha,
+                    "--run-id", "e2e-push-run",
+                    "--repo-dir", str(repo)
+                ],
+                capture_output=True,
+                text=True,
+                env=pr_env
+            )
+            self.assertEqual(push_run.returncode, 0, f"Push runner failed:\nstdout={push_run.stdout}\nstderr={push_run.stderr}")
+            self.assertIn("Verdict: PASS", push_run.stdout)
+
+            # 8. Audit actual generated push report via evidence.py CLI
+            push_report = repo / "artifacts" / "verification" / "e2e-push-run" / "report.json"
+            push_audit = subprocess.run(
+                [
+                    sys.executable, evidence_script,
+                    "--report", str(push_report),
+                    "--require-candidate",
+                    "--expected-run-id", "e2e-push-run",
+                    "--expected-sha", squash_sha,
+                    "--expected-base-sha", base_sha,
+                    "--expected-policy-sha256", baseline_sha,
+                    "--expected-required-checks", "spec-hygiene", "harness-selftests", "apk-validation",
+                    "--policy", str(repo / "policies" / "checks.json"),
+                    "--event-name", "push",
+                    "--expected-tree-sha", squash_tree,
+                    "--parent-shas", *squash_parents
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(repo),
+                env=pr_env
+            )
+            self.assertEqual(push_audit.returncode, 0, f"Push audit failed:\nstdout={push_audit.stdout}\nstderr={push_audit.stderr}")
+
+            # 9a. Confirm rejection of an incorrect tree SHA
+            subprocess.run(["git", "checkout", "-b", "bad-tree", squash_sha], cwd=repo, check=True, capture_output=True)
+            (repo / "feature.txt").write_text("tampered payload\n")
+            subprocess.run(["git", "commit", "--amend", "-am", "Tampered tree"], cwd=repo, check=True, capture_output=True)
+            bad_tree_run = subprocess.run(
+                [
+                    sys.executable, run_script,
+                    "--lane", "candidate",
+                    "--event-name", "push",
+                    "--base-ref", base_sha,
+                    "--run-id", "e2e-bad-tree",
+                    "--repo-dir", str(repo)
+                ],
+                capture_output=True,
+                text=True,
+                env=pr_env
+            )
+            self.assertEqual(bad_tree_run.returncode, 2)
+            self.assertIn("Post-merge tree SHA mismatch", bad_tree_run.stderr)
+
+            # 9b. Confirm rejection of multi-parent merge commit (violates single-parent provenance)
+            subprocess.run(["git", "checkout", base_branch], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "reset", "--hard", base_sha], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "merge", "--no-ff", "-m", "Non-squash merge", "feature/expand"], cwd=repo, check=True, capture_output=True)
+            multi_parent_run = subprocess.run(
+                [
+                    sys.executable, run_script,
+                    "--lane", "candidate",
+                    "--event-name", "push",
+                    "--base-ref", base_sha,
+                    "--run-id", "e2e-multi-parent",
+                    "--repo-dir", str(repo)
+                ],
+                capture_output=True,
+                text=True,
+                env=pr_env
+            )
+            self.assertEqual(multi_parent_run.returncode, 2)
+            self.assertIn("single-parent", multi_parent_run.stderr.lower())
+
+            # 10. Confirm rejection of previous policy after retirement
+            subprocess.run(["git", "reset", "--hard", squash_sha], cwd=repo, check=True, capture_output=True)
+            retired_env = dict(clean_env)
+            retired_env["APPROVED_POLICY_SHA256"] = expanded_sha
+            bad_old_cfg = subprocess.run(
+                [
+                    sys.executable, run_script,
+                    "--lane", "candidate",
+                    "--event-name", "push",
+                    "--config", "policies/checks.baseline.json",
+                    "--base-ref", base_sha,
+                    "--run-id", "e2e-retired-cfg",
+                    "--repo-dir", str(repo)
+                ],
+                capture_output=True,
+                text=True,
+                env=retired_env
+            )
+            self.assertEqual(bad_old_cfg.returncode, 2)
+            self.assertIn("Alternate configuration not approved", bad_old_cfg.stderr)
+
+            retired_auth = dict(auth)
+            retired_auth["canonical_policy_sha256"] = baseline_sha
+            retired_auth["policy_file"] = "policies/checks.baseline.json"
+            retired_auth["required_checks"] = ["spec-hygiene", "harness-selftests"]
+            retired_grant_env = dict(clean_env)
+            retired_grant_env["APPROVED_POLICY_SHA256"] = expanded_sha
+            retired_grant_env["TRANSITION_AUTHORIZATION"] = json.dumps(retired_auth)
+            bad_retired_grant = subprocess.run(
+                [
+                    sys.executable, run_script,
+                    "--lane", "candidate",
+                    "--event-name", "push",
+                    "--base-ref", base_sha,
+                    "--run-id", "e2e-retired-grant",
+                    "--repo-dir", str(repo)
+                ],
+                capture_output=True,
+                text=True,
+                env=retired_grant_env
+            )
+            self.assertEqual(bad_retired_grant.returncode, 2)
+            self.assertIn("retired policy digest", bad_retired_grant.stderr)
+
 if __name__ == "__main__":
     unittest.main()

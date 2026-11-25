@@ -93,9 +93,10 @@ class TestCIWorkflow(unittest.TestCase):
         self.assertIn("run_id", c_run)
         self.assertIn("report_path", c_run)
 
-        # Run step must bind --run-id and exact event-derived base SHA
+        # Run step must bind --run-id, --event-name, and exact event-derived base SHA
         run_step = next(s for s in steps if "run.py" in s.get("run", ""))
         self.assertIn("--run-id", run_step["run"])
+        self.assertIn('--event-name "${{ github.event_name }}"', run_step["run"])
         self.assertIn('--base-ref "${{ steps.context.outputs.base_sha }}"', run_step["run"])
 
         # Audit step must bind --expected-run-id and report path

@@ -203,7 +203,7 @@ class TestCliRunner(unittest.TestCase):
             run_script = str(Path("verification/run.py").resolve())
             # Pass a non-existent path / invalid JSON via --transition-auth
             res = subprocess.run(
-                [sys.executable, run_script, "--lane", "candidate", "--base-ref", "HEAD", "--repo-dir", str(repo), "--transition-auth", "{not-json"],
+                [sys.executable, run_script, "--lane", "candidate", "--event-name", "pull_request", "--base-ref", "HEAD", "--repo-dir", str(repo), "--transition-auth", "{not-json"],
                 capture_output=True,
                 text=True,
                 env=self._clean_env()
@@ -281,8 +281,28 @@ class TestCliRunner(unittest.TestCase):
                 }))
 
                 run_script = str(Path("verification/run.py").resolve())
-                res = subprocess.run(
+                # Missing explicit event_name during transition MUST fail closed (not inferred!)
+                res_missing_evt = subprocess.run(
                     [sys.executable, run_script, "--lane", "candidate", "--base-ref", base_sha, "--repo-dir", str(repo), "--transition-auth", str(auth_file)],
+                    capture_output=True,
+                    text=True,
+                    env=self._clean_env()
+                )
+                self.assertEqual(res_missing_evt.returncode, 2)
+                self.assertIn("event", res_missing_evt.stderr.lower())
+
+                # Unsupported event_name MUST fail closed
+                res_bad_evt = subprocess.run(
+                    [sys.executable, run_script, "--lane", "candidate", "--event-name", "workflow_dispatch", "--base-ref", base_sha, "--repo-dir", str(repo), "--transition-auth", str(auth_file)],
+                    capture_output=True,
+                    text=True,
+                    env=self._clean_env()
+                )
+                self.assertEqual(res_bad_evt.returncode, 2)
+
+                # Explicit pull_request event_name succeeds
+                res = subprocess.run(
+                    [sys.executable, run_script, "--lane", "candidate", "--event-name", "pull_request", "--base-ref", base_sha, "--repo-dir", str(repo), "--transition-auth", str(auth_file)],
                     capture_output=True,
                     text=True,
                     env=self._clean_env()

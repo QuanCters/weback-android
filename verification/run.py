@@ -91,6 +91,12 @@ def main():
         default=None,
         help="Authorized policy transition grant JSON string or file path"
     )
+    parser.add_argument(
+        "--event-name",
+        type=str,
+        default=None,
+        help="Explicit CI execution event context ('pull_request' or 'push'); never inferred from SHAs"
+    )
 
     args = parser.parse_args()
     repo_path = Path(args.repo_dir).resolve()
@@ -149,15 +155,13 @@ def main():
             print(f"Error: Could not resolve candidate tree metadata: {e}", file=sys.stderr)
             sys.exit(2)
 
-        git_context = {
-            "event_name": "pull_request" if tested_sha != base_sha else "push",
-            "candidate_sha": tested_sha,
-            "base_sha": base_sha,
-            "base_ref": args.base_ref,
-            "tree_sha": tree_sha,
-            "parent_shas": parent_shas,
-            "run_id": args.run_id or "run"
-        }
+        raw_event = args.event_name if args.event_name is not None else os.environ.get("GITHUB_EVENT_NAME")
+        event_name = raw_event.strip() if isinstance(raw_event, str) and raw_event.strip() else None
+
+        if event_name is not None and event_name not in ("pull_request", "push"):
+            print(f"Error: Unsupported event context '{event_name}'. Must be 'pull_request' or 'push'.", file=sys.stderr)
+            sys.exit(2)
+
         env = dict(os.environ)
         if args.transition_auth:
             auth_p = Path(args.transition_auth)
@@ -169,6 +173,24 @@ def main():
                     sys.exit(2)
             else:
                 env["TRANSITION_AUTHORIZATION"] = args.transition_auth
+
+        if env.get("TRANSITION_AUTHORIZATION", "").strip() and not event_name:
+            print(
+                "Error: Explicit --event-name ('pull_request' or 'push') or GITHUB_EVENT_NAME is required "
+                "for authoritative transition verification.",
+                file=sys.stderr
+            )
+            sys.exit(2)
+
+        git_context = {
+            "event_name": event_name,
+            "candidate_sha": tested_sha,
+            "base_sha": base_sha,
+            "base_ref": args.base_ref,
+            "tree_sha": tree_sha,
+            "parent_shas": parent_shas,
+            "run_id": args.run_id or "run"
+        }
 
         try:
             resolved = resolve_verification_context(env, git_context, repo_path)

@@ -90,6 +90,7 @@ jobs:
         run: |
           python3 verification/run.py \
             --lane candidate \
+            --event-name "${{ github.event_name }}" \
             --config "${{ steps.context.outputs.policy_file }}" \
             --base-ref "${{ steps.context.outputs.base_sha }}" \
             --run-id "${{ steps.context.outputs.run_id }}"

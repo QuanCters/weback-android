@@ -136,13 +136,15 @@ def validate_transition_authorization(
     if errors:
         return False, errors
 
-    event_name = git_context.get("event_name", "pull_request")
+    event_name = git_context.get("event_name")
     curr_cand = git_context.get("candidate_sha", "")
     curr_base = git_context.get("base_sha", "")
     curr_tree = git_context.get("tree_sha", "")
 
     # 1. Candidate Provenance Verification
-    if event_name == "pull_request":
+    if not event_name:
+        errors.append("Missing explicit event context ('pull_request' or 'push') for transition authorization")
+    elif event_name == "pull_request":
         if curr_cand != auth_cand:
             errors.append(f"Candidate SHA mismatch against transition authorization: expected '{auth_cand}', got '{curr_cand}'")
         if curr_base != auth_base:
@@ -151,13 +153,16 @@ def validate_transition_authorization(
             errors.append(f"Candidate tree SHA mismatch against transition authorization: expected '{auth_tree}', got '{curr_tree}'")
     elif event_name == "push":
         # Post-squash-merge push context: commit SHA differs from PR head SHA.
-        # Tree identity and parent provenance MUST match authorized transition tuple!
-        if curr_tree != auth_tree:
+        # Tree identity, exact previous main SHA, and strict single-parent provenance MUST match!
+        if not curr_tree or curr_tree != auth_tree:
             errors.append(f"Post-merge tree SHA mismatch against approved transition: expected '{auth_tree}', got '{curr_tree}'")
-        # In push event, base_sha is previous commit or parent before merge
-        parent_shas = git_context.get("parent_shas", [curr_base])
-        if auth_base not in parent_shas and curr_base != auth_base:
-            errors.append(f"Post-merge base provenance mismatch: authorized base '{auth_base}' not in commit ancestry {parent_shas}")
+        if curr_base != auth_base:
+            errors.append(f"Post-merge base provenance mismatch (previous main SHA): expected '{auth_base}', got '{curr_base}'")
+        parent_shas = git_context.get("parent_shas")
+        if not isinstance(parent_shas, list) or len(parent_shas) != 1 or parent_shas[0] != auth_base:
+            errors.append(
+                f"Post-merge base provenance mismatch (single-parent): expected sole parent ['{auth_base}'], got {parent_shas}"
+            )
     else:
         errors.append(f"Unsupported event context: '{event_name}'")
 

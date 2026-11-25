@@ -316,16 +316,14 @@ def resolve_transition_context(
                     f"Post-merge tree SHA does not match authorized transition tree: "
                     f"expected '{auth_tree}', got '{expected_tree_sha}'"
                 )
-            if parent_shas:
-                if auth_base not in parent_shas and expected_base_sha != auth_base:
-                    errors.append(
-                        f"Post-merge base ancestry does not match authorized transition target base: "
-                        f"expected '{auth_base}' in {parent_shas}"
-                    )
-            elif expected_base_sha != auth_base:
+            if expected_base_sha != auth_base:
                 errors.append(
                     f"Base SHA does not match authorized transition target base: "
                     f"expected '{auth_base}', got '{expected_base_sha}'"
+                )
+            if not parent_shas or len(parent_shas) != 1 or parent_shas[0] != auth_base:
+                errors.append(
+                    f"Post-merge single-parent provenance mismatch: expected sole parent ['{auth_base}'], got {parent_shas}"
                 )
         else:
             if expected_sha != auth_cand:

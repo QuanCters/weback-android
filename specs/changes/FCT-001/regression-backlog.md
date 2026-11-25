@@ -131,3 +131,18 @@ In strict accordance with Constitution Invariant `C-009` (Defect-to-Regression L
 - **Post-Fix GREEN Result:** `PASS: transition.py resolves unified context for runner and auditor; inconsistency strictly rejected`
 - **Generalization Decision:** `false`
 - **Review Status:** `RESOLVED`
+
+
+### DEF-2026-033: Incorrect Event Inference in Candidate Runner During Squash-Merge Push
+- **Classification:** `CONFIRMED_APPLICATION_DEFECT`
+- **Requirement / Invariant:** `C-008`
+- **Severity:** `P0`
+- **Affected Module:** `verification/run.py`
+- **Evidence:** `verification/run.py` inferred `"event_name": "pull_request" if tested_sha != base_sha else "push"`, misclassifying post-squash-merge `push` commits (where the squash commit SHA differs from both the authorized PR head SHA and previous `main` SHA) as `pull_request` and rejecting valid post-merge transitions.
+- **Reproduction:** Execute `verification/run.py --lane candidate` on a real squash-merged commit with `TRANSITION_AUTHORIZATION` active (`TEST_TRN_011`).
+- **Root Cause:** Candidate runner lacked an explicit `--event-name` parameter (and CI did not pass `--event-name "${{ github.event_name }}"`), relying on an invalid SHA-comparison heuristic, while `transition.py` and `evidence.py` needed strict single-parent `[auth_base]` verification in `push` context.
+- **Regression Test Reference:** `verification/selftests/test_transition.py::test_11_e2e_runner_squash_merge_lifecycle_TEST_TRN_011`
+- **Pre-Fix RED Result:** `run.py: error: unrecognized arguments: --event-name pull_request` (`TEST_RUN_028` also passed without `--event-name` via SHA inference)
+- **Post-Fix GREEN Result:** `PASS: Explicit --event-name propagated from CI through run.py, transition.py, and evidence.py; missing/unsupported events rejected and full PR -> squash-merge push lifecycle verified`
+- **Generalization Decision:** `false`
+- **Review Status:** `RESOLVED`
