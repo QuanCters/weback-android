@@ -47,7 +47,7 @@ data class RobotUiState(
     val isDocked: Boolean = true,
     val isDustbinClean: Boolean = true,
     val isSimulator: Boolean = true,
-    val appVersion: String = "v0.1.0-alpha (FCT-001 Foundation)",
+    val appVersion: String = DashboardViewModel.DEFAULT_APP_VERSION,
     val errorCode: Int = 0,
     val isFault: Boolean = false,
     val statusSummary: String = "Simulator Active (Offline)",
@@ -65,7 +65,8 @@ class DashboardViewModel(
     private val dispatchers: DispatcherProvider,
     coroutineScope: CoroutineScope? = null,
     private val clock: MonotonicClock = SystemMonotonicClock,
-    private val commandTimeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS
+    private val commandTimeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS,
+    private val appVersion: String = DEFAULT_APP_VERSION
 ) : ViewModel() {
 
     init {
@@ -373,7 +374,7 @@ class DashboardViewModel(
             isDocked = robotState.isDocked,
             isDustbinClean = robotState.isDustbinClean,
             isSimulator = true,
-            appVersion = "v0.1.0-alpha (FCT-001 Foundation)",
+            appVersion = appVersion,
             errorCode = robotState.errorCode,
             isFault = robotState.isFault,
             statusSummary = summary,
@@ -385,13 +386,15 @@ class DashboardViewModel(
 
     companion object {
         const val DEFAULT_COMMAND_TIMEOUT_MS = 5_000L
+        const val DEFAULT_APP_VERSION = "v0.1.0-alpha (FCT-002 Simulated Robot Control)"
     }
 
     class Factory(
         private val robotTransport: RobotTransport,
         private val dispatchers: DispatcherProvider,
         private val clock: MonotonicClock = SystemMonotonicClock,
-        private val commandTimeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS
+        private val commandTimeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS,
+        private val appVersion: String = DEFAULT_APP_VERSION
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -399,7 +402,8 @@ class DashboardViewModel(
                 robotTransport = robotTransport,
                 dispatchers = dispatchers,
                 clock = clock,
-                commandTimeoutMs = commandTimeoutMs
+                commandTimeoutMs = commandTimeoutMs,
+                appVersion = appVersion
             ) as T
         }
     }

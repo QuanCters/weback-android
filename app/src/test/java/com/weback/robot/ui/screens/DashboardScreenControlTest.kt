@@ -1,5 +1,6 @@
 package com.weback.robot.ui.screens
 
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -7,11 +8,14 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.weback.robot.R
 import com.weback.robot.core.MonotonicClock
 import com.weback.robot.domain.model.CommandExecutionState
 import com.weback.robot.domain.model.CommandRejectionReason
@@ -324,5 +328,24 @@ class DashboardScreenControlTest {
 
         transport.close()
         scope.cancel()
+    }
+
+    @Test
+    fun testDisplayedMilestoneVersionLabelSynchronizedWithStringsAndUiState() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val expectedVersion = "v0.1.0-alpha (FCT-002 Simulated Robot Control)"
+        assertEquals(expectedVersion, context.getString(R.string.app_version))
+        assertEquals(expectedVersion, RobotUiState().appVersion)
+
+        composeTestRule.setContent {
+            WeBackTheme(dynamicColor = false) {
+                DashboardScreen(uiState = RobotUiState(), onIntent = {})
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("app_version_text")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertTextEquals(expectedVersion)
     }
 }

@@ -37,6 +37,7 @@ class SimulatorRobotTransport(
 ) : RobotTransport, AutoCloseable {
 
     private val stateMutex = Mutex()
+    private val commitLock = Any()
     private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.default)
 
     private val _robotState = MutableStateFlow(normalizeState(initialState))
@@ -44,7 +45,6 @@ class SimulatorRobotTransport(
 
     private var stateGeneration: Long = 0L
 
-    @Volatile
     private var activeSimulationJob: Job? = null
     private var nextCommandRejection: CommandResult.Rejected? = null
     private var nextCommandException: Throwable? = null
@@ -53,49 +53,61 @@ class SimulatorRobotTransport(
     private var closed: Boolean = false
 
     init {
-        val current = _robotState.value
-        activeSimulationJob = launchSimulationForStateLocked(current, stateGeneration)
+        synchronized(commitLock) {
+            val current = _robotState.value
+            activeSimulationJob = launchSimulationForStateLocked(current, stateGeneration)
+        }
     }
 
     override suspend fun sendCommand(command: RobotCommand): CommandResult {
+        if (synchronized(commitLock) { closed }) {
+            return CommandResult.Rejected(
+                reason = CommandRejectionReason.TRANSPORT_ERROR,
+                message = "Simulator transport has been closed.",
+                settledAtMs = clock.elapsedMs()
+            )
+        }
         if (config.ackDelayMs > 0L) {
             delay(config.ackDelayMs)
         }
 
-        // Simulator command commit point: atomic validation and state update under stateMutex.
+        // Simulator command commit point: atomic validation, close-ordering, and state update.
         return stateMutex.withLock {
-            if (closed) {
-                return@withLock CommandResult.Rejected(
-                    reason = CommandRejectionReason.TRANSPORT_ERROR,
-                    message = "Simulator transport has been closed.",
-                    settledAtMs = clock.elapsedMs()
-                )
-            }
-
-            nextCommandException?.let { throwable ->
-                nextCommandException = null
-                throw throwable
-            }
-
-            nextCommandRejection?.let { injected ->
-                nextCommandRejection = null
-                return@withLock injected.copy(settledAtMs = clock.elapsedMs())
-            }
-
-            val current = _robotState.value
-            when (val decision = RobotStateMachine.evaluateTransition(current, command)) {
-                is TransitionDecision.Rejected -> CommandResult.Rejected(
-                    reason = decision.reason,
-                    message = decision.message,
-                    settledAtMs = clock.elapsedMs()
-                )
-                is TransitionDecision.Accepted -> {
-                    val updated = current.copy(mode = decision.targetMode)
-                    commitStateLocked(updated)
-                    CommandResult.Acknowledged(
-                        resultingState = _robotState.value,
+            synchronized(commitLock) {
+                if (closed) {
+                    return@synchronized CommandResult.Rejected(
+                        reason = CommandRejectionReason.TRANSPORT_ERROR,
+                        message = "Simulator transport has been closed.",
                         settledAtMs = clock.elapsedMs()
                     )
+                }
+
+                nextCommandException?.let { throwable ->
+                    nextCommandException = null
+                    throw throwable
+                }
+
+                nextCommandRejection?.let { injected ->
+                    nextCommandRejection = null
+                    return@synchronized injected.copy(settledAtMs = clock.elapsedMs())
+                }
+
+                val current = _robotState.value
+                when (val decision = RobotStateMachine.evaluateTransition(current, command)) {
+                    is TransitionDecision.Rejected -> CommandResult.Rejected(
+                        reason = decision.reason,
+                        message = decision.message,
+                        settledAtMs = clock.elapsedMs()
+                    )
+                    is TransitionDecision.Accepted -> {
+                        val settledAtMs = clock.elapsedMs()
+                        val updated = current.copy(mode = decision.targetMode)
+                        commitStateLocked(updated)
+                        CommandResult.Acknowledged(
+                            resultingState = _robotState.value,
+                            settledAtMs = settledAtMs
+                        )
+                    }
                 }
             }
         }
@@ -106,17 +118,23 @@ class SimulatorRobotTransport(
         message: String
     ) {
         stateMutex.withLock {
-            nextCommandRejection = CommandResult.Rejected(
-                reason = reason,
-                message = message,
-                settledAtMs = 0L
-            )
+            synchronized(commitLock) {
+                if (closed) return@synchronized
+                nextCommandRejection = CommandResult.Rejected(
+                    reason = reason,
+                    message = message,
+                    settledAtMs = 0L
+                )
+            }
         }
     }
 
     suspend fun injectNextCommandException(throwable: Throwable) {
         stateMutex.withLock {
-            nextCommandException = throwable
+            synchronized(commitLock) {
+                if (closed) return@synchronized
+                nextCommandException = throwable
+            }
         }
     }
 
@@ -125,40 +143,44 @@ class SimulatorRobotTransport(
     ) {
         require(errorCode != 0) { "Injected fault errorCode must be nonzero" }
         stateMutex.withLock {
-            if (closed) return@withLock
-            val current = _robotState.value
-            commitStateLocked(
-                current.copy(
-                    mode = RobotMode.FAULT,
-                    errorCode = errorCode
+            synchronized(commitLock) {
+                if (closed) return@synchronized
+                val current = _robotState.value
+                commitStateLocked(
+                    current.copy(
+                        mode = RobotMode.FAULT,
+                        errorCode = errorCode
+                    )
                 )
-            )
+            }
         }
     }
 
-    fun hasActiveSimulationJob(): Boolean = activeSimulationJob?.isActive == true
+    fun hasActiveSimulationJob(): Boolean = synchronized(commitLock) {
+        !closed && activeSimulationJob?.isActive == true
+    }
 
     override fun close() {
-        closed = true
-        scope.cancel()
-        activeSimulationJob?.cancel()
-        activeSimulationJob = null
+        synchronized(commitLock) {
+            if (closed) return
+            closed = true
+            stateGeneration += 1L
+            activeSimulationJob?.cancel()
+            activeSimulationJob = null
+            nextCommandRejection = null
+            nextCommandException = null
+            scope.cancel()
+        }
     }
 
     private fun commitStateLocked(candidate: RobotState) {
+        if (closed) return
         val normalized = normalizeState(candidate)
         _robotState.value = normalized
         stateGeneration += 1L
         activeSimulationJob?.cancel()
         activeSimulationJob = null
-        if (!closed) {
-            val launched = launchSimulationForStateLocked(normalized, stateGeneration)
-            if (closed) {
-                launched?.cancel()
-            } else {
-                activeSimulationJob = launched
-            }
-        }
+        activeSimulationJob = launchSimulationForStateLocked(normalized, stateGeneration)
     }
 
     private fun launchSimulationForStateLocked(state: RobotState, expectedGeneration: Long): Job? {
@@ -168,34 +190,38 @@ class SimulatorRobotTransport(
                 while (isActive) {
                     delay(config.cleanBatteryDrainIntervalMs)
                     val shouldContinue = stateMutex.withLock {
-                        if (closed || stateGeneration != expectedGeneration || _robotState.value.mode != RobotMode.CLEAN) {
-                            return@withLock false
-                        }
-                        val current = _robotState.value
-                        val nextBattery = (current.batteryPercentage - config.cleanBatteryDrainStep).coerceAtLeast(0)
-                        when {
-                            nextBattery == 0 -> {
-                                commitStateLocked(
-                                    current.copy(
-                                        batteryPercentage = 0,
-                                        mode = RobotMode.FAULT,
-                                        errorCode = SimulatorErrorCodes.SYNTHETIC_BATTERY_DEPLETED
-                                    )
-                                )
-                                false
+                        synchronized(commitLock) {
+                            if (closed || stateGeneration != expectedGeneration || _robotState.value.mode != RobotMode.CLEAN) {
+                                return@synchronized false
                             }
-                            nextBattery < config.lowBatteryThreshold -> {
-                                commitStateLocked(
-                                    current.copy(
-                                        batteryPercentage = nextBattery,
-                                        mode = RobotMode.RETURNING_DOCK
+                            val current = _robotState.value
+                            val nextBattery = (current.batteryPercentage.toLong() - config.cleanBatteryDrainStep.toLong())
+                                .coerceIn(0L, 100L)
+                                .toInt()
+                            when {
+                                nextBattery == 0 -> {
+                                    commitStateLocked(
+                                        current.copy(
+                                            batteryPercentage = 0,
+                                            mode = RobotMode.FAULT,
+                                            errorCode = SimulatorErrorCodes.SYNTHETIC_BATTERY_DEPLETED
+                                        )
                                     )
-                                )
-                                false
-                            }
-                            else -> {
-                                _robotState.value = current.copy(batteryPercentage = nextBattery)
-                                true
+                                    false
+                                }
+                                nextBattery < RobotStateMachine.MIN_CLEAN_BATTERY_PERCENT -> {
+                                    commitStateLocked(
+                                        current.copy(
+                                            batteryPercentage = nextBattery,
+                                            mode = RobotMode.RETURNING_DOCK
+                                        )
+                                    )
+                                    false
+                                }
+                                else -> {
+                                    _robotState.value = current.copy(batteryPercentage = nextBattery)
+                                    true
+                                }
                             }
                         }
                     }
@@ -206,11 +232,13 @@ class SimulatorRobotTransport(
             RobotMode.RETURNING_DOCK -> scope.launch {
                 delay(config.returnToDockDurationMs)
                 stateMutex.withLock {
-                    if (closed || stateGeneration != expectedGeneration || _robotState.value.mode != RobotMode.RETURNING_DOCK) {
-                        return@withLock
+                    synchronized(commitLock) {
+                        if (closed || stateGeneration != expectedGeneration || _robotState.value.mode != RobotMode.RETURNING_DOCK) {
+                            return@synchronized
+                        }
+                        val current = _robotState.value
+                        commitStateLocked(current.copy(mode = RobotMode.CHARGING))
                     }
-                    val current = _robotState.value
-                    commitStateLocked(current.copy(mode = RobotMode.CHARGING))
                 }
             }
 
@@ -218,22 +246,26 @@ class SimulatorRobotTransport(
                 while (isActive) {
                     delay(config.chargeIntervalMs)
                     val shouldContinue = stateMutex.withLock {
-                        if (closed || stateGeneration != expectedGeneration || _robotState.value.mode != RobotMode.CHARGING) {
-                            return@withLock false
-                        }
-                        val current = _robotState.value
-                        val nextBattery = (current.batteryPercentage + config.chargeStepPercent).coerceAtMost(100)
-                        if (nextBattery == 100) {
-                            commitStateLocked(
-                                current.copy(
-                                    batteryPercentage = 100,
-                                    mode = RobotMode.DOCK
+                        synchronized(commitLock) {
+                            if (closed || stateGeneration != expectedGeneration || _robotState.value.mode != RobotMode.CHARGING) {
+                                return@synchronized false
+                            }
+                            val current = _robotState.value
+                            val nextBattery = (current.batteryPercentage.toLong() + config.chargeStepPercent.toLong())
+                                .coerceIn(0L, 100L)
+                                .toInt()
+                            if (nextBattery == 100) {
+                                commitStateLocked(
+                                    current.copy(
+                                        batteryPercentage = 100,
+                                        mode = RobotMode.DOCK
+                                    )
                                 )
-                            )
-                            false
-                        } else {
-                            _robotState.value = current.copy(batteryPercentage = nextBattery)
-                            true
+                                false
+                            } else {
+                                _robotState.value = current.copy(batteryPercentage = nextBattery)
+                                true
+                            }
                         }
                     }
                     if (!shouldContinue) break

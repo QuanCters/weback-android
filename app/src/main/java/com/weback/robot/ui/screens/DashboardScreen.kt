@@ -120,9 +120,10 @@ fun HeaderSection(uiState: RobotUiState) {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = stringResource(id = R.string.app_version),
+            text = uiState.appVersion,
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("app_version_text")
         )
     }
 }

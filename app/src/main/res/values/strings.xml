@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">WeBack Robot Control</string>
-    <string name="app_version">v0.1.0-alpha (FCT-001 Foundation)</string>
+    <string name="app_version">v0.1.0-alpha (FCT-002 Simulated Robot Control)</string>
     <string name="simulator_badge">Simulator Mode (Offline)</string>
     <string name="simulator_badge_tag">OFFLINE</string>
     <string name="simulator_disclaimer">Local simulated execution only — no live cloud or physical robot connected.</string>

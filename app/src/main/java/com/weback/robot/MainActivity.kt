@@ -17,7 +17,8 @@ class MainActivity : ComponentActivity() {
         DashboardViewModel.Factory(
             robotTransport = app.container.robotTransport,
             dispatchers = app.container.dispatcherProvider,
-            clock = app.container.clock
+            clock = app.container.clock,
+            appVersion = getString(R.string.app_version)
         )
     }
 

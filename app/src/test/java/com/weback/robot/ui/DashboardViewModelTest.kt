@@ -51,7 +51,7 @@ class DashboardViewModelTest {
         assertTrue(state.isDocked)
         assertTrue(state.isDustbinClean)
         assertTrue(state.isSimulator)
-        assertEquals("v0.1.0-alpha (FCT-001 Foundation)", state.appVersion)
+        assertEquals("v0.1.0-alpha (FCT-002 Simulated Robot Control)", state.appVersion)
         transport.close()
     }
 
