@@ -18,7 +18,10 @@ class OfflineFixtureAuthGateway(
     override suspend fun signIn(credentials: AuthCredentials): AuthResult {
         scriptHandler?.let { return it(credentials) }
 
-        if (credentials.account.isBlank() || credentials.copySecretChars().isEmpty()) {
+        val secretCopy = credentials.copySecretChars()
+        val secretEmpty = secretCopy.isEmpty()
+        java.util.Arrays.fill(secretCopy, '\u0000')
+        if (credentials.account.isBlank() || secretEmpty) {
             return AuthResult.Failure(AuthFailureReason.InvalidCredentials, "Credentials must not be blank")
         }
         val prefix = credentials.account.trim().take(1).ifEmpty { "u" }

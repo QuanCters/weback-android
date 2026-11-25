@@ -35,9 +35,9 @@
 
 **Covers:** `REQ-AUTH-302` (`AC-302.1`), `REQ-AUTH-303` (`AC-303.1..3`), `REQ-AUTH-304` (`AC-304.1..2`), `REQ-CONN-307` (`AC-307.1..2`).
 
-- [ ] **Step 1 (TDD RED):** Author unit tests for `TokenExpiryPolicy` (80%/100% exact boundaries, `Long` overflow guard, same-boot restart `priorElapsedMs`, reboot/clock rollback rejection, unverified JWT `exp` non-use), `SessionStateMachine` (`sessionEpoch` isolation + single-flight guards), `AuthModelsTest` (secret-safe `toString()` masking), `DeviceCapabilityClassifier` (`P0`, `q1`, `l1`/`L0`, `m1`, `N0`, `Y0`, `v0`, `g1`, `n1`, `H0`/`U0`, unknown strings grounded in `enums/p.java` + `utils/c.java`), and pure-Kotlin import boundaries (`DomainPurityTest`). Confirm failure.
-- [ ] **Step 2 (GREEN):** Implement pure Kotlin domain models, `BootSessionTimeProvider`, `TokenExpiryPolicy`, `SessionStateMachine`, and `DeviceCapabilityClassifier` with zero Android/coroutine/OkHttp/serialization imports in `domain`.
-- [ ] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.domain.*"`.
+- [x] **Step 1 (TDD RED):** Author unit tests for `TokenExpiryPolicy` (80%/100% exact boundaries, `Long` overflow guard, same-boot restart `priorElapsedMs`, reboot/clock rollback rejection, unverified JWT `exp` non-use), `SessionStateMachine` (`sessionEpoch` isolation + single-flight guards), `AuthModelsTest` (secret-safe `toString()` masking), `DeviceCapabilityClassifier` (`P0`, `q1`, `l1`/`L0`, `m1`, `N0`, `Y0`, `v0`, `g1`, `n1`, `H0`/`U0`, unknown strings grounded in `enums/p.java` + `utils/c.java`), and pure-Kotlin import boundaries (`DomainPurityTest`). Confirm failure.
+- [x] **Step 2 (GREEN):** Implement pure Kotlin domain models, `BootSessionTimeProvider`, `TokenExpiryPolicy`, `SessionStateMachine`, and `DeviceCapabilityClassifier` with zero Android/coroutine/OkHttp/serialization imports in `domain`.
+- [x] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.domain.*"`.
 
 ---
 
@@ -61,9 +61,9 @@
 
 **Covers:** `REQ-AUTH-301` (`AC-301.1..3`), `REQ-AUTH-305` (`AC-305.1..4`).
 
-- [ ] **Step 1 (TDD RED):** Write tests verifying: exact origin trust authorization (`ProductionEndpointTrustPolicy` disabled in FCT-003; `TestLoopbackTrustPolicy` rejects non-loopback/external DNS/IP, userinfo, credential query params, scheme downgrade); cipher-generated 12B IVs, 128-bit GCM tag, canonical AAD, `[29..16_384]` size bounds, atomic temp-write-replace in `noBackupFilesDir`, fail-closed wipe/cleanup on bit-flip/version/AAD/truncation/oversize/missing-key/`KeyPermanentlyInvalidatedException`/bad post-decrypt JSON, explicit `save()`/`clear()` failure handling, mutable buffer cleanup, zero `EncryptedSharedPreferences`/`setDefaultSSLSocketFactory`/trust-all TLS/software-key fallback; allowlisted `DiagnosticLogger` + `SecretRedactor` coverage of case-insensitive headers, opaque tokens, `eyJ...` JWTs, nested/malformed JSON, URL-encoded secrets, and exception chains. Observe RED failures.
-- [ ] **Step 2 (GREEN):** Implement `EndpointTrustPolicy`, `UriValidator`, `KeystoreAeadTokenStore` (ADR-003), `DiagnosticLogger`, `SecretRedactor`, and `PasswordDigestStrategy` (`Utf8TlsDefault` only). Author `KeystoreHardwareSecurityLevelTest` (`KeyInfo.getSecurityLevel()`) with an isolated test Keystore alias and storage namespace for authorized physical Android >= 12 device runs, and verify `./gradlew assembleDebugAndroidTest` compiles cleanly.
-- [ ] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.security.*"`.
+- [x] **Step 1 (TDD RED):** Write tests verifying: exact origin trust authorization (`ProductionEndpointTrustPolicy` disabled in FCT-003; `TestLoopbackTrustPolicy` rejects non-loopback/external DNS/IP, userinfo, credential query params, scheme downgrade); cipher-generated 12B IVs, 128-bit GCM tag, canonical AAD, `[29..16_384]` size bounds, atomic temp-write-replace in `noBackupFilesDir`, fail-closed wipe/cleanup on bit-flip/version/AAD/truncation/oversize/missing-key/`KeyPermanentlyInvalidatedException`/bad post-decrypt JSON, explicit `save()`/`clear()` failure handling, mutable buffer cleanup, zero `EncryptedSharedPreferences`/`setDefaultSSLSocketFactory`/trust-all TLS/software-key fallback; allowlisted `DiagnosticLogger` + `SecretRedactor` coverage of case-insensitive headers, opaque tokens, `eyJ...` JWTs, nested/malformed JSON, URL-encoded secrets, and exception chains. Observe RED failures.
+- [x] **Step 2 (GREEN):** Implement `EndpointTrustPolicy`, `UriValidator`, `KeystoreAeadTokenStore` (ADR-003), `DiagnosticLogger`, `SecretRedactor`, and `PasswordDigestStrategy` (`Utf8TlsDefault` only). Author `KeystoreHardwareSecurityLevelTest` (`KeyInfo.getSecurityLevel()`) with an isolated test Keystore alias and storage namespace for authorized physical Android >= 12 device runs, and verify `./gradlew assembleDebugAndroidTest` compiles cleanly.
+- [x] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.security.*"`.
 
 ---
 
@@ -89,9 +89,9 @@
 
 **Covers:** `REQ-AUTH-301` (`AC-301.1..3`), `REQ-AUTH-302` (`AC-302.2..3`), `REQ-AUTH-303` (`AC-303.1..3`), `REQ-AUTH-304` (`AC-304.1..3`), `REQ-CONN-306` (`AC-306.1..3`), `REQ-CONN-309` (`AC-309.1..2`).
 
-- [ ] **Step 1 (TDD RED):** Write loopback `MockWebServer` contract tests covering `POST` `login` envelope (`AuthEnvelopeConfig.protocolApiVersion`, `"login"` opt), `user_thing_list_get` (`"token"`/`"region"` headers), `followRedirects(false)` `302`/`307`/`308` rejection, untrusted HTTPS host rejection, pre-send & in-flight expiry checks, negative HTTP `401`/`403`/`5xx`/malformed JSON/`code != 1` rejections, defensive `thing_status` battery clamping, single-flight `signIn`/synthetic refresh, logout during login/persist, `save()`/`clear()` failure fail-closed behavior, restart/reboot/clock rollback handling, and Account A -> Account B cross-account race isolation. Observe RED failures.
-- [ ] **Step 2 (GREEN):** Implement `RegionEndpointRouter`, `OkHttp*` (with `followRedirects(false)`, `followSslRedirects(false)`, `EndpointTrustPolicy`, `DiagnosticLogger`) & `OfflineFixture*` gateways, `SessionCoordinator`, and `DeviceInventoryRepository`.
-- [ ] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.protocol.*" --tests "com.weback.robot.app.*"`.
+- [x] **Step 1 (TDD RED):** Write loopback `MockWebServer` contract tests covering `POST` `login` envelope (`AuthEnvelopeConfig.protocolApiVersion`, `"login"` opt), `user_thing_list_get` (`"token"`/`"region"` headers), `followRedirects(false)` `302`/`307`/`308` rejection, untrusted HTTPS host rejection, pre-send & in-flight expiry checks, negative HTTP `401`/`403`/`5xx`/malformed JSON/`code != 1` rejections, defensive `thing_status` battery clamping, single-flight `signIn`/synthetic refresh, logout during login/persist, `save()`/`clear()` failure fail-closed behavior, restart/reboot/clock rollback handling, and Account A -> Account B cross-account race isolation. Observe RED failures.
+- [x] **Step 2 (GREEN):** Implement `RegionEndpointRouter`, `OkHttp*` (with `followRedirects(false)`, `followSslRedirects(false)`, `EndpointTrustPolicy`, `DiagnosticLogger`) & `OfflineFixture*` gateways, `SessionCoordinator`, and `DeviceInventoryRepository`.
+- [x] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.protocol.*" --tests "com.weback.robot.app.*"`.
 
 ---
 
@@ -108,9 +108,9 @@
 
 **Covers:** `REQ-CONN-308` (`AC-308.1..5`), `REQ-CONN-309` (`AC-309.1..2`), `REQ-CONN-310` (`AC-310.1..2`).
 
-- [ ] **Step 1 (TDD RED):** Write loopback `MockWebServer.withWebSocketUpgrade` tests under `StandardTestDispatcher` verifying endpoint trust + pre-connect expiry check, `"token"`/`"region"` upgrade headers (zero query params, `followRedirects(false)`), `"thing_status_update"` hydration, `20_000ms` outbound send-stall trigger and `4_000ms` reconnect scheduling, HTTP `401`/`403`/`302` short-circuit + session invalidation, `(sessionEpoch, connectionGeneration)` fencing on callbacks/reconnect timers, cross-device/unsupported `thing_name` telemetry rejection, non-destructive telemetry retention on socket drop, and synchronized idempotent `close(1000)`. Observe RED failures.
-- [ ] **Step 2 (GREEN):** Implement `ConnectionConfig`, `RealtimeSessionTransport`, `OkHttpWebSocketTransport`, and `OfflineFixtureRealtimeTransport`.
-- [ ] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.protocol.ws.*"`.
+- [x] **Step 1 (TDD RED):** Write loopback `MockWebServer.withWebSocketUpgrade` tests under `StandardTestDispatcher` verifying endpoint trust + pre-connect expiry check, `"token"`/`"region"` upgrade headers (zero query params, `followRedirects(false)`), `"thing_status_update"` hydration, `20_000ms` outbound send-stall trigger and `4_000ms` reconnect scheduling, HTTP `401`/`403`/`302` short-circuit + session invalidation, `(sessionEpoch, connectionGeneration)` fencing on callbacks/reconnect timers, cross-device/unsupported `thing_name` telemetry rejection, non-destructive telemetry retention on socket drop, and synchronized idempotent `close(1000)`. Observe RED failures.
+- [x] **Step 2 (GREEN):** Implement `ConnectionConfig`, `RealtimeSessionTransport`, `OkHttpWebSocketTransport`, and `OfflineFixtureRealtimeTransport`.
+- [x] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.protocol.ws.*"`.
 
 ---
 
@@ -123,9 +123,9 @@
 
 **Covers:** `REQ-CONN-309` (`AC-309.1..3`), `REQ-CONN-310` (`AC-310.1..3`).
 
-- [ ] **Step 1 (TDD RED):** Write end-to-end offline integration & fault-recovery tests verifying `DefaultAppContainer` starts offline with `"OFFLINE"` identity intact and `ProductionEndpointTrustPolicy` disabled, end-to-end signIn -> inventory -> capability filter -> WS disconnect/reconnect -> signOut wipe cycle, and zero FCT-001/FCT-002 test regressions.
-- [ ] **Step 2 (GREEN):** Extend `DefaultAppContainer` (`close()` tears down `SessionCoordinator` + transports + simulator deterministically).
-- [ ] **Step 3 (Verify):** Execute full `./gradlew testDebugUnitTest` confirming all FCT-001, FCT-002, and FCT-003 feature-level security tests pass within `180s`.
+- [x] **Step 1 (TDD RED):** Write end-to-end offline integration & fault-recovery tests verifying `DefaultAppContainer` starts offline with `"OFFLINE"` identity intact and `ProductionEndpointTrustPolicy` disabled, end-to-end signIn -> inventory -> capability filter -> WS disconnect/reconnect -> signOut wipe cycle, and zero FCT-001/FCT-002 test regressions.
+- [x] **Step 2 (GREEN):** Extend `DefaultAppContainer` (`close()` tears down `SessionCoordinator` + transports + simulator deterministically).
+- [x] **Step 3 (Verify):** Execute full `./gradlew testDebugUnitTest` confirming all FCT-001, FCT-002, and FCT-003 feature-level security tests pass within `180s`.
 
 ---
 
@@ -137,5 +137,5 @@
 
 **Covers:** `REQ-AUTH-301..305`, `REQ-CONN-306..310` (Gate readiness & APK verification).
 
-- [ ] **Step 1:** Run full 7-check candidate pipeline (`python3 verification/run.py --lane candidate --event-name pull_request --base-ref main --run-id fct003-candidate`) confirming 7/7 `PASS`, `AndroidManifest.xml` offline (`INTERNET`-free until `FCT-004` policy transition), and unchanged `policies/checks.json`.
+- [x] **Step 1:** Run full 7-check candidate pipeline (`python3 verification/run.py --lane candidate --event-name pull_request --base-ref main --run-id fct003-candidate`) confirming 7/7 `PASS`, `AndroidManifest.xml` offline (`INTERNET`-free until `FCT-004` policy transition), and unchanged `policies/checks.json`.
 - [ ] **Step 2:** Run `evidence.py` audit, execute real-device `TEST-AUTH-312` (`KeyInfo.getSecurityLevel()`) if an authorized device is attached (otherwise keep `NOT_RUN` and block T4 hardware/release closure), and complete independent `T4`/`T3` review + manual UAT + dual Product Owner & Lead Maintainer approval before any G6 merge.

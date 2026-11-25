@@ -64,6 +64,7 @@ class SessionCoordinator(
     private var inFlightRefreshDeferred: CompletableDeferred<AuthResult>? = null
 
     private val epochListeners = mutableListOf<(Long) -> Unit>()
+    private val invalidationListeners = mutableListOf<(Long, AuthFailureReason) -> Unit>()
 
     fun currentEpoch(): Long = synchronized(commitLock) { activeEpoch }
 
@@ -73,8 +74,22 @@ class SessionCoordinator(
         }
     }
 
-    private fun notifyEpochListenersLocked(newEpoch: Long, snapshotListeners: List<(Long) -> Unit>) {
+    fun registerOnSessionInvalidated(listener: (Long, AuthFailureReason) -> Unit) {
+        synchronized(commitLock) {
+            invalidationListeners.add(listener)
+        }
+    }
+
+    private fun notifyEpochListeners(newEpoch: Long, snapshotListeners: List<(Long) -> Unit>) {
         snapshotListeners.forEach { runCatching { it(newEpoch) } }
+    }
+
+    private fun notifyInvalidationListeners(
+        invalidatedEpoch: Long,
+        reason: AuthFailureReason,
+        snapshotListeners: List<(Long, AuthFailureReason) -> Unit>
+    ) {
+        snapshotListeners.forEach { runCatching { it(invalidatedEpoch, reason) } }
     }
 
     suspend fun signIn(credentials: AuthCredentials): AuthResult {
@@ -82,21 +97,29 @@ class SessionCoordinator(
 
         // Collapse concurrent signIn calls for the exact same account into one dispatch,
         // while allowing a different account (Account A -> B switch) to supersede cleanly.
-        val (joinExisting, attemptEpoch, myDeferred) = synchronized(commitLock) {
+        val (joinExisting, attemptEpoch, myDeferred, listenersToNotify, previousEpochToInvalidate) = synchronized(commitLock) {
             val existing = inFlightSignInDeferred
             if (existing != null && !existing.isCompleted && inFlightSignInKey == accountKey) {
-                Triple(existing, inFlightSignInEpoch, null)
+                SignInAdmission(existing, inFlightSignInEpoch, null, emptyList(), null)
             } else {
+                val prevEpoch = activeEpoch
                 val newEpoch = ++activeEpoch
                 _sessionState.value = SessionState.Authenticating
-                val listeners = epochListeners.toList()
-                notifyEpochListenersLocked(newEpoch, listeners)
                 val deferred = CompletableDeferred<AuthResult>()
                 inFlightSignInKey = accountKey
                 inFlightSignInEpoch = newEpoch
                 inFlightSignInDeferred = deferred
-                Triple(null, newEpoch, deferred)
+                SignInAdmission(null, newEpoch, deferred, epochListeners.toList(), prevEpoch)
             }
+        }
+
+        // Notify listeners strictly OUTSIDE commitLock to avoid AB-BA deadlocks
+        if (listenersToNotify.isNotEmpty()) {
+            notifyEpochListeners(attemptEpoch, listenersToNotify)
+        }
+        if (previousEpochToInvalidate != null) {
+            val invListeners = synchronized(commitLock) { invalidationListeners.toList() }
+            notifyInvalidationListeners(previousEpochToInvalidate, AuthFailureReason.TokenExpiredOrRevoked, invListeners)
         }
 
         if (joinExisting != null) {
@@ -123,7 +146,8 @@ class SessionCoordinator(
                 }
                 is AuthResult.Success -> commitAuthenticatedSession(
                     session = gatewayResult.session,
-                    capturedEpoch = attemptEpoch
+                    capturedEpoch = attemptEpoch,
+                    advanceEpochOnCommit = false
                 )
             }
             deferred.complete(finalResult)
@@ -151,9 +175,18 @@ class SessionCoordinator(
         }
     }
 
+    private data class SignInAdmission(
+        val existing: CompletableDeferred<AuthResult>?,
+        val attemptEpoch: Long,
+        val deferred: CompletableDeferred<AuthResult>?,
+        val epochListenersSnapshot: List<(Long) -> Unit>,
+        val previousEpoch: Long?
+    )
+
     private suspend fun commitAuthenticatedSession(
         session: SessionCredentials,
-        capturedEpoch: Long
+        capturedEpoch: Long,
+        advanceEpochOnCommit: Boolean = false
     ): AuthResult {
         val snap = timeProvider.snapshot()
         val nowElapsed = snap.elapsedRealtimeMs
@@ -198,10 +231,14 @@ class SessionCoordinator(
             }
 
             if (saveResult is TokenSaveResult.Failure) {
-                synchronized(commitLock) {
+                val shouldWipePriorBlob = synchronized(commitLock) {
                     if (activeEpoch == capturedEpoch) {
                         _sessionState.value = SessionState.SignedOut
                     }
+                    committedStorageEpoch < capturedEpoch
+                }
+                if (shouldWipePriorBlob) {
+                    withContext(NonCancellable) { tokenStore.clear() }
                 }
                 logger.log(
                     DiagnosticEvent(
@@ -217,13 +254,14 @@ class SessionCoordinator(
             }
 
             // Re-verify epoch inside persistenceMutex AFTER disk save
-            val committed = synchronized(commitLock) {
+            val (committed, finalEpoch, epochListenersSnap) = synchronized(commitLock) {
                 if (activeEpoch == capturedEpoch) {
-                    committedStorageEpoch = capturedEpoch
-                    _sessionState.value = stateMachine.toAuthenticated(session, capturedEpoch)
-                    true
+                    val targetEpoch = if (advanceEpochOnCommit) ++activeEpoch else capturedEpoch
+                    committedStorageEpoch = targetEpoch
+                    _sessionState.value = stateMachine.toAuthenticated(session, targetEpoch)
+                    Triple(true, targetEpoch, if (advanceEpochOnCommit) epochListeners.toList() else emptyList())
                 } else {
-                    false
+                    Triple(false, capturedEpoch, emptyList())
                 }
             }
 
@@ -241,20 +279,26 @@ class SessionCoordinator(
                 )
             }
 
+            if (epochListenersSnap.isNotEmpty()) {
+                notifyEpochListeners(finalEpoch, epochListenersSnap)
+            }
+
             AuthResult.Success(session = session, isDurablePersisted = true)
         }
     }
 
     suspend fun signOut(): LogoutResult {
-        val (logoutEpoch, listeners) = synchronized(commitLock) {
+        val (prevEpoch, logoutEpoch, listeners, invListeners) = synchronized(commitLock) {
+            val prev = activeEpoch
             val newEpoch = ++activeEpoch
             _sessionState.value = SessionState.SignedOut
             inFlightSignInDeferred = null
             inFlightSignInKey = null
             inFlightRefreshDeferred = null
-            newEpoch to epochListeners.toList()
+            SignOutInfo(prev, newEpoch, epochListeners.toList(), invalidationListeners.toList())
         }
-        notifyEpochListenersLocked(logoutEpoch, listeners)
+        notifyEpochListeners(logoutEpoch, listeners)
+        notifyInvalidationListeners(prevEpoch, AuthFailureReason.TokenExpiredOrRevoked, invListeners)
 
         return persistenceMutex.withLock {
             val shouldClear = synchronized(commitLock) { committedStorageEpoch < logoutEpoch }
@@ -280,9 +324,20 @@ class SessionCoordinator(
         }
     }
 
+    private data class SignOutInfo(
+        val prevEpoch: Long,
+        val logoutEpoch: Long,
+        val epochListeners: List<(Long) -> Unit>,
+        val invalidationListeners: List<(Long, AuthFailureReason) -> Unit>
+    )
+
     suspend fun restoreSession(): SessionState {
         return persistenceMutex.withLock {
-            val restoreEpoch = synchronized(commitLock) { ++activeEpoch }
+            val (restoreEpoch, epochListenersSnap) = synchronized(commitLock) {
+                val e = ++activeEpoch
+                e to epochListeners.toList()
+            }
+            notifyEpochListeners(restoreEpoch, epochListenersSnap)
             val loaded = tokenStore.load()
             when (loaded) {
                 TokenLoadResult.Empty -> {
@@ -413,7 +468,8 @@ class SessionCoordinator(
                 }
                 is AuthResult.Success -> commitAuthenticatedSession(
                     session = refreshed.session,
-                    capturedEpoch = capturedEpoch
+                    capturedEpoch = capturedEpoch,
+                    advanceEpochOnCommit = true
                 )
             }
             deferred.complete(settled)
@@ -451,20 +507,21 @@ class SessionCoordinator(
         expectedEpoch: Long,
         reason: AuthFailureReason
     ) {
-        val (didInvalidate, newEpoch, listeners) = synchronized(commitLock) {
+        val (didInvalidate, newEpoch, listeners, invListeners) = synchronized(commitLock) {
             if (!stateMachine.isEpochCurrent(expectedEpoch, activeEpoch)) {
-                Triple(false, activeEpoch, emptyList())
+                InvalidationSnap(false, activeEpoch, emptyList(), emptyList())
             } else {
                 val advanced = ++activeEpoch
                 _sessionState.value = stateMachine.toReauthenticationRequired(advanced, reason)
                 inFlightSignInDeferred = null
                 inFlightSignInKey = null
                 inFlightRefreshDeferred = null
-                Triple(true, advanced, epochListeners.toList())
+                InvalidationSnap(true, advanced, epochListeners.toList(), invalidationListeners.toList())
             }
         }
         if (!didInvalidate) return
-        notifyEpochListenersLocked(newEpoch, listeners)
+        notifyEpochListeners(newEpoch, listeners)
+        notifyInvalidationListeners(expectedEpoch, reason, invListeners)
 
         persistenceMutex.withLock {
             val shouldWipe = synchronized(commitLock) { committedStorageEpoch < newEpoch }
@@ -475,4 +532,11 @@ class SessionCoordinator(
             }
         }
     }
+
+    private data class InvalidationSnap(
+        val didInvalidate: Boolean,
+        val newEpoch: Long,
+        val epochListeners: List<(Long) -> Unit>,
+        val invalidationListeners: List<(Long, AuthFailureReason) -> Unit>
+    )
 }

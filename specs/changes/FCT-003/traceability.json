@@ -3,27 +3,27 @@
   "change_id": "FCT-003",
   "milestone": "FCT-003",
   "title": "Authentication, Device Inventory & Connectivity Readiness",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "risk_ceiling": "T4",
   "workstream_risk_tiers": {
     "auth_trust_session_keystore_logging": "T4",
     "protocol_inventory_capabilities_adapters": "T3"
   },
   "planned_mapping_coverage": 100.0,
-  "verified_execution_coverage": 0.0,
+  "verified_execution_coverage": 96.875,
   "metrics": {
     "planned_ac_count": 32,
-    "verified_ac_count": 0,
-    "executed_ac_count": 0,
+    "verified_ac_count": 31,
+    "executed_ac_count": 31,
     "device_dependent_not_run_count": 1,
-    "verified_coverage_percent": 0.0,
-    "executed_coverage_percent": 0.0,
-    "total_executed_or_verified_percent": 0.0,
+    "verified_coverage_percent": 96.875,
+    "executed_coverage_percent": 96.875,
+    "total_executed_or_verified_percent": 96.875,
     "planned_scenario_count": 21,
-    "discovered_executable_test_count": 0,
-    "executed_test_count": 0,
+    "discovered_executable_test_count": 94,
+    "executed_test_count": 94,
     "ac_mapping_coverage_percent": 100.0,
-    "verified_ac_execution_coverage_status": "PLANNED_G3_SPECIFICATION_READY"
+    "verified_ac_execution_coverage_status": "OFFLINE_VERIFIED_DEVICE_KEYSTORE_NOT_RUN"
   },
   "summary": {
     "total_requirements": 10,
@@ -40,7 +40,8 @@
       "test_oracle": "TEST-AUTH-301: Region routing table asserts grit-cloud.cn (+86/0086) vs grit-cloud.com (+1/+44) and rejects blank/malformed region codes.",
       "implementation_task": "Task 2, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/auth/OkHttpAuthGatewayTest.kt::testRegionRouterMapsCnGlobalAndRejectsMalformed (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-301.2",
@@ -50,7 +51,8 @@
       "test_oracle": "TEST-AUTH-309: Negative origin, userinfo, query-secret, disabled-production-policy, and non-loopback DNS/IP destination tests fail closed before I/O.",
       "implementation_task": "Task 2, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/EndpointTrustAndRedirectTest.kt::testProductionPolicyDisabledAndNegativeUriValidation, testLoopbackTrustPolicyRejectsUntrustedOriginsAndPublicDns (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-301.3",
@@ -60,7 +62,8 @@
       "test_oracle": "TEST-AUTH-309, TEST-AUTH-301: MockWebServer 302/307/308 redirect tests confirm 1 request with zero forwarded headers; static scan confirms zero setDefaultSSLSocketFactory or trust-all TLS.",
       "implementation_task": "Task 2, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/EndpointTrustAndRedirectTest.kt::testHardenedOkHttpClientDisablesAutomaticRedirectsOn3xx, testMainSourcesContainNoGlobalSslMutationOrTrustAllTlsOrEncryptedPrefs (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-302.1",
@@ -70,7 +73,8 @@
       "test_oracle": "TEST-AUTH-302, TEST-AUTH-308: DomainPurityTest asserts zero prohibited imports; AuthModelsTest asserts credential model toString() masks secrets.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/DomainPurityTest.kt::testDomainPackageHasZeroFrameworkOrNetworkImports; app/src/test/java/com/weback/robot/domain/AuthModelsTest.kt::testCredentialModelsMaskSecretsInToString (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-302.2",
@@ -80,7 +84,8 @@
       "test_oracle": "TEST-AUTH-302: MockWebServer RecordedRequest inspection verifies POST JSON shape, opt='login', configurable protocolApiVersion, token/region headers, and zero query credentials.",
       "implementation_task": "Task 2, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/auth/OkHttpAuthGatewayTest.kt::testMockWebServerLoginEnvelopeContractAndSafeLogging, testProductionTrustRemainsDisabledByDefaultInAuthGateway (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-302.3",
@@ -90,7 +95,8 @@
       "test_oracle": "TEST-AUTH-303: Fault-injected MockWebServer negative response matrix verifies AuthResult.Failure and preserved prior valid session state.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/auth/OkHttpAuthGatewayNegativeTest.kt::testRejects401_403_500_302_MalformedAndUntrustedUrls (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-303.1",
@@ -100,7 +106,8 @@
       "test_oracle": "TEST-AUTH-304: Concurrent coroutine signIn tests assert single gateway dispatch and deterministic non-blocking FSM transitions.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/SessionStateMachineTest.kt::testValidStateTransitionsAndEpochFencing; app/src/test/java/com/weback/robot/app/session/SessionCoordinatorTest.kt::testConcurrentSignInCollapsesAndLogoutDuringLoginDiscardsPersistence (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-303.2",
@@ -110,17 +117,19 @@
       "test_oracle": "TEST-AUTH-304: Fault-injected TokenStore save/clear failure, cancellation, and post-failed-logout restart simulation tests verify durable commit ordering.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/PersistenceOrderingFaultTest.kt::testLogoutDuringSuspendedSaveAndStaleClearNeverOverwritesNewerAccount; SessionCoordinatorTest.kt::testFailedSaveAndFailedClearFailClosed; ReviewRegressionTest.kt::testTransientInventoryErrorPreservesLoadedStateAndRefreshAdvancesEpochAndSaveFailureClearsOldBlob (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-303.3",
       "requirement_id": "REQ-AUTH-303",
-      "description": "sessionEpoch governs TokenStore operations, concurrent signIn/refresh, logout during login/persist, Account A->B switching, late HTTP/401 callbacks, inventory caches, selected device, WS instances, and telemetry.",
+      "description": "sessionEpoch and persistence ordering govern TokenStore operations, concurrent signIn/refresh, logout during login/persist, Account A->B switching, late HTTP/401 callbacks, inventory caches, selected device, WS instances, and telemetry.",
       "validation_test_id": "TEST-AUTH-311",
       "test_oracle": "TEST-AUTH-311, TEST-AUTH-304: Rapid Account A->B switch and late-epoch HTTP/401 callback tests verify superseded epoch effects are discarded without mutating Account B.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/CrossAccountIsolationTest.kt::testRapidAccountSwitchDiscardsStaleAccountInventoryAndSelection; SessionCoordinatorTest.kt::testAccountSwitchAndLate401EpochIsolation (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-304.1",
@@ -130,7 +139,8 @@
       "test_oracle": "TEST-AUTH-305, TEST-AUTH-310: Boundary table (2880000ms vs 2880001ms, 3599999ms vs 3600000ms), Long overflow checks, pre-send block, and in-flight expiry discard tests pass.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/TokenExpiryPolicyTest.kt; app/src/test/java/com/weback/robot/ConnectivityRecoveryTest.kt::testAndroidElapsedRealtimeIncludesDeepSleepInAuthLifetimeAndBootProvider; OkHttpDeviceInventoryGatewayTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-304.2",
@@ -140,7 +150,8 @@
       "test_oracle": "TEST-AUTH-310: Deterministic restart (priorElapsedMs preserved), reboot, clock rollback, and unverified JWT exp claim ignore tests verify conservative ReauthenticationRequired.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/SessionTimeSemanticsTest.kt::testRestoreSameBootPreservesLifetimeAndRebootOrRollbackRequiresReauth; TokenExpiryPolicyTest.kt::testSameBootProcessRestartPreservesRemainingLifetimeAndIgnoresJwtExpClaim, testRebootUnknownBootAndClockRollbackFailClosed (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-304.3",
@@ -150,7 +161,8 @@
       "test_oracle": "TEST-AUTH-305: Synthetic single-flight refresh test and production-disabled ReauthenticationRequired default verify zero password/MD5 storage or replay.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/session/SessionTimeSemanticsTest.kt::testProductionRefreshDisabledDefaultsToReauthAndSyntheticRefreshCollapses; ReviewRegressionTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-305.1",
@@ -160,7 +172,8 @@
       "test_oracle": "TEST-AUTH-306: AEAD storage test verifies envelope layout, distinct cipher-generated 12B IVs, AAD binding, atomic replacement, and zero EncryptedSharedPreferences/software fallback.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/KeystoreAeadTokenStoreTest.kt::testAeadEnvelopeRoundTripDistinctCipherGeneratedIvsAndNoBackupFilesDir (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-305.2",
@@ -170,7 +183,8 @@
       "test_oracle": "TEST-AUTH-307: Bit-flip, version/AAD mismatch, truncation/oversize, missing key, invalidation, bad post-decrypt JSON, and I/O fault tests verify atomic wipe and fail-closed errors.",
       "implementation_task": "Task 2",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/KeystoreAeadTokenStoreTamperTest.kt::testTamperBitFlipBadVersionOversizeTruncationAndMissingKeyFailClosed, testPostDecryptMalformedRecordAndClearFailureTombstonePreventSilentRestore (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-305.3",
@@ -180,7 +194,8 @@
       "test_oracle": "TEST-AUTH-308: Log sink, model toString(), and SecretRedactor tests verify zero raw secret exposure across headers, opaque tokens, JWTs, nested/malformed JSON, URL-encoded strings, and exceptions.",
       "implementation_task": "Task 2, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/SecretRedactorTest.kt::testRedactsHeadersOpaqueTokensJwtsNestedAndMalformedJsonUrlEncodedAndExceptions; DiagnosticLoggerTest.kt; AuthModelsTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-305.4",
@@ -190,7 +205,8 @@
       "test_oracle": "TEST-AUTH-312: Device instrumentation test checks KeyInfo.getSecurityLevel() in {TRUSTED_ENVIRONMENT, STRONGBOX} (NOT_RUN in offline CI when no authorized device attached).",
       "implementation_task": "Task 2, Task 6",
       "check_id": "android-smoke-test",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/androidTest/java/com/weback/robot/security/KeystoreHardwareSecurityLevelTest.kt (compiled via assembleDebugAndroidTest; NOT_RUN without authorized physical Android >= 12 device)",
+      "status": "NOT_RUN"
     },
     {
       "ac_id": "AC-306.1",
@@ -200,7 +216,8 @@
       "test_oracle": "TEST-CONN-301: MockWebServer asserts exact POST JSON opt=user_thing_list_get, token/region headers, redirect blocking, and parsed ThingBean list.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/inventory/OkHttpDeviceInventoryGatewayTest.kt::testFetchInventoryHeadersPayloadEmptyAndBoundaryHydration (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-306.2",
@@ -210,7 +227,8 @@
       "test_oracle": "TEST-CONN-301: Negative inventory payloads assert typed ConnectivityError while valid empty list asserts InventoryState.Empty.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/inventory/OkHttpDeviceInventoryGatewayTest.kt; ReviewRegressionTest.kt::testTransientInventoryErrorPreservesLoadedStateAndRefreshAdvancesEpochAndSaveFailureClearsOldBlob (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-306.3",
@@ -220,7 +238,8 @@
       "test_oracle": "TEST-CONN-302: Boundary test asserts out-of-range battery and unrecognized working_status hydrate cleanly without unhandled exceptions.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/inventory/OkHttpDeviceInventoryGatewayTest.kt; CrossAccountIsolationTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-307.1",
@@ -230,7 +249,8 @@
       "test_oracle": "TEST-CONN-303: Exhaustive RE-grounded prefix table (including yg-yw10001-, xs-x8-, yw-vs01-, xs-x5c2-) verifies classification and case-insensitivity.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/DeviceCapabilityClassifierTest.kt::testGroundedLaserSlamPrefixesMapToMvpSupportedShadowWs, testGroundedExcludedAndNonLaserFamilies (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-307.2",
@@ -240,7 +260,8 @@
       "test_oracle": "TEST-CONN-303: ControlCompatibility mapping confirms only P0 LaserSlam returns MvpSupportedShadowWs while excluded classes return Unsupported.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/DeviceCapabilityClassifierTest.kt; ConnectivityRecoveryTest.kt::testEndToEndOfflineLifecycleSignInPersistInventoryFilterWsTelemetryAndSignOut (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-308.1",
@@ -250,7 +271,8 @@
       "test_oracle": "TEST-CONN-304, TEST-CONN-308: Concurrent connect/disconnect/send MockWebServer tests verify ordered non-blocking ConnectionState emissions and generation isolation.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/ws/OkHttpWebSocketTransportTest.kt; ReviewRegressionTest.kt::testSelectDeviceAfterWsConnectDoesNotBreakGenerationAndSendStallSchedulesOnce (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-308.2",
@@ -260,7 +282,8 @@
       "test_oracle": "TEST-CONN-304: MockWebServer WebSocket contract tests assert upgrade headers, telemetry frames, 20s send-stall trigger, 4s reconnect timing, and close frame 1000.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/ws/OkHttpWebSocketTransportTest.kt::testWsUpgradeHeadersTelemetryStall401ShortCircuitAndConnectedExpiry; ReviewRegressionTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-308.3",
@@ -270,7 +293,8 @@
       "test_oracle": "TEST-CONN-305: 401/403/302 handshake and connected-socket expiry tests verify 0 reconnect retries, stopped telemetry/outbound sends, and auth callback; close race test proves zero post-close mutation.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/ws/OkHttpWebSocketTransportTest.kt::test401HandshakeShortCircuitsReconnectsAndStaleGenerationIgnored, testWsUpgradeHeadersTelemetryStall401ShortCircuitAndConnectedExpiry (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-308.4",
@@ -280,7 +304,8 @@
       "test_oracle": "TEST-CONN-308: Superseded epoch/generation callback and pending reconnect timer tests verify zero state mutation or duplicate sockets.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/ws/WebSocketGenerationIsolationTest.kt::testSupersededGenerationCallbacksAndReconnectTimersAreIgnored (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-308.5",
@@ -290,7 +315,8 @@
       "test_oracle": "TEST-CONN-309: Negative telemetry frames for unselected, unknown, or unsupported devices confirm RobotState remains unchanged.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/protocol/ws/TelemetryOwnershipTest.kt::testUnselectedUnknownAndUnsupportedTelemetryNeverMutatesRobotState (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-309.1",
@@ -300,7 +326,8 @@
       "test_oracle": "TEST-CONN-306: AppContainer and offline fixture integration test runs signIn -> inventory -> capability -> WS events offline cleanly.",
       "implementation_task": "Task 3, Task 4, Task 5",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ConnectivityRecoveryTest.kt::testEndToEndOfflineLifecycleSignInPersistInventoryFilterWsTelemetryAndSignOut; AppContainerTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-309.2",
@@ -310,7 +337,8 @@
       "test_oracle": "TEST-CONN-306, TEST-AUTH-309: Loopback MockWebServer contract suite runs offline in unit tests and blocks any external DNS/TCP destination.",
       "implementation_task": "Task 3, Task 4, Task 5",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/security/EndpointTrustAndRedirectTest.kt::testLoopbackTrustPolicyRejectsUntrustedOriginsAndPublicDns; OkHttpAuthGatewayTest; OkHttpDeviceInventoryGatewayTest; OkHttpWebSocketTransportTest (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-309.3",
@@ -320,7 +348,8 @@
       "test_oracle": "TEST-CONN-307: spec-hygiene, android-lint, android-build, and apk-validation confirm zero unapproved manifest permissions or policy edits.",
       "implementation_task": "Task 5, Task 6",
       "check_id": "apk-validation",
-      "status": "PLANNED"
+      "evidence_ref": "verification/run.py apk-validation & policies/checks.json SHA-256 unchanged (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-310.1",
@@ -330,7 +359,8 @@
       "test_oracle": "TEST-CONN-307, TEST-AUTH-308: Error mapping tests verify every ConnectivityError variant formats safe guidance without raw tokens or stack traces.",
       "implementation_task": "Task 1, Task 5",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ConnectivityRecoveryTest.kt::testConnectivityErrorMappingCoversAllVariantsWithoutSecretLeaks (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-310.2",
@@ -340,7 +370,8 @@
       "test_oracle": "TEST-CONN-307, TEST-CONN-308: Disconnect recovery test asserts committed RobotState survives socket loss, remote send returns Rejected, and logout clears state.",
       "implementation_task": "Task 4, Task 5",
       "check_id": "android-unit-tests",
-      "status": "PLANNED"
+      "evidence_ref": "app/src/test/java/com/weback/robot/ConnectivityRecoveryTest.kt::testEndToEndOfflineLifecycleSignInPersistInventoryFilterWsTelemetryAndSignOut; WebSocketGenerationIsolationTest.kt (PASS)",
+      "status": "VERIFIED"
     },
     {
       "ac_id": "AC-310.3",
@@ -350,7 +381,8 @@
       "test_oracle": "TEST-CONN-307: Full testDebugUnitTest + 7-check candidate pipeline confirms all 54 FCT-001/FCT-002 regressions and spec-hygiene pass.",
       "implementation_task": "Task 5, Task 6",
       "check_id": "spec-hygiene",
-      "status": "PLANNED"
+      "evidence_ref": "94/94 unit & Robolectric tests PASS across 33 suites + 7/7 candidate checks PASS",
+      "status": "VERIFIED"
     }
   ]
 }

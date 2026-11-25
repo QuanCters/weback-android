@@ -68,7 +68,7 @@ class KeystoreAeadTokenStoreTest {
 
         val loaded = store.load()
         assertEquals(TokenLoadResult.Loaded(record2), loaded)
-        assertEquals(KeystoreAeadTokenStore.CANONICAL_AAD.toList(), fakeProvider.lastUsedAad?.toList())
+        assertEquals(KeystoreAeadTokenStore.canonicalAadCopy().toList(), fakeProvider.lastUsedAad?.toList())
     }
 }
 

@@ -59,6 +59,14 @@ class KeystoreHardwareSecurityLevelTest {
             assertTrue(store.save(record) is TokenSaveResult.Success)
             assertEquals(TokenLoadResult.Loaded(record), store.load())
 
+            // On-device AEAD tamper rejection check (bit-flip)
+            val blobFile = File(isolatedDir, KeystoreAeadTokenStore.SESSION_FILE_NAME)
+            val bytes = blobFile.readBytes()
+            bytes[bytes.lastIndex] = (bytes[bytes.lastIndex].toInt() xor 0xFF).toByte()
+            blobFile.writeBytes(bytes)
+            assertTrue(store.load() is TokenLoadResult.CorruptedOrInvalidated)
+            assertTrue(store.save(record) is TokenSaveResult.Success)
+
             val keyStore = KeyStore.getInstance(AndroidKeystoreAeadCipherProvider.ANDROID_KEYSTORE).apply {
                 load(null)
             }

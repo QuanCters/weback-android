@@ -98,13 +98,18 @@ class DefaultAppContainer(
             refreshStrategy = DisabledPasswordlessRefreshStrategy,
             logger = diagnosticLogger
         ).also { coordinator ->
-            coordinator.registerOnEpochAdvanced { newEpoch ->
-                if (newEpoch > 0L) {
-                    realtimeTransport.invalidateForEpoch(
-                        expectedEpoch = newEpoch - 1L,
-                        reason = ConnectivityError.Unauthenticated
-                    )
+            coordinator.registerOnSessionInvalidated { oldEpoch, reason ->
+                val connErr = when (reason) {
+                    com.weback.robot.domain.model.AuthFailureReason.UntrustedEndpoint -> ConnectivityError.UntrustedEndpoint
+                    com.weback.robot.domain.model.AuthFailureReason.RedirectRejected -> ConnectivityError.RedirectRejected
+                    com.weback.robot.domain.model.AuthFailureReason.StorageFailure -> ConnectivityError.StorageFailure
+                    com.weback.robot.domain.model.AuthFailureReason.TokenExpiredOrRevoked -> ConnectivityError.TokenExpired
+                    else -> ConnectivityError.Unauthenticated
                 }
+                realtimeTransport.invalidateForEpoch(
+                    expectedEpoch = oldEpoch,
+                    reason = connErr
+                )
             }
         }
     }

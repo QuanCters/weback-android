@@ -124,9 +124,11 @@ class OkHttpDeviceInventoryGateway(
                             InventoryFetchResult.Failure(ConnectivityError.AuthorizationDenied)
                         response.code !in 200..299 ->
                             InventoryFetchResult.Failure(ConnectivityError.HandshakeRejected(response.code))
-                        else -> parseBody(response.body?.string().orEmpty())
+                        else -> parseBody(readBoundedBody(response))
                     }
                 }
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
             } catch (_: SocketTimeoutException) {
                 InventoryFetchResult.Failure(ConnectivityError.TransportTimeout)
             } catch (_: IOException) {
@@ -135,6 +137,15 @@ class OkHttpDeviceInventoryGateway(
                 InventoryFetchResult.Failure(ConnectivityError.MalformedPayload)
             }
         }
+    }
+
+    private fun readBoundedBody(response: okhttp3.Response): String {
+        val peek = response.peekBody(MAX_RESPONSE_BYTES + 1L)
+        val bytes = peek.bytes()
+        if (bytes.size > MAX_RESPONSE_BYTES) {
+            throw IllegalArgumentException("Inventory response exceeds bounded limit")
+        }
+        return bytes.toString(Charsets.UTF_8)
     }
 
     private fun parseBody(rawBody: String): InventoryFetchResult {
@@ -181,6 +192,8 @@ class OkHttpDeviceInventoryGateway(
     }
 
     companion object {
+        private const val MAX_RESPONSE_BYTES = 2_097_152
+
         internal fun mapWorkingStatus(rawStatus: String?): RobotMode = when (rawStatus?.trim()?.lowercase()) {
             "autoclean", "clean", "cleaning", "spotclean", "edgeclean", "mopping" -> RobotMode.CLEAN
             "pause", "paused" -> RobotMode.PAUSED

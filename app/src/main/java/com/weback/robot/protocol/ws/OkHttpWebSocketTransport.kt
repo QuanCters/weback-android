@@ -66,6 +66,7 @@ class OkHttpWebSocketTransport(
 
     private var activeEpoch: Long = 0L
     private var activeGeneration: Long = 0L
+    private var selectionGeneration: Long = 0L
     private var isClosed: Boolean = false
     private var activeSession: SessionCredentials? = null
     private var activeSelectedDevice: DeviceInventoryItem? = null
@@ -93,7 +94,7 @@ class OkHttpWebSocketTransport(
             if (activeEpoch == 0L || epoch > activeEpoch) {
                 activeEpoch = epoch
             }
-            activeGeneration++
+            selectionGeneration++
             activeSelectedDevice = item
             _robotState.value = item?.initialState ?: RobotState()
         }
@@ -149,34 +150,48 @@ class OkHttpWebSocketTransport(
 
     override fun sendOutbound(payload: String, epoch: Long): Boolean {
         val nowMs = authClock.elapsedRealtimeMs()
-        val (socket, session, gen, expired, stalled) = synchronized(commitLock) {
-            if (isClosed || epoch != activeEpoch || activeSocket == null) {
+        val snap = synchronized(commitLock) {
+            if (isClosed || epoch != activeEpoch || activeSocket == null ||
+                _connectionState.value !is ConnectionState.Connected
+            ) {
                 return false
             }
             val currentSession = activeSession ?: return false
             val isExpired = TokenExpiryPolicy.evaluateInProcess(currentSession, nowMs) == LifetimeEvaluation.EXPIRED_OR_INVALID
-            val isStalled = (nowMs - lastActivityElapsedMs) > connectionConfig.sendStallTimeoutMs
-            SendSnapshot(activeSocket, currentSession, activeGeneration, isExpired, isStalled)
+            val elapsedSinceTraffic = if (nowMs >= lastActivityElapsedMs) {
+                nowMs - lastActivityElapsedMs
+            } else {
+                Long.MAX_VALUE
+            }
+            val isStalled = elapsedSinceTraffic > connectionConfig.sendStallTimeoutMs
+            if (isStalled && !isExpired) {
+                val stalledSocket = activeSocket
+                activeSocket = null
+                val nextGen = ++activeGeneration
+                SendSnapshot(stalledSocket, currentSession, nextGen, isExpired = false, isStalled = true)
+            } else {
+                SendSnapshot(activeSocket, currentSession, activeGeneration, isExpired = isExpired, isStalled = false)
+            }
         }
 
-        if (expired) {
-            handleExpiryInvalidation(epoch, gen)
+        if (snap.isExpired) {
+            handleExpiryInvalidation(epoch, snap.generation)
             return false
         }
-        if (stalled) {
+        if (snap.isStalled) {
             logger.log(
                 DiagnosticEvent(
                     category = "WS_SEND_STALL",
                     sessionEpoch = epoch,
-                    connectionGeneration = gen,
+                    connectionGeneration = snap.generation,
                     errorCategory = "SEND_STALL_TIMEOUT"
                 )
             )
-            socket?.cancel()
-            scheduleReconnectIfCurrent(session, epoch, gen, ConnectivityError.TransportTimeout)
+            snap.socket?.cancel()
+            scheduleReconnectIfCurrent(snap.session, epoch, snap.generation, ConnectivityError.TransportTimeout)
             return false
         }
-        return socket?.send(payload) ?: false
+        return snap.socket?.send(payload) ?: false
     }
 
     /**
@@ -248,19 +263,29 @@ class OkHttpWebSocketTransport(
         val ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 val nowMs = authClock.elapsedRealtimeMs()
-                val sessionExpired = synchronized(commitLock) {
+                val outcome = synchronized(commitLock) {
                     if (isClosed || epoch != activeEpoch || generation != activeGeneration) {
-                        true
+                        0 // stale generation/epoch
                     } else {
-                        lastActivityElapsedMs = nowMs
-                        reconnectAttempt = 0
-                        activeSocket = webSocket
-                        _connectionState.value = ConnectionState.Connected(epoch, generation)
-                        false
+                        val s = activeSession
+                        if (s == null || TokenExpiryPolicy.evaluateInProcess(s, nowMs) == LifetimeEvaluation.EXPIRED_OR_INVALID) {
+                            1 // expired before open settled
+                        } else {
+                            lastActivityElapsedMs = nowMs
+                            reconnectAttempt = 0
+                            activeSocket = webSocket
+                            _connectionState.value = ConnectionState.Connected(epoch, generation)
+                            2
+                        }
                     }
                 }
-                if (sessionExpired) {
+                if (outcome == 0) {
                     webSocket.close(NORMAL_CLOSE_CODE, "Superseded generation")
+                    return
+                }
+                if (outcome == 1) {
+                    webSocket.close(NORMAL_CLOSE_CODE, "Session expired")
+                    handleExpiryInvalidation(epoch, generation)
                     return
                 }
                 logger.log(

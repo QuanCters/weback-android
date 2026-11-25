@@ -83,14 +83,22 @@ class OkHttpAuthGateway(
     }
 
     override suspend fun signIn(credentials: AuthCredentials): AuthResult {
+        val secretChars = credentials.copySecretChars()
+        if (credentials.account.isBlank() || secretChars.isEmpty()) {
+            Arrays.fill(secretChars, '\u0000')
+            return AuthResult.Failure(AuthFailureReason.InvalidCredentials, "Account and secret must not be blank")
+        }
+
         val resolution = router.resolve(credentials.regionCallingCode)
         if (resolution is RegionResolution.Rejected) {
+            Arrays.fill(secretChars, '\u0000')
             return AuthResult.Failure(resolution.reason, resolution.safeMessage)
         }
         val endpointUrl = (resolution as RegionResolution.Resolved).endpointUrl
 
         val endpointDecision = trustPolicy.authorize(endpointUrl)
         if (endpointDecision is EndpointTrustDecision.Untrusted) {
+            Arrays.fill(secretChars, '\u0000')
             logger.log(
                 DiagnosticEvent(
                     category = "AUTH_BLOCKED",
@@ -101,7 +109,6 @@ class OkHttpAuthGateway(
             return AuthResult.Failure(endpointDecision.reason, "Endpoint rejected by trust policy")
         }
 
-        val secretChars = credentials.copySecretChars()
         val requestJson = try {
             val encodedSecret = digestStrategy.encodeForTlsPayload(secretChars)
             val envelope = LoginRequestEnvelope(
@@ -152,9 +159,11 @@ class OkHttpAuthGateway(
                                 AuthFailureReason.ServerRejected(response.code, null, "HTTP_${response.code}"),
                                 "Server rejected login request"
                             )
-                        else -> parseSuccessBody(response.body?.string().orEmpty(), credentials.account)
+                        else -> parseSuccessBody(readBoundedBody(response), credentials.account)
                     }
                 }
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
             } catch (_: SocketTimeoutException) {
                 AuthResult.Failure(AuthFailureReason.Timeout, "Authentication request timed out")
             } catch (_: IOException) {
@@ -163,6 +172,19 @@ class OkHttpAuthGateway(
                 AuthResult.Failure(AuthFailureReason.MalformedResponse, "Unexpected authentication failure")
             }
         }
+    }
+
+    private fun readBoundedBody(response: okhttp3.Response): String {
+        val peek = response.peekBody(MAX_RESPONSE_BYTES + 1L)
+        val bytes = peek.bytes()
+        if (bytes.size > MAX_RESPONSE_BYTES) {
+            throw IllegalArgumentException("Response body exceeds bounded limit")
+        }
+        return bytes.toString(Charsets.UTF_8)
+    }
+
+    companion object {
+        private const val MAX_RESPONSE_BYTES = 1_048_576
     }
 
     private fun parseSuccessBody(bodyText: String, account: String): AuthResult {

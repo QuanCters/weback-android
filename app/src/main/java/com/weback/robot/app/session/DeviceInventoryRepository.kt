@@ -31,7 +31,7 @@ class DeviceInventoryRepository(
     init {
         sessionCoordinator.registerOnEpochAdvanced { newEpoch ->
             synchronized(lock) {
-                if (newEpoch != boundEpoch) {
+                if (newEpoch > boundEpoch) {
                     boundEpoch = newEpoch
                     _inventoryState.value = InventoryState.Idle
                     _selectedDevice.value = null
@@ -91,7 +91,10 @@ class DeviceInventoryRepository(
                         return@synchronized _inventoryState.value
                     }
                     val errState = InventoryState.Error(fetchResult.error, capturedEpoch)
-                    _inventoryState.value = errState
+                    val existingLoaded = _inventoryState.value as? InventoryState.Loaded
+                    if (existingLoaded == null || existingLoaded.epoch != capturedEpoch) {
+                        _inventoryState.value = errState
+                    }
                     errState
                 }
             }

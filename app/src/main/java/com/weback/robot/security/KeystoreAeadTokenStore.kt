@@ -74,7 +74,7 @@ class AndroidKeystoreAeadCipherProvider(
     }
 
     override fun encrypt(plaintext: ByteArray, aad: ByteArray): EncryptedPayload {
-        val key = try {
+        var key = try {
             loadOrCreateKey(createIfMissing = true)
                 ?: throw IllegalStateException("Unable to generate AndroidKeyStore key")
         } catch (e: PermanentlyInvalidatedKeyException) {
@@ -83,7 +83,19 @@ class AndroidKeystoreAeadCipherProvider(
                 ?: throw IllegalStateException("Unable to recreate AndroidKeyStore key after invalidation", e)
         }
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key)
+        try {
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+        } catch (_: KeyPermanentlyInvalidatedException) {
+            deleteKey()
+            key = loadOrCreateKey(createIfMissing = true)
+                ?: throw IllegalStateException("Unable to recreate AndroidKeyStore key after invalidation")
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+        } catch (_: UnrecoverableKeyException) {
+            deleteKey()
+            key = loadOrCreateKey(createIfMissing = true)
+                ?: throw IllegalStateException("Unable to recreate AndroidKeyStore key after unrecoverable state")
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+        }
         val iv = cipher.iv
         require(iv != null && iv.size == KeystoreAeadTokenStore.IV_BYTES) {
             "Expected cipher-generated 12-byte GCM IV"
@@ -189,7 +201,7 @@ class KeystoreAeadTokenStore(
                 syntheticRefreshToken = record.syntheticRefreshToken
             )
             plaintextBytes = json.encodeToString(dto).toByteArray(Charsets.UTF_8)
-            val encrypted = cipherProvider.encrypt(plaintextBytes, CANONICAL_AAD)
+            val encrypted = cipherProvider.encrypt(plaintextBytes, CANONICAL_AAD_BYTES)
             require(encrypted.iv.size == IV_BYTES) { "Expected 12-byte GCM IV" }
 
             val totalSize = 1 + IV_BYTES + encrypted.ciphertextWithTag.size
@@ -203,8 +215,10 @@ class KeystoreAeadTokenStore(
             System.arraycopy(encrypted.ciphertextWithTag, 0, envelopeBytes, 1 + IV_BYTES, encrypted.ciphertextWithTag.size)
 
             writeAtomically(envelopeBytes)
-            // Clear any prior logout tombstone only AFTER atomic replacement with new session succeeded
-            runCatching { if (tombstoneFile.exists()) tombstoneFile.delete() }
+            // Clear any prior logout tombstone only AFTER atomic replacement; fail if tombstone cannot be cleared
+            if (tombstoneFile.exists() && !performDelete(tombstoneFile) && tombstoneFile.exists()) {
+                return TokenSaveResult.Failure("TOMBSTONE_CLEAR_FAILED")
+            }
             TokenSaveResult.Success
         } catch (t: Throwable) {
             runCatching { if (tempFile.exists()) tempFile.delete() }
@@ -219,6 +233,7 @@ class KeystoreAeadTokenStore(
         var rawBytes: ByteArray? = null
         var decryptedBytes: ByteArray? = null
         var charArray: CharArray? = null
+        var decodedBuffer: CharBuffer? = null
         return try {
             if (tombstoneFile.exists()) {
                 wipeBlobAndTombstone()
@@ -246,11 +261,11 @@ class KeystoreAeadTokenStore(
 
             val iv = rawBytes.copyOfRange(1, 1 + IV_BYTES)
             val ciphertextWithTag = rawBytes.copyOfRange(1 + IV_BYTES, rawBytes.size)
-            decryptedBytes = cipherProvider.decrypt(iv, ciphertextWithTag, CANONICAL_AAD)
+            decryptedBytes = cipherProvider.decrypt(iv, ciphertextWithTag, CANONICAL_AAD_BYTES)
 
-            val decodedChars = Charsets.UTF_8.decode(java.nio.ByteBuffer.wrap(decryptedBytes))
-            charArray = CharArray(decodedChars.remaining())
-            decodedChars.get(charArray)
+            decodedBuffer = Charsets.UTF_8.decode(java.nio.ByteBuffer.wrap(decryptedBytes))
+            charArray = CharArray(decodedBuffer.remaining())
+            decodedBuffer.get(charArray)
             val dto = json.decodeFromString<StoredSessionDto>(String(charArray))
 
             val record = PersistedSessionRecord(
@@ -288,6 +303,7 @@ class KeystoreAeadTokenStore(
             rawBytes?.let { Arrays.fill(it, 0.toByte()) }
             decryptedBytes?.let { Arrays.fill(it, 0.toByte()) }
             charArray?.let { Arrays.fill(it, '\u0000') }
+            decodedBuffer?.takeIf { it.hasArray() }?.array()?.let { Arrays.fill(it, '\u0000') }
         }
     }
 
@@ -322,9 +338,14 @@ class KeystoreAeadTokenStore(
         deleteHook?.invoke(file) ?: file.delete()
 
     private fun wipeBlobAndTombstone() {
-        runCatching { if (tempFile.exists()) tempFile.delete() }
-        runCatching { if (targetFile.exists()) targetFile.delete() }
-        runCatching { if (tombstoneFile.exists()) tombstoneFile.delete() }
+        runCatching { if (tempFile.exists()) performDelete(tempFile) }
+        val blobCleared = runCatching {
+            !targetFile.exists() || performDelete(targetFile)
+        }.getOrDefault(false) && !targetFile.exists()
+        // Only clear invalidation tombstone after confirming the session blob is truly gone
+        if (blobCleared) {
+            runCatching { if (tombstoneFile.exists()) performDelete(tombstoneFile) }
+        }
     }
 
     private fun writeAtomically(bytes: ByteArray) {
@@ -374,6 +395,7 @@ class KeystoreAeadTokenStore(
         const val GCM_TAG_BYTES = 16
         const val MIN_RECORD_BYTES = 1 + IV_BYTES + GCM_TAG_BYTES
         const val MAX_RECORD_BYTES = 16_384
-        val CANONICAL_AAD: ByteArray = "com.weback.robot:session:v1:01".toByteArray(Charsets.UTF_8)
+        private val CANONICAL_AAD_BYTES: ByteArray = "com.weback.robot:session:v1:01".toByteArray(Charsets.UTF_8)
+        internal fun canonicalAadCopy(): ByteArray = CANONICAL_AAD_BYTES.copyOf()
     }
 }

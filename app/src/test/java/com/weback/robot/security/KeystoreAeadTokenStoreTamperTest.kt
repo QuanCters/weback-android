@@ -92,11 +92,18 @@ class KeystoreAeadTokenStoreTamperTest {
         val untrustedUrlJson = """
             {"jwtToken":"ok","apiUrl":"http://evil.invalid/api","wssUrl":"wss://api.loopback.invalid/ws","regionName":"us","expiresInSeconds":3600,"issuedAtEpochMs":1700000000000,"lastSeenEpochMs":1700000000000,"issuedAtElapsedRealtimeMs":10,"bootGenerationId":"boot_1","accountAliasRedacted":"a"}
         """.trimIndent().toByteArray(Charsets.UTF_8)
-        val payload = provider.encrypt(untrustedUrlJson, KeystoreAeadTokenStore.CANONICAL_AAD)
+        val payload = provider.encrypt(untrustedUrlJson, KeystoreAeadTokenStore.canonicalAadCopy())
         dir.mkdirs()
         File(dir, KeystoreAeadTokenStore.SESSION_FILE_NAME)
             .writeBytes(byteArrayOf(KeystoreAeadTokenStore.SCHEMA_VERSION_V1) + payload.iv + payload.ciphertextWithTag)
 
+        assertTrue(store.load() is TokenLoadResult.CorruptedOrInvalidated)
+        assertFalse(File(dir, KeystoreAeadTokenStore.SESSION_FILE_NAME).exists())
+
+        // Wrong AAD must also reject authentication and wipe blob
+        val wrongAadPayload = provider.encrypt(untrustedUrlJson, "com.weback.robot:session:v1:99".toByteArray())
+        File(dir, KeystoreAeadTokenStore.SESSION_FILE_NAME)
+            .writeBytes(byteArrayOf(KeystoreAeadTokenStore.SCHEMA_VERSION_V1) + wrongAadPayload.iv + wrongAadPayload.ciphertextWithTag)
         assertTrue(store.load() is TokenLoadResult.CorruptedOrInvalidated)
         assertFalse(File(dir, KeystoreAeadTokenStore.SESSION_FILE_NAME).exists())
 

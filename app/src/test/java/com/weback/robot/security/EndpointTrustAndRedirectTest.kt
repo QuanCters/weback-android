@@ -101,7 +101,11 @@ class EndpointTrustAndRedirectTest {
             "EncryptedSharedPreferences",
             "MasterKey",
             "FirebaseAnalytics",
-            "com.yugong"
+            "com.yugong",
+            "X509TrustManager",
+            "HostnameVerifier",
+            "SecretKeySpec",
+            "getSharedPreferences"
         )
         val violations = mutableListOf<String>()
         mainDir.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { file ->

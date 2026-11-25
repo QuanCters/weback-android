@@ -24,6 +24,7 @@ class OfflineFixtureRealtimeTransport : RealtimeSessionTransport {
 
     private var activeEpoch: Long = 0L
     private var generation: Long = 0L
+    private var selectionGeneration: Long = 0L
     private var closed: Boolean = false
     private var selectedDevice: DeviceInventoryItem? = null
 
@@ -47,7 +48,7 @@ class OfflineFixtureRealtimeTransport : RealtimeSessionTransport {
             if (activeEpoch == 0L || epoch > activeEpoch) {
                 activeEpoch = epoch
             }
-            generation++
+            selectionGeneration++
             selectedDevice = item
             _robotState.value = item?.initialState ?: RobotState()
         }
