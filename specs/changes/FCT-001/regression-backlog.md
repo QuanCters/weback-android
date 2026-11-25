@@ -146,3 +146,18 @@ In strict accordance with Constitution Invariant `C-009` (Defect-to-Regression L
 - **Post-Fix GREEN Result:** `PASS: Explicit --event-name propagated from CI through run.py, transition.py, and evidence.py; missing/unsupported events rejected and full PR -> squash-merge push lifecycle verified`
 - **Generalization Decision:** `false`
 - **Review Status:** `RESOLVED`
+
+
+### DEF-2026-034: Selftest Environment Leakage Under Active Transition Authorization
+- **Classification:** `CONFIRMED_APPLICATION_DEFECT`
+- **Requirement / Invariant:** `C-008`
+- **Severity:** `P0`
+- **Affected Module:** `verification/selftests/test_cli.py`
+- **Evidence:** Authoritative transition CI run `45530115994` attempt 2 (job `138925613934`) failed `harness-selftests` (`184 passed, 1 failed`) on `test_candidate_alternate_config_prohibited_TEST_RUN_010` when `TRANSITION_AUTHORIZATION` was active in the runner environment.
+- **Reproduction:** Run `TEST_RUN_029` (or `test_adapter.py --discover verification/selftests`) with `TRANSITION_AUTHORIZATION`, `APPROVED_POLICY_SHA256`, and `GITHUB_EVENT_NAME=pull_request` set in the parent process environment.
+- **Root Cause:** `TEST_RUN_009`, `TEST_RUN_010`, `test_fast_lane_with_custom_config`, and `TEST_RUN_020` in `verification/selftests/test_cli.py` invoked `verification/run.py` subprocesses without `env=self._clean_env()`, causing them to inherit host `TRANSITION_AUTHORIZATION` and hit the missing `--event-name` guard before reaching their intended assertions.
+- **Regression Test Reference:** `verification/selftests/test_cli.py::test_cli_isolated_tests_retain_behavior_under_active_transition_env_TEST_RUN_029`
+- **Pre-Fix RED Result:** `AssertionError: 'Alternate configuration not approved for candidate lane' not found in "Error: Explicit --event-name ('pull_request' or 'push') is required for authoritative transition verification."`
+- **Post-Fix GREEN Result:** `PASS: TEST_RUN_009, TEST_RUN_010, test_fast_lane_with_custom_config, TEST_RUN_020, and TEST_RUN_029 pass with isolated self._clean_env() even when parent process holds active transition authorization variables`
+- **Generalization Decision:** `true`
+- **Review Status:** `RESOLVED`

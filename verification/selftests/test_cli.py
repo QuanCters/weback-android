@@ -21,7 +21,7 @@ class TestCliRunner(unittest.TestCase):
         self.assertIn("--check", res.stdout)
 
     def test_candidate_partial_check_prohibited_TEST_RUN_009(self):
-        res = subprocess.run([sys.executable, "verification/run.py", "--lane", "candidate", "--check", "c1"], capture_output=True, text=True)
+        res = subprocess.run([sys.executable, "verification/run.py", "--lane", "candidate", "--check", "c1"], capture_output=True, text=True, env=self._clean_env())
         self.assertEqual(res.returncode, 2)
         self.assertIn("Partial check execution is prohibited in candidate lane", res.stderr)
 
@@ -29,7 +29,7 @@ class TestCliRunner(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "alt.json"
             p.write_text('{"checks": [{"id": "c1", "argv": ["python3"], "required": true, "timeout_seconds": 5}]}')
-            res = subprocess.run([sys.executable, "verification/run.py", "--lane", "candidate", "--config", str(p)], capture_output=True, text=True)
+            res = subprocess.run([sys.executable, "verification/run.py", "--lane", "candidate", "--config", str(p)], capture_output=True, text=True, env=self._clean_env())
             self.assertEqual(res.returncode, 2)
             self.assertIn("Alternate configuration not approved for candidate lane", res.stderr)
 
@@ -45,7 +45,8 @@ class TestCliRunner(unittest.TestCase):
             res = subprocess.run(
                 [sys.executable, "verification/run.py", "--lane", "fast", "--config", str(p), "--output-dir", str(out_dir)],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertIn("PASS", res.stdout)
@@ -92,7 +93,8 @@ class TestCliRunner(unittest.TestCase):
             res = subprocess.run(
                 [sys.executable, "verification/run.py", "--lane", "fast", "--config", str(p), "--output-dir", str(out_dir), "--run-id", "my-run-123"],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertTrue((out_dir / "my-run-123" / "report.json").is_file())
@@ -101,7 +103,8 @@ class TestCliRunner(unittest.TestCase):
             res_bad = subprocess.run(
                 [sys.executable, "verification/run.py", "--lane", "fast", "--config", str(p), "--output-dir", str(out_dir), "--run-id", "../../escaped"],
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._clean_env()
             )
             self.assertEqual(res_bad.returncode, 2)
             self.assertIn("Invalid run-id format", res_bad.stderr)
@@ -309,6 +312,25 @@ class TestCliRunner(unittest.TestCase):
                 )
                 self.assertEqual(res.returncode, 0, f"stderr: {res.stderr}\nstdout: {res.stdout}")
                 self.assertIn("Verdict: PASS", res.stdout)
+
+    def test_cli_isolated_tests_retain_behavior_under_active_transition_env_TEST_RUN_029(self):
+        """Isolated CLI tests retain intended behavior even when parent process holds active transition env vars."""
+        from unittest.mock import patch
+        active_env = {
+            "APPROVED_POLICY_SHA256": "4a004ac8d07178c4164193d827983dfa5a7d86c5245fbcb6df69497e976137fd",
+            "TRANSITION_AUTHORIZATION": json.dumps({
+                "candidate_sha": "a" * 40,
+                "target_base_sha": "b" * 40,
+                "candidate_tree_sha": "c" * 40,
+                "canonical_policy_sha256": "d" * 64,
+                "required_checks": ["spec-hygiene", "harness-selftests"]
+            }),
+            "GITHUB_EVENT_NAME": "pull_request"
+        }
+        with patch.dict(os.environ, active_env, clear=False):
+            self.test_candidate_partial_check_prohibited_TEST_RUN_009()
+            self.test_candidate_alternate_config_prohibited_TEST_RUN_010()
+            self.test_fast_lane_with_custom_config()
 
 
 if __name__ == "__main__":
