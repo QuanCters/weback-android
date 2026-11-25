@@ -95,7 +95,7 @@
     {
       "ac_id": "AC-303.1",
       "requirement_id": "REQ-AUTH-303",
-      "description": "SessionStateMachine and SessionCoordinator model mutually exclusive states using single-flight Mutex and short-held commitLock without holding locks across network I/O or backoff delays.",
+      "description": "SessionStateMachine and SessionCoordinator model mutually exclusive states using single-flight Mutex, short-held commitLock, and serialized persistence boundary without holding locks across network I/O or backoff delays.",
       "validation_test_id": "TEST-AUTH-304",
       "test_oracle": "TEST-AUTH-304: Concurrent coroutine signIn tests assert single gateway dispatch and deterministic non-blocking FSM transitions.",
       "implementation_task": "Task 1, Task 3",
@@ -105,9 +105,9 @@
     {
       "ac_id": "AC-303.2",
       "requirement_id": "REQ-AUTH-303",
-      "description": "Exact serialization/commit contract requires TokenStore.save() before durable Authenticated and increments sessionEpoch, closes WS, clears caches/device selection/telemetry, and checks TokenStore.clear() before durable logout.",
+      "description": "Serialized persistence contract (persistenceMutex + epoch-fenced store ops) requires TokenStore.save() before durable Authenticated, clears caches/WS/storage under NonCancellable cleanup on signOut, rejects failed-clear durable logout, and blocks failed-logout restart resurrection.",
       "validation_test_id": "TEST-AUTH-304",
-      "test_oracle": "TEST-AUTH-304: Fault-injected TokenStore save/clear failure tests confirm zero false durable persistence or logout success claims and atomic state/cache teardown.",
+      "test_oracle": "TEST-AUTH-304: Fault-injected TokenStore save/clear failure, cancellation, and post-failed-logout restart simulation tests verify durable commit ordering.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
       "status": "PLANNED"
@@ -125,7 +125,7 @@
     {
       "ac_id": "AC-304.1",
       "requirement_id": "REQ-AUTH-304",
-      "description": "TokenExpiryPolicy evaluates 80% proactive renewal and 100% expiration via overflow-safe Long MonotonicClock math, enforces immediate pre-send expiry checks, and fails closed on in-flight expiration.",
+      "description": "TokenExpiryPolicy evaluates 80% proactive renewal and 100% expiration via AuthMonotonicClock (SystemClock.elapsedRealtime()) and checked Long arithmetic (sub/add/mul), enforces immediate pre-send and post-response expiry checks, and fails closed on overflow or invalid values.",
       "validation_test_id": "TEST-AUTH-305",
       "test_oracle": "TEST-AUTH-305, TEST-AUTH-310: Boundary table (2880000ms vs 2880001ms, 3599999ms vs 3600000ms), Long overflow checks, pre-send block, and in-flight expiry discard tests pass.",
       "implementation_task": "Task 1, Task 3",
@@ -265,9 +265,9 @@
     {
       "ac_id": "AC-308.3",
       "requirement_id": "REQ-CONN-308",
-      "description": "HTTP 401/403/3xx WS upgrade rejection stops reconnects immediately and triggers epoch-checked invalidation; idempotent close() blocks post-close mutations.",
+      "description": "HTTP 401/403/3xx WS upgrade rejection OR session expiry/invalidation while already connected stops outbound activity and telemetry, cancels reconnects, closes socket, and triggers epoch-checked invalidation; idempotent close() blocks post-close mutations.",
       "validation_test_id": "TEST-CONN-305",
-      "test_oracle": "TEST-CONN-305: 401/403/302 handshake test verifies 0 reconnect retries and auth callback; close race test proves zero post-close mutation.",
+      "test_oracle": "TEST-CONN-305: 401/403/302 handshake and connected-socket expiry tests verify 0 reconnect retries, stopped telemetry/outbound sends, and auth callback; close race test proves zero post-close mutation.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
       "status": "PLANNED"

@@ -1,6 +1,6 @@
 # FCT-003 Implementation Plan — Authentication, Device Inventory & Connectivity Readiness
 
-> **Gate Boundary:** This specification baseline targets **Gate G3 (Implementation Readiness)** ONLY. **DO NOT execute any code implementation task (`Task 1`–`Task 6`) inside `spec/fct-003-authentication-connectivity`.** Implementation requires formal Product Owner + Lead Maintainer approval (`T4` milestone sign-off), isolated implementation branch creation from updated `main`, and Lead Maintainer confirmation of dependency pinning (`OkHttp 4.12.0`, `MockWebServer 4.12.0`, `kotlinx-serialization-json 1.7.3`).
+> **Gate Boundary (Updated Per PO & Lead Maintainer G3 Decision):** Specification PR #7 is approved subject to bounded clarifications `IC-301`–`IC-304`. After squash-merging PR #7 onto `main`, execute `Task 1`–`Task 6` ONLY on isolated branch `feature/fct-003-authentication-connectivity` using pinned dependencies (`OkHttp 4.12.0`, `MockWebServer 4.12.0` test-only, `kotlinx-serialization-json 1.7.3`, Kotlin serialization compiler plugin `2.1.21`, and pinned instrumentation test runner deps). Keep production connectivity disabled, `AndroidManifest.xml` `INTERNET`-free, and implementation merge gated for human review.
 
 **Goal:** Deliver `T4` clean-room authentication, endpoint trust & redirect isolation, single-flight `sessionEpoch` ownership, dual-clock token expiry/restart/reboot/rollback semantics, finalized Android Keystore AES-256-GCM storage (without `EncryptedSharedPreferences` or software fallbacks), deny-by-default logging, and `T3` `user_thing_list_get` device inventory, RE-grounded `sub_type` capability filtering, generation-fenced WebSocket transport, and hermetic Offline + loopback `MockWebServer` adapters under zero live network access.
 
@@ -11,10 +11,10 @@
 ---
 
 ## Global Pre-Implementation Constraints
-- **Gate G3 Hard Stop:** Stop after PR update and verification of this specification; await explicit human G3 approval before Task 1 begins.
+- **Isolated Implementation Branch:** Squash-merge `spec/fct-003-authentication-connectivity` via `--match-head-commit` first, then implement strictly inside `feature/fct-003-authentication-connectivity`.
 - **Zero Policy/Harness Edits (`POL-INT-01`):** Keep `policies/checks.json` (7 checks), `verification/`, and `.github/workflows/` untouched. Keep `android.permission.INTERNET` excluded from `AndroidManifest.xml` throughout `FCT-003` offline verification (`apk_validator.py`).
 - **Zero Plaintext Password Storage / Zero Legacy MD5 Wire Encoding / Zero `EncryptedSharedPreferences` / Zero Runtime Software-Key Fallback (`C-010`):** Strict TDD verification across `T4` security modules.
-- **Zero Live Network or Production Secrets (`C-006`, `C-010`):** All unit/contract tests execute deterministically against in-process fixtures and loopback `okhttp3.mockwebserver.MockWebServer` with destination IP verification.
+- **Zero Live Network or Production Secrets (`C-006`, `C-010`):** All unit/contract tests execute deterministically against in-process fixtures and loopback `okhttp3.mockwebserver.MockWebServer` with `Proxy.NO_PROXY` + destination IP loopback verification.
 
 ---
 
@@ -44,7 +44,7 @@
 ### Task 2: T4 Security Enclave — Endpoint Trust, Keystore AES-256-GCM Storage & Deny-by-Default Logging (`security`)
 
 **Files:**
-- Modify (Pre-approved dependency update): `gradle/libs.versions.toml`, `app/build.gradle.kts` (pin `kotlinx-serialization-json:1.7.3` + `kotlin.plugin.serialization:2.1.21` per [specs/tech-stack.md](../../tech-stack.md))
+- Modify (Pre-approved dependency update): `gradle/libs.versions.toml`, `app/build.gradle.kts` (pin `kotlinx-serialization-json:1.7.3` + `kotlin.plugin.serialization:2.1.21` + pinned instrumentation runner deps per [specs/tech-stack.md](../../tech-stack.md) & `IC-304`)
 - Create: `app/src/main/java/com/weback/robot/security/EndpointTrustPolicy.kt`
 - Create: `app/src/main/java/com/weback/robot/security/UriValidator.kt`
 - Create: `app/src/main/java/com/weback/robot/security/TokenStore.kt`
@@ -62,7 +62,7 @@
 **Covers:** `REQ-AUTH-301` (`AC-301.1..3`), `REQ-AUTH-305` (`AC-305.1..4`).
 
 - [ ] **Step 1 (TDD RED):** Write tests verifying: exact origin trust authorization (`ProductionEndpointTrustPolicy` disabled in FCT-003; `TestLoopbackTrustPolicy` rejects non-loopback/external DNS/IP, userinfo, credential query params, scheme downgrade); cipher-generated 12B IVs, 128-bit GCM tag, canonical AAD, `[29..16_384]` size bounds, atomic temp-write-replace in `noBackupFilesDir`, fail-closed wipe/cleanup on bit-flip/version/AAD/truncation/oversize/missing-key/`KeyPermanentlyInvalidatedException`/bad post-decrypt JSON, explicit `save()`/`clear()` failure handling, mutable buffer cleanup, zero `EncryptedSharedPreferences`/`setDefaultSSLSocketFactory`/trust-all TLS/software-key fallback; allowlisted `DiagnosticLogger` + `SecretRedactor` coverage of case-insensitive headers, opaque tokens, `eyJ...` JWTs, nested/malformed JSON, URL-encoded secrets, and exception chains. Observe RED failures.
-- [ ] **Step 2 (GREEN):** Implement `EndpointTrustPolicy`, `UriValidator`, `KeystoreAeadTokenStore` (ADR-003), `DiagnosticLogger`, `SecretRedactor`, and `PasswordDigestStrategy` (`Utf8TlsDefault` only). Author `KeystoreHardwareSecurityLevelTest` (`KeyInfo.getSecurityLevel()`) for authorized physical Android >= 12 device runs.
+- [ ] **Step 2 (GREEN):** Implement `EndpointTrustPolicy`, `UriValidator`, `KeystoreAeadTokenStore` (ADR-003), `DiagnosticLogger`, `SecretRedactor`, and `PasswordDigestStrategy` (`Utf8TlsDefault` only). Author `KeystoreHardwareSecurityLevelTest` (`KeyInfo.getSecurityLevel()`) with an isolated test Keystore alias and storage namespace for authorized physical Android >= 12 device runs, and verify `./gradlew assembleDebugAndroidTest` compiles cleanly.
 - [ ] **Step 3 (Verify):** Run `./gradlew testDebugUnitTest --tests "com.weback.robot.security.*"`.
 
 ---
