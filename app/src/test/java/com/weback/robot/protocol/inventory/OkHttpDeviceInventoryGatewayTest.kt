@@ -102,6 +102,24 @@ class OkHttpDeviceInventoryGatewayTest {
             val expiredRes = gateway.fetchThings(session) as InventoryFetchResult.Failure
             assertEquals(ConnectivityError.TokenExpired, expiredRes.error)
             assertEquals(3, server.requestCount)
+
+            // Post-response expiry check: token is valid before send, expires while HTTP response is in flight
+            nowMs = 3_599_000L
+            server.enqueue(
+                MockResponse().setResponseCode(200).setBody("""{"code":1,"data":{"thing_list":[]}}""").apply {
+                    setBodyDelay(50, java.util.concurrent.TimeUnit.MILLISECONDS)
+                }
+            )
+            val tickingClock = object : AuthMonotonicClock {
+                private var calls = 0
+                override fun elapsedRealtimeMs(): Long {
+                    calls++
+                    return if (calls <= 2) 3_599_000L else 3_600_000L
+                }
+            }
+            val inFlightGateway = OkHttpDeviceInventoryGateway(trustPolicy = trustPolicy, authClock = tickingClock)
+            val inFlightExpired = inFlightGateway.fetchThings(session) as InventoryFetchResult.Failure
+            assertEquals(ConnectivityError.TokenExpired, inFlightExpired.error)
         } finally {
             server.shutdown()
         }

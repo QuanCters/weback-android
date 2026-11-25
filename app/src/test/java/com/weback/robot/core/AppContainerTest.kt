@@ -25,6 +25,11 @@ class AppContainerTest {
         assertNotNull(container.robotTransport)
         assertNotNull(container.dispatcherProvider)
         assertNotNull(container.clock)
+        assertNotNull(container.sessionCoordinator)
+        assertNotNull(container.inventoryRepository)
+        assertNotNull(container.realtimeTransport)
+        assertNotNull(container.endpointTrustPolicy)
+        assertNotNull(container.diagnosticLogger)
 
         val transport1 = container.robotTransport
         val transport2 = container.robotTransport

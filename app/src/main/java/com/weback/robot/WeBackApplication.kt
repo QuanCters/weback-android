@@ -10,7 +10,7 @@ class WeBackApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container = DefaultAppContainer()
+        container = DefaultAppContainer(context = applicationContext)
     }
 
     override fun onTerminate() {
