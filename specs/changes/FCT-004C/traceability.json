@@ -1,0 +1,169 @@
+{
+  "change_id": "FCT-004C",
+  "milestone": "FCT-004C",
+  "title": "Controlled Live Authentication & Single-Inventory Pilot",
+  "risk_tier": "T4",
+  "requirements": [
+    {
+      "requirement_id": "REQ-PILOT-461",
+      "title": "Human-Triggered External Live-Pilot Authorization",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-461.1",
+          "description": "Signed PilotExternalApproval record required for gate activation.",
+          "task_id": "Task 1",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-461",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-461.2",
+          "description": "Authorization context held in volatile memory; default offline startup.",
+          "task_id": "Task 1",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-461",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-462",
+      "title": "Human-Operated In-Memory Credential Entry & Screen Protection",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-462.1",
+          "description": "FLAG_SECURE enforced on credential entry window.",
+          "task_id": "Task 2",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-462",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-462.2",
+          "description": "Password held in zeroizable EphemeralPasswordBuffer; zero disk persistence.",
+          "task_id": "Task 2",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-462",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-463",
+      "title": "Evidence-Grounded Wire Login Envelope & Parameter Validation",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-463.1",
+          "description": "Login payload matches verified wire schema header and payload.",
+          "task_id": "Task 3",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-463",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-463.2",
+          "description": "PilotHttpOperationGuard rejects extra top-level keys fail-closed.",
+          "task_id": "Task 3",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-463",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-464",
+      "title": "Single Login Budget, Anti-Retry & CAPTCHA Fail-Closed Boundary",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-464.1",
+          "description": "Exactly ONE login request permitted per admission ticket.",
+          "task_id": "Task 4",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-464",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-464.2",
+          "description": "Fails closed on captcha response; zero automated CAPTCHA solving or MD5 fallback.",
+          "task_id": "Task 4",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-464",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-465",
+      "title": "Trusted Authentication Origin & Dynamic Endpoint Quarantine",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-465.1",
+          "description": "Requests routed strictly to approved region endpoint over TLS 1.3/1.2.",
+          "task_id": "Task 5",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-465",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-465.2",
+          "description": "Newly observed REST and WSS origins placed in quarantine for review.",
+          "task_id": "Task 5",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-465",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-466",
+      "title": "Single Read-Only Inventory Query & Exact Target Robot Matching",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-466.1",
+          "description": "Exactly ONE inventory query permitted; mutation verbs rejected.",
+          "task_id": "Task 6",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-466",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-466.2",
+          "description": "Inventory filtered to verify target robot thing_name and capability.",
+          "task_id": "Task 6",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-466",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-467",
+      "title": "Monotonic Window Expiry & Complete Fail-Closed Teardown",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-467.1",
+          "description": "Monotonic deadline expiry triggers full 9-step fail-closed cleanup.",
+          "task_id": "Task 7",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-467",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-467.2",
+          "description": "Outbound robot commands strictly prohibited across all layers.",
+          "task_id": "Task 7",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-467",
+          "status": "PLANNED"
+        }
+      ]
+    }
+  ]
+}
