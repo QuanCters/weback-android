@@ -668,6 +668,28 @@ class PilotAuthorizationGate(
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "Candidate commit SHA or APK SHA-256 format invalid"
         }
+        if (context.environment == PilotEnvironment.LIVE_PILOT &&
+            (context.candidateIdentity.candidateCommitSha == ZERO_40_HEX ||
+                context.candidateIdentity.apkSha256 == ZERO_64_HEX)
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Placeholder all-zero candidate SHA or APK SHA-256 rejected"
+        }
+        if (context.environment == PilotEnvironment.LIVE_PILOT &&
+            listOf(
+                context.authorizationId,
+                approval.approvedByProductOwner,
+                approval.approvedByLeadMaintainer,
+                approval.externalRecordRef,
+                context.accountScope.authorizedAccountIdentifier,
+                context.accountScope.authorizedAccountAlias,
+                context.targetDevice.expectedTargetThingName,
+                context.targetDevice.redactedTag
+            ).any { isPlaceholderOrMockToken(it) }
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Placeholder or synthetic mock authorization values rejected on LIVE_PILOT"
+        }
         if (expectedRuntimeIdentity != null && context.candidateIdentity != expectedRuntimeIdentity) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "Candidate commit SHA or APK identity mismatch"
@@ -717,6 +739,12 @@ class PilotAuthorizationGate(
                 "Approved auth origin/path or provenance enforcement invalid"
         }
         val strictPort443 = (allowedAuthOrigins == CANONICAL_AUTH_ORIGINS)
+        context.endpointConfig.endpointProvenanceRef?.let { provRef ->
+            if (isPlaceholderOrMockToken(provRef) || provRef.trim().equals("UI_CONFIRMED", ignoreCase = true)) {
+                return PilotAbortReason.UntrustedOriginRejected to
+                    "Endpoint provenance reference is invalid or UI-confirmed"
+            }
+        }
         context.endpointConfig.pinnedApiOrigin?.let { pinnedApi ->
             if (!isValidPinnedOrigin(pinnedApi, expectedScheme = "https", requirePort443 = strictPort443)) {
                 return PilotAbortReason.UntrustedOriginRejected to
@@ -733,8 +761,8 @@ class PilotAuthorizationGate(
         if (b.maxLoginAttempts != PilotRequestBudgets.MAX_LOGIN_ATTEMPTS ||
             b.maxPasswordRetries != PilotRequestBudgets.MAX_PASSWORD_RETRIES ||
             b.maxCaptchaAutomation != PilotRequestBudgets.MAX_CAPTCHA_AUTOMATION ||
-            b.maxInventoryRequests != PilotRequestBudgets.MAX_INVENTORY_REQUESTS ||
-            b.maxInitialWsConnections != PilotRequestBudgets.MAX_INITIAL_WS_CONNECTIONS ||
+            b.maxInventoryRequests !in 0..PilotRequestBudgets.MAX_INVENTORY_REQUESTS ||
+            b.maxInitialWsConnections !in 0..PilotRequestBudgets.MAX_INITIAL_WS_CONNECTIONS ||
             b.maxWsReconnectAttempts !in 0..PilotRequestBudgets.MAX_WS_RECONNECT_ATTEMPTS ||
             b.httpCallTimeoutMs !in 1L..PilotRequestBudgets.MAX_HTTP_CALL_TIMEOUT_MS ||
             b.observationWindowMs !in 1L..PilotRequestBudgets.MAX_OBSERVATION_WINDOW_MS ||
@@ -742,6 +770,25 @@ class PilotAuthorizationGate(
         ) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "Pilot request budgets exceed SEC-404 maximum caps"
+        }
+        val inventoryInScope = PilotOperation.USER_THING_LIST_GET in context.permittedOperations
+        if ((!inventoryInScope && b.maxInventoryRequests != 0) ||
+            (inventoryInScope && b.maxInventoryRequests != PilotRequestBudgets.MAX_INVENTORY_REQUESTS)
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Inventory request budget contradicts permitted_operations"
+        }
+        if (b.maxInitialWsConnections == 0 &&
+            (b.maxWsReconnectAttempts != 0 || PilotOperation.WS_TELEMETRY_OBSERVE in context.permittedOperations)
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Zero-WebSocket pilot budget requires maxWsReconnectAttempts=0 and excludes ws_telemetry_observe"
+        }
+        if (context.isStrictAuthAndInventoryOnly() &&
+            b.observationWindowMs > PilotRequestBudgets.MAX_AUTH_INVENTORY_WINDOW_MS
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "FCT-004C auth/inventory window must not exceed 15 minutes (900000ms)"
         }
         if (context.authorizedAtElapsedMs < 0L ||
             context.observationDeadlineElapsedMs <= context.authorizedAtElapsedMs
@@ -772,7 +819,17 @@ class PilotAuthorizationGate(
         )
         private val HEX_40_REGEX = Regex("^[0-9a-fA-F]{40}$")
         private val HEX_64_REGEX = Regex("^[0-9a-fA-F]{64}$")
+        private val ZERO_40_HEX = "0".repeat(40)
+        private val ZERO_64_HEX = "0".repeat(64)
         private val CALLING_CODE_REGEX = Regex("^(\\+|00)[0-9]{1,4}$")
+
+        internal fun isPlaceholderOrMockToken(raw: String): Boolean {
+            val upper = raw.trim().uppercase()
+            return upper.isEmpty() ||
+                upper.contains("PLACEHOLDER") ||
+                upper.contains("PENDING") ||
+                upper == "SYNTHETIC_MOCK_WORKFLOW_ONLY"
+        }
 
         private fun normalizeTicketUrl(rawUrl: String, operation: PilotOperation): String {
             val uri = runCatching { URI(rawUrl.trim()) }.getOrNull() ?: return rawUrl.trim()

@@ -40,15 +40,25 @@ import com.weback.robot.protocol.ws.ConnectionConfig
 import com.weback.robot.protocol.ws.OfflineFixtureRealtimeTransport
 import com.weback.robot.protocol.ws.OkHttpWebSocketTransport
 import com.weback.robot.protocol.ws.RealtimeSessionTransport
+import com.weback.robot.security.AndroidInstalledApkVerifier
 import com.weback.robot.security.AndroidKeystoreAeadCipherProvider
 import com.weback.robot.security.AuthorizedPilotEndpointTrustPolicy
+import com.weback.robot.security.ConsumeAuthorizationResult
 import com.weback.robot.security.DiagnosticLogger
 import com.weback.robot.security.EndpointTrustPolicy
+import com.weback.robot.security.ExternalPilotAuthorizationLoader
+import com.weback.robot.security.FileBackedProvisionedPilotAuthorizationStore
+import com.weback.robot.security.InMemoryProvisionedPilotAuthorizationStore
+import com.weback.robot.security.InstalledApkVerification
+import com.weback.robot.security.InstalledApkVerifier
 import com.weback.robot.security.KeystoreAeadTokenStore
 import com.weback.robot.security.NoOpDiagnosticLogger
 import com.weback.robot.security.PilotActiveCallRegistry
 import com.weback.robot.security.PilotClientFactory
 import com.weback.robot.security.ProductionEndpointTrustPolicy
+import com.weback.robot.security.ProvisionedActivationPreparation
+import com.weback.robot.security.ProvisionedAuthorizationLoadResult
+import com.weback.robot.security.ProvisionedPilotAuthorizationStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -57,6 +67,19 @@ import com.weback.robot.security.TokenLoadResult
 import com.weback.robot.security.TokenSaveResult
 import com.weback.robot.security.TokenStore
 import java.io.File
+
+data class PilotContainerTestHooks(
+    val routerOverride: RegionEndpointRouter? = null,
+    val trustPolicyOverride: AuthorizedPilotEndpointTrustPolicy? = null,
+    val gatewayTrustPolicyOverride: EndpointTrustPolicy? = null,
+    val allowedAuthOriginsOverride: Set<String>? = null,
+    val expectedRuntimeIdentityOverride: ExpectedCandidateIdentity? = null,
+    val runtimeAppIdentityOverride: RuntimeAppIdentity? = null,
+    val enableUiCountdownTicker: Boolean = false,
+    val installedApkVerificationOverride: InstalledApkVerification? = null,
+    val provisionedAuthStoreOverride: ProvisionedPilotAuthorizationStore? = null,
+    val allowUnsupportedInstalledApkForHostTests: Boolean = false
+)
 
 /**
  * Manual dependency container owning transport, session, inventory, security, dispatcher, and clock lifecycles.
@@ -75,7 +98,15 @@ interface AppContainer : AutoCloseable {
     val pilotSessionController: PilotSessionController
     val offlineMockAuthorizationGate: PilotAuthorizationGate
     val offlineMockPilotController: PilotSessionController
-    fun startOfflineMockPilot(): GateActivationResult
+    val isLivePilotSupported: Boolean
+        get() = BuildConfig.PILOT_INTERNET_CAPABLE
+    fun startOfflineMockPilot(
+        observationWindowMs: Long = PilotRequestBudgets.MAX_OBSERVATION_WINDOW_MS
+    ): GateActivationResult
+    fun loadProvisionedLiveAuthorization(): ProvisionedAuthorizationLoadResult =
+        ProvisionedAuthorizationLoadResult.Missing("Live pilot authorization is not configured")
+    fun activateLivePilot(expectedRecordSha256: String): GateActivationResult =
+        GateActivationResult.Rejected(PilotAbortReason.AuthorizationExpiredOrInvalid, "Live pilot not implemented")
     override fun close() {}
 }
 
@@ -90,7 +121,8 @@ class DefaultAppContainer(
     override val diagnosticLogger: DiagnosticLogger = NoOpDiagnosticLogger,
     private val authGatewayOverride: AuthGateway? = null,
     private val inventoryGatewayOverride: DeviceInventoryGateway? = null,
-    private val realtimeTransportOverride: RealtimeSessionTransport? = null
+    private val realtimeTransportOverride: RealtimeSessionTransport? = null,
+    private val pilotTestHooks: PilotContainerTestHooks? = null
 ) : AppContainer {
 
     private val timeProvider: BootSessionTimeProvider by lazy {
@@ -167,12 +199,14 @@ class DefaultAppContainer(
 
     override val pilotAuthorizationGate: PilotAuthorizationGate by lazy {
         PilotAuthorizationGate(
+            allowedAuthOrigins = pilotTestHooks?.allowedAuthOriginsOverride
+                ?: PilotAuthorizationGate.CANONICAL_AUTH_ORIGINS,
             clock = PilotClock { authClock.elapsedRealtimeMs() }
         )
     }
 
     private val pilotEndpointTrustPolicy: AuthorizedPilotEndpointTrustPolicy by lazy {
-        AuthorizedPilotEndpointTrustPolicy(
+        pilotTestHooks?.trustPolicyOverride ?: AuthorizedPilotEndpointTrustPolicy(
             endpointConfig = PilotEndpointConfig(
                 approvedAuthOrigin = "https://user.grit-cloud.com:443",
                 approvedAuthPath = "/prod/oauth",
@@ -180,6 +214,10 @@ class DefaultAppContainer(
             ),
             allowLoopbackForHermeticTests = false
         )
+    }
+
+    private val pilotGatewayTrustPolicy: EndpointTrustPolicy by lazy {
+        pilotTestHooks?.gatewayTrustPolicyOverride ?: pilotEndpointTrustPolicy
     }
 
     private val pilotActiveCallRegistry: PilotActiveCallRegistry by lazy {
@@ -201,8 +239,8 @@ class DefaultAppContainer(
 
     private val restrictedPilotAuth: PilotCapabilityRestrictedAuthGateway by lazy {
         PilotCapabilityRestrictedAuthGateway(
-            router = RegionEndpointRouter(),
-            trustPolicy = pilotEndpointTrustPolicy,
+            router = pilotTestHooks?.routerOverride ?: RegionEndpointRouter(),
+            trustPolicy = pilotGatewayTrustPolicy,
             authClock = authClock,
             logger = diagnosticLogger,
             dispatchers = dispatcherProvider,
@@ -216,7 +254,7 @@ class DefaultAppContainer(
     private val restrictedPilotInventory: PilotCapabilityRestrictedInventoryGateway by lazy {
         PilotCapabilityRestrictedInventoryGateway(
             delegate = OkHttpDeviceInventoryGateway(
-                trustPolicy = pilotEndpointTrustPolicy,
+                trustPolicy = pilotGatewayTrustPolicy,
                 authClock = authClock,
                 dispatchers = dispatcherProvider,
                 logger = diagnosticLogger,
@@ -258,7 +296,7 @@ class DefaultAppContainer(
 
     private val pilotWsDelegate: OkHttpWebSocketTransport by lazy {
         OkHttpWebSocketTransport(
-            trustPolicy = pilotEndpointTrustPolicy,
+            trustPolicy = pilotGatewayTrustPolicy,
             authClock = authClock,
             dispatchers = dispatcherProvider,
             connectionConfig = ConnectionConfig(reconnectDelayMs = 4_000L, maxReconnectAttempts = 3),
@@ -289,7 +327,7 @@ class DefaultAppContainer(
     override val pilotSessionController: PilotSessionController by lazy {
         PilotSessionController(
             gate = pilotAuthorizationGate,
-            expectedRuntimeIdentity = null,
+            expectedRuntimeIdentity = pilotTestHooks?.expectedRuntimeIdentityOverride,
             trustPolicy = pilotEndpointTrustPolicy,
             sessionCoordinator = pilotSessionCoordinator,
             inventoryRepository = pilotInventoryRepository,
@@ -302,7 +340,13 @@ class DefaultAppContainer(
             activeCallRegistry = pilotActiveCallRegistry,
             scope = pilotScope,
             ownsScope = true,
-            runtimeAppIdentity = runtimeLiveIdentity
+            modeLabel = if (isLivePilotSupported) {
+                "PILOT BUILD (${BuildConfig.APPLICATION_ID}) — CONTROLLED AUTH & SINGLE INVENTORY (ZERO WS)"
+            } else {
+                "OFFLINE_BUILD_LIVE_PILOT_DISABLED"
+            },
+            enableUiCountdownTicker = pilotTestHooks?.enableUiCountdownTicker ?: true,
+            runtimeAppIdentity = pilotTestHooks?.runtimeAppIdentityOverride ?: runtimeLiveIdentity
         )
     }
 
@@ -401,7 +445,22 @@ class DefaultAppContainer(
         )
     }
 
-    override fun startOfflineMockPilot(): GateActivationResult {
+    override fun startOfflineMockPilot(observationWindowMs: Long): GateActivationResult {
+        if (pilotAuthorizationGate.isAuthorized ||
+            pilotAuthorizationGate.hasInFlightOrIncompleteCleanup() ||
+            pilotSessionController.isOperationInFlight.value
+        ) {
+            return GateActivationResult.Rejected(
+                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                "Cannot switch to offline mock pilot while live session or cleanup is unresolved"
+            )
+        }
+        if (observationWindowMs !in 1L..PilotRequestBudgets.MAX_OBSERVATION_WINDOW_MS) {
+            return GateActivationResult.Rejected(
+                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                "Mock pilot observation window must be between 1 ms and 30 minutes (1800000 ms)"
+            )
+        }
         val nowMs = authClock.elapsedRealtimeMs()
         val seq = ++mockActivationSeq
         val ctx = PilotAuthorizationContext(
@@ -432,9 +491,9 @@ class DefaultAppContainer(
             ),
             readOnlyMode = true,
             physicalRobotCommandsPermitted = false,
-            budgets = PilotRequestBudgets(),
+            budgets = PilotRequestBudgets(observationWindowMs = observationWindowMs),
             authorizedAtElapsedMs = nowMs,
-            observationDeadlineElapsedMs = nowMs + PilotRequestBudgets.MAX_OBSERVATION_WINDOW_MS,
+            observationDeadlineElapsedMs = nowMs + observationWindowMs,
             externalApproval = PilotExternalApproval(
                 approvedByProductOwner = "SYNTHETIC_MOCK_WORKFLOW_ONLY",
                 approvedByLeadMaintainer = "SYNTHETIC_MOCK_WORKFLOW_ONLY",
@@ -444,6 +503,106 @@ class DefaultAppContainer(
             environment = PilotEnvironment.OFFLINE_MOCK_FIXTURE
         )
         return offlineMockPilotController.activatePilot(ctx)
+    }
+
+    private val provisionedAuthStore: ProvisionedPilotAuthorizationStore by lazy {
+        pilotTestHooks?.provisionedAuthStoreOverride ?: context?.let { appCtx ->
+            FileBackedProvisionedPilotAuthorizationStore(
+                File(
+                    appCtx.noBackupFilesDir,
+                    FileBackedProvisionedPilotAuthorizationStore.DIRECTORY_NAME
+                )
+            )
+        } ?: InMemoryProvisionedPilotAuthorizationStore()
+    }
+
+    private val installedApkVerifier: InstalledApkVerifier by lazy {
+        val override = pilotTestHooks?.installedApkVerificationOverride
+        when {
+            override != null -> InstalledApkVerifier { override }
+            context != null -> AndroidInstalledApkVerifier(context)
+            else -> InstalledApkVerifier {
+                InstalledApkVerification(
+                    supported = false,
+                    actualApkSha256 = null,
+                    detail = "UNSUPPORTED_NO_ANDROID_CONTEXT"
+                )
+            }
+        }
+    }
+
+    private val liveActivationLock = Any()
+
+    override fun loadProvisionedLiveAuthorization(): ProvisionedAuthorizationLoadResult {
+        if (!isLivePilotSupported) {
+            return ProvisionedAuthorizationLoadResult.Invalid("Live pilot authorization is disabled on offline build")
+        }
+        return ExternalPilotAuthorizationLoader.loadForReview(
+            store = provisionedAuthStore,
+            runtimeAppIdentity = pilotTestHooks?.runtimeAppIdentityOverride ?: runtimeLiveIdentity,
+            expectedRuntimeIdentity = pilotTestHooks?.expectedRuntimeIdentityOverride,
+            installedApkVerifier = installedApkVerifier,
+            allowedAuthOrigins = pilotTestHooks?.allowedAuthOriginsOverride
+                ?: PilotAuthorizationGate.CANONICAL_AUTH_ORIGINS,
+            allowUnsupportedInstalledApk = pilotTestHooks?.allowUnsupportedInstalledApkForHostTests ?: false
+        )
+    }
+
+    override fun activateLivePilot(expectedRecordSha256: String): GateActivationResult {
+        if (!isLivePilotSupported) {
+            return GateActivationResult.Rejected(
+                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                "Live pilot authorization is disabled on offline build"
+            )
+        }
+        return synchronized(liveActivationLock) {
+            val nowMs = authClock.elapsedRealtimeMs()
+            val prep = ExternalPilotAuthorizationLoader.prepareActivation(
+                store = provisionedAuthStore,
+                expectedRecordSha256 = expectedRecordSha256,
+                runtimeAppIdentity = pilotTestHooks?.runtimeAppIdentityOverride ?: runtimeLiveIdentity,
+                expectedRuntimeIdentity = pilotTestHooks?.expectedRuntimeIdentityOverride,
+                installedApkVerifier = installedApkVerifier,
+                allowedAuthOrigins = pilotTestHooks?.allowedAuthOriginsOverride
+                    ?: PilotAuthorizationGate.CANONICAL_AUTH_ORIGINS,
+                nowElapsedMs = nowMs,
+                allowUnsupportedInstalledApk = pilotTestHooks?.allowUnsupportedInstalledApkForHostTests ?: false
+            )
+            when (prep) {
+                is ProvisionedActivationPreparation.Rejected ->
+                    GateActivationResult.Rejected(prep.reason, prep.safeMessage)
+                is ProvisionedActivationPreparation.Ready -> {
+                    when (
+                        val consumeRes = provisionedAuthStore.reserveAndConsume(
+                            authorizationId = prep.context.authorizationId,
+                            recordSha256 = prep.recordSha256
+                        )
+                    ) {
+                        is ConsumeAuthorizationResult.AlreadyConsumed ->
+                            GateActivationResult.Rejected(
+                                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                                consumeRes.safeMessage
+                            )
+                        is ConsumeAuthorizationResult.Failed ->
+                            GateActivationResult.Rejected(
+                                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                                consumeRes.safeMessage
+                            )
+                        is ConsumeAuthorizationResult.Consumed -> {
+                            if (!consumeRes.pendingRecordDeleted) {
+                                GateActivationResult.Rejected(
+                                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                                    consumeRes.warningMessage
+                                        ?: "Durable consumption succeeded, but pending approval record deletion failed"
+                                )
+                            } else {
+                                pilotSessionController.activatePilot(prep.context)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun close() {

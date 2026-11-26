@@ -53,6 +53,8 @@ import com.weback.robot.domain.pilot.ObservedOriginSummary
 import com.weback.robot.domain.pilot.PilotAbortReason
 import com.weback.robot.domain.pilot.PilotEmergencyDisconnectResult
 import com.weback.robot.domain.pilot.PilotModeState
+import com.weback.robot.domain.pilot.TargetInventorySummary
+import com.weback.robot.security.ProvisionedAuthorizationLoadResult
 import java.util.Arrays
 
 /**
@@ -110,7 +112,16 @@ data class PilotSheetUiState(
     val inventoryState: InventoryState,
     val selectedDevice: DeviceInventoryItem?,
     val lastAbortReason: PilotAbortReason?,
-    val lastDisconnectResult: PilotEmergencyDisconnectResult?
+    val lastDisconnectResult: PilotEmergencyDisconnectResult?,
+    val isLivePilotSupported: Boolean = false,
+    val isLiveWorkflowActive: Boolean = false,
+    val showLiveAuthReview: Boolean = false,
+    val provisionedAuthLoadResult: ProvisionedAuthorizationLoadResult? = null,
+    val liveAuthValidationError: String? = null,
+    val isLiveOperationInFlight: Boolean = false,
+    val hasUnresolvedLiveSession: Boolean = false,
+    val liveLifecycleNotice: String? = null,
+    val targetInventorySummary: TargetInventorySummary? = null
 )
 
 @Composable
@@ -124,36 +135,63 @@ fun PilotReadinessSheet(
     onEmergencyDisconnect: () -> Unit,
     onDismissSheet: () -> Unit,
     modifier: Modifier = Modifier,
-    onStartMockPilot: (() -> Unit)? = null
+    onStartMockPilot: (() -> Unit)? = null,
+    onStartShortMockPilot: (() -> Unit)? = null,
+    onOpenLiveAuthReview: (() -> Unit)? = null,
+    onCancelLiveAuthReview: (() -> Unit)? = null,
+    onRefreshProvisionedAuth: (() -> Unit)? = null,
+    onActivateLivePilot: ((String) -> Unit)? = null,
+    onFetchTargetInventory: (() -> Unit)? = null
 ) {
     var regionInput by remember { mutableStateOf("") }
     var accountInput by remember { mutableStateOf("") }
     var bufferVersion by remember { mutableIntStateOf(0) }
 
+    var expectedRecordSha256Input by remember { mutableStateOf("") }
+
+    fun clearLiveAuthInputs() {
+        expectedRecordSha256Input = ""
+    }
+
     val isCredentialEntryVisible = state.modeState is PilotModeState.AuthorizedReady
+    val shouldProtectWindow = isCredentialEntryVisible ||
+        (state.isLivePilotSupported && state.showLiveAuthReview) ||
+        (state.isLiveWorkflowActive && (
+            state.modeState is PilotModeState.AuthenticatedInventoryReady ||
+                state.modeState is PilotModeState.InventoryVerified ||
+                state.isLiveOperationInFlight
+            ))
     val view = LocalView.current
 
-    // Wipe mutable credential buffer automatically on error/abort state (`SEC-406`)
+    // Wipe mutable credential buffer and volatile inputs automatically on error/abort/reset (`SEC-406`, `SEC-466`)
     LaunchedEffect(state.modeState) {
         if (state.modeState is PilotModeState.Aborted || state.modeState is PilotModeState.OfflineDefault) {
             passwordBuffer.wipe()
+            regionInput = ""
+            accountInput = ""
             bufferVersion++
+        }
+        if (state.modeState is PilotModeState.AuthorizedReady) {
+            clearLiveAuthInputs()
         }
     }
 
-    // Apply FLAG_SECURE screenshot prevention to Dialog window (ModalBottomSheet) or Activity window
-    DisposableEffect(view, isCredentialEntryVisible) {
+    // Apply FLAG_SECURE screenshot prevention during sensitive authorization review and credential entry
+    DisposableEffect(view, shouldProtectWindow) {
         val dialogWindow = view.findDialogWindow()
         val activityWindow = view.context.findActivity()?.window
         val targetWindows = listOfNotNull(dialogWindow, activityWindow).distinct()
         val hadSecureFlags = targetWindows.associateWith { w ->
             (w.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
         }
-        if (isCredentialEntryVisible) {
+        if (shouldProtectWindow) {
             targetWindows.forEach { it.addFlags(WindowManager.LayoutParams.FLAG_SECURE) }
         }
         onDispose {
             passwordBuffer.wipe()
+            regionInput = ""
+            accountInput = ""
+            clearLiveAuthInputs()
             bufferVersion++
             targetWindows.forEach { w ->
                 if (hadSecureFlags[w] == false) {
@@ -214,6 +252,8 @@ fun PilotReadinessSheet(
         }
 
         if (onStartMockPilot != null &&
+            !state.showLiveAuthReview &&
+            !state.hasUnresolvedLiveSession &&
             (state.modeState is PilotModeState.OfflineDefault || state.modeState is PilotModeState.Aborted)
         ) {
             OutlinedButton(
@@ -223,6 +263,193 @@ fun PilotReadinessSheet(
                     .testTag("btn_start_mock_pilot")
             ) {
                 Text("Start Offline Mock Pilot (Synthetic Fixture)")
+            }
+            if (onStartShortMockPilot != null) {
+                OutlinedButton(
+                    onClick = onStartShortMockPilot,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("btn_start_short_mock_pilot")
+                ) {
+                    Text("Start 1-Min Offline Mock Expiry Test (No Network)")
+                }
+            }
+        }
+
+        if (state.hasUnresolvedLiveSession &&
+            (state.modeState is PilotModeState.OfflineDefault || state.modeState is PilotModeState.Aborted)
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("pilot_unresolved_live_notice")
+            ) {
+                Text(
+                    text = "Live session cleanup is in progress or incomplete. Mock switching and new activation are blocked until resolved.",
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+        }
+
+        state.liveLifecycleNotice?.let { notice ->
+            Surface(
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("pilot_lifecycle_notice")
+            ) {
+                Text(
+                    text = notice,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+        }
+
+        if (state.isLivePilotSupported &&
+            onOpenLiveAuthReview != null &&
+            !state.showLiveAuthReview &&
+            !state.hasUnresolvedLiveSession &&
+            (state.modeState is PilotModeState.OfflineDefault || state.modeState is PilotModeState.Aborted)
+        ) {
+            Button(
+                onClick = onOpenLiveAuthReview,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("btn_open_live_auth_review")
+            ) {
+                Text("Review Live Pilot Authorization")
+            }
+        }
+
+        if (state.isLivePilotSupported && state.showLiveAuthReview && onActivateLivePilot != null) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("live_auth_review_panel")
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Live Pilot Authorization Review (Externally Provisioned Record)",
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Scope fields are read-only from the provisioned approval file (app-private storage). " +
+                            "Strictly bounded to externally approved operations (0 WebSockets, <= 15m).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    when (val loadRes = state.provisionedAuthLoadResult) {
+                        null, is ProvisionedAuthorizationLoadResult.Missing -> {
+                            val msg = (loadRes as? ProvisionedAuthorizationLoadResult.Missing)?.safeMessage
+                                ?: "No externally provisioned authorization record found."
+                            Text(
+                                text = msg,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("live_auth_provisioned_status")
+                            )
+                        }
+                        is ProvisionedAuthorizationLoadResult.Invalid -> {
+                            Text(
+                                text = "Provisioned Record Invalid: ${loadRes.safeMessage}",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("live_auth_provisioned_status")
+                            )
+                        }
+                        is ProvisionedAuthorizationLoadResult.Loaded -> {
+                            val p = loadRes.preview
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("live_auth_provisioned_preview"),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text("Authorization ID: ${p.authorizationId}", fontWeight = FontWeight.Medium)
+                                Text("Approvers: PO=${p.approvedByProductOwner}, Lead=${p.approvedByLeadMaintainer}", style = MaterialTheme.typography.bodySmall)
+                                Text("External Ref: ${p.externalRecordRef} (${p.approvalDate})", style = MaterialTheme.typography.bodySmall)
+                                Text("Candidate Commit: ${p.candidateCommitSha.take(12)}", style = MaterialTheme.typography.bodySmall)
+                                Text("Approved APK SHA-256: ${p.verifiedPilotApkSha256.take(12)}...", style = MaterialTheme.typography.bodySmall)
+                                Text("Installed APK Verification: ${p.installedApkVerification.detail}", style = MaterialTheme.typography.bodySmall)
+                                Text("App Identity: ${p.applicationId} v${p.versionName} (${p.versionCode})", style = MaterialTheme.typography.bodySmall)
+                                Text("Account Scope: ${p.accountAliasRedacted} (${p.regionCallingCode})", style = MaterialTheme.typography.bodySmall)
+                                Text("Target Scope: ${p.targetRedactedTag} (${p.targetSubTypeFamily})", style = MaterialTheme.typography.bodySmall)
+                                Text("Auth Origin: ${p.approvedAuthOrigin}${p.approvedAuthPath}", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "Pinned API/WSS: ${p.pinnedApiOrigin ?: "UNPINNED"} / ${p.pinnedWssOrigin ?: "UNPINNED"} " +
+                                        "(provRef=${p.endpointProvenanceRef ?: "NONE"})",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "Permitted Ops: ${p.permittedOperations.joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "Budgets: 1 LOGIN, ${p.maxInventoryRequests} INVENTORY, 0 WS, 0 CMD, <= ${p.httpCallTimeoutMs / 1000}s HTTP, " +
+                                        "${p.maxObservationWindowMs / 60_000L}m window",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "Provisioned Digest Hint: ${p.recordSha256Prefix}...${p.recordSha256Suffix}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = expectedRecordSha256Input,
+                        onValueChange = { expectedRecordSha256Input = it },
+                        label = { Text("Confirm External Approval Record SHA-256 (64 hex)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("live_auth_input_record_sha256")
+                    )
+                    state.liveAuthValidationError?.let { errMsg ->
+                        Text(
+                            text = errMsg,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("live_auth_validation_error")
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onActivateLivePilot(expectedRecordSha256Input) },
+                            modifier = Modifier.weight(1f).testTag("btn_validate_live_auth")
+                        ) {
+                            Text("Verify & Activate")
+                        }
+                        if (onRefreshProvisionedAuth != null) {
+                            OutlinedButton(
+                                onClick = onRefreshProvisionedAuth,
+                                modifier = Modifier.testTag("btn_refresh_provisioned_auth")
+                            ) {
+                                Text("Reload")
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                clearLiveAuthInputs()
+                                onCancelLiveAuthReview?.invoke()
+                            },
+                            modifier = Modifier.weight(1f).testTag("btn_cancel_live_auth")
+                        ) {
+                            Text("Cancel Review")
+                        }
+                    }
+                }
             }
         }
 
@@ -287,7 +514,7 @@ fun PilotReadinessSheet(
             }
         }
 
-        // Ephemeral Synthetic Credential Entry (only when AuthorizedReady)
+        // Ephemeral Credential Entry (explicitly separated Live vs Mock labels & actions)
         if (isCredentialEntryVisible) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -297,11 +524,38 @@ fun PilotReadinessSheet(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Synthetic Credential Entry (Ephemeral, Never Persisted)", fontWeight = FontWeight.Medium)
+                    if (state.isLiveWorkflowActive) {
+                        Text(
+                            text = "Real-Server Authentication (Ephemeral, Never Persisted)",
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Real Grit Cloud auth for the externally authorized isolated test account only. " +
+                                "1 login attempt max, 0 automatic retries, 0 WebSockets, 0 physical robot commands.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        Text(
+                            text = "Synthetic Credential Entry (Offline Mock Fixture, No Network)",
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "In-process synthetic fixture only. Zero external network requests.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     OutlinedTextField(
                         value = regionInput,
                         onValueChange = { regionInput = it },
-                        label = { Text("Region Code (+1 / +86)") },
+                        label = {
+                            Text(
+                                if (state.isLiveWorkflowActive) {
+                                    "Authorized Region Calling Code (+1 / +86)"
+                                } else {
+                                    "Region Code (+1 / +86)"
+                                }
+                            )
+                        },
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -310,7 +564,15 @@ fun PilotReadinessSheet(
                     OutlinedTextField(
                         value = accountInput,
                         onValueChange = { accountInput = it },
-                        label = { Text("Isolated Test Account") },
+                        label = {
+                            Text(
+                                if (state.isLiveWorkflowActive) {
+                                    "Authorized Isolated Test Account"
+                                } else {
+                                    "Synthetic Mock Account"
+                                }
+                            )
+                        },
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -324,7 +586,15 @@ fun PilotReadinessSheet(
                             passwordBuffer.updateFromInput(next)
                             bufferVersion++
                         },
-                        label = { Text("Synthetic Password") },
+                        label = {
+                            Text(
+                                if (state.isLiveWorkflowActive) {
+                                    "Real-Server Account Password"
+                                } else {
+                                    "Synthetic Password"
+                                }
+                            )
+                        },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(
@@ -342,18 +612,29 @@ fun PilotReadinessSheet(
                         Button(
                             onClick = {
                                 val creds = passwordBuffer.buildAndWipeCredentials(regionInput, accountInput)
+                                regionInput = ""
+                                accountInput = ""
                                 bufferVersion++
                                 onSubmitCredentials(creds)
                             },
+                            enabled = !state.isLiveOperationInFlight,
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("btn_pilot_submit_login")
                         ) {
-                            Text("Submit Probe")
+                            Text(
+                                if (state.isLiveWorkflowActive) {
+                                    "Authenticate Live Account (1 Attempt)"
+                                } else {
+                                    "Submit Synthetic Sign-In"
+                                }
+                            )
                         }
                         OutlinedButton(
                             onClick = {
                                 passwordBuffer.wipe()
+                                regionInput = ""
+                                accountInput = ""
                                 bufferVersion++
                                 onCancelCredentialEntry()
                             },
@@ -368,7 +649,74 @@ fun PilotReadinessSheet(
             }
         }
 
-        // Read-Only Device Inventory
+        // Safe Authentication Result & Single Read-Only Inventory Trigger (FCT-004C live mode)
+        val authReadyMode = state.modeState as? PilotModeState.AuthenticatedInventoryReady
+        if (authReadyMode != null) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("live_auth_result_banner")
+                    .semantics(mergeDescendants = true) {}
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Safe Authentication Result (Pre-Approved Origins)", fontWeight = FontWeight.Medium)
+                    Text(authReadyMode.sanitizedAuthSummary, style = MaterialTheme.typography.bodySmall)
+                    if (authReadyMode.inventoryPermitted && onFetchTargetInventory != null) {
+                        Button(
+                            onClick = onFetchTargetInventory,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_pilot_fetch_target_inventory")
+                        ) {
+                            Text("Fetch Target Inventory (Single Read-Only Request)")
+                        }
+                    } else if (!authReadyMode.inventoryPermitted) {
+                        Text(
+                            text = "Inventory query disabled under LOGIN-only authorization.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
+        // Authorized Target Robot Minimum Read-Only Inventory Result (Zero WebSocket)
+        val targetSummary = (state.modeState as? PilotModeState.InventoryVerified)?.targetSummary
+            ?: state.targetInventorySummary
+        if (state.isLiveWorkflowActive && targetSummary != null) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("target_inventory_summary")
+                    .semantics(mergeDescendants = true) {}
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("Authorized Target Robot (Read-Only Inventory, Zero WS)", fontWeight = FontWeight.Medium)
+                    Text("${targetSummary.nickname} [${targetSummary.thingNameRedacted}]", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "subType=${targetSummary.normalizedSubType} | admin=${targetSummary.isAdmin} | ${targetSummary.compatibility.name}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (targetSummary.batteryPercentage != null && targetSummary.mode != null) {
+                        Text(
+                            "Snapshot: Battery=${targetSummary.batteryPercentage}% | Mode=${targetSummary.mode.name} | Error=${targetSummary.errorCode ?: 0}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
+        if (!state.isLiveWorkflowActive) {
+        // Read-Only Device Inventory (Mock / FCT-004A/B)
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             modifier = Modifier
@@ -434,8 +782,10 @@ fun PilotReadinessSheet(
                 }
             }
         }
+        }
 
-        // Selected Robot Status & Connection State
+        // Selected Robot Status & Connection State (hidden in zero-WS FCT-004C live mode)
+        if (!state.isLiveWorkflowActive) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             modifier = Modifier
@@ -457,6 +807,7 @@ fun PilotReadinessSheet(
                     Text("No active read-only telemetry observation")
                 }
             }
+        }
         }
 
         // Emergency Disconnect Result / Abort Status
@@ -489,6 +840,9 @@ fun PilotReadinessSheet(
         Button(
             onClick = {
                 passwordBuffer.wipe()
+                regionInput = ""
+                accountInput = ""
+                clearLiveAuthInputs()
                 bufferVersion++
                 onEmergencyDisconnect()
             },
@@ -514,6 +868,8 @@ private fun formatDurationMmSs(ms: Long): String {
 private fun formatModeState(mode: PilotModeState): String = when (mode) {
     PilotModeState.OfflineDefault -> "OFFLINE_DEFAULT"
     is PilotModeState.AuthorizedReady -> "AUTHORIZED_READY"
+    is PilotModeState.AuthenticatedInventoryReady -> "AUTHENTICATED_INVENTORY_READY"
+    is PilotModeState.InventoryVerified -> "INVENTORY_VERIFIED_READ_ONLY"
     is PilotModeState.AwaitingOriginConfirmation -> "AWAITING_ORIGIN_CONFIRMATION (QUARANTINED)"
     is PilotModeState.Observing -> "OBSERVING_READ_ONLY"
     is PilotModeState.Aborted -> "ABORTED (${mode.reason.safeCode})"

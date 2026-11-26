@@ -13,6 +13,13 @@ class WeBackApplication : Application() {
         container = DefaultAppContainer(context = applicationContext)
     }
 
+    internal fun replaceContainerForTesting(testContainer: AppContainer) {
+        if (::container.isInitialized) {
+            container.close()
+        }
+        container = testContainer
+    }
+
     override fun onTerminate() {
         if (::container.isInitialized) {
             container.close()
