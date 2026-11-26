@@ -345,7 +345,7 @@ class DefaultAppContainer(
             } else {
                 "OFFLINE_BUILD_LIVE_PILOT_DISABLED"
             },
-            enableUiCountdownTicker = pilotTestHooks?.enableUiCountdownTicker ?: false,
+            enableUiCountdownTicker = pilotTestHooks?.enableUiCountdownTicker ?: true,
             runtimeAppIdentity = pilotTestHooks?.runtimeAppIdentityOverride ?: runtimeLiveIdentity
         )
     }

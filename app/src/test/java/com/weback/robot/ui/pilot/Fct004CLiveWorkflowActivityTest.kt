@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -22,9 +23,11 @@ import com.weback.robot.core.AuthMonotonicClock
 import com.weback.robot.core.DefaultAppContainer
 import com.weback.robot.core.LivePilotActivationRequest
 import com.weback.robot.core.PilotContainerTestHooks
+import com.weback.robot.domain.model.AuthCredentials
 import com.weback.robot.domain.model.PersistedSessionRecord
 import com.weback.robot.domain.pilot.ExpectedCandidateIdentity
 import com.weback.robot.domain.pilot.GateActivationResult
+import com.weback.robot.domain.pilot.PilotAbortReason
 import com.weback.robot.domain.pilot.PilotEndpointConfig
 import com.weback.robot.domain.pilot.PilotModeState
 import com.weback.robot.protocol.auth.RegionEndpointRouter
@@ -35,6 +38,7 @@ import com.weback.robot.security.TokenLoadResult
 import com.weback.robot.security.TokenSaveResult
 import com.weback.robot.security.TokenStore
 import com.weback.robot.security.UriValidator
+import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
@@ -280,6 +284,125 @@ class Fct004CLiveWorkflowActivityTest {
                 composeRule.waitForIdle()
                 composeRule.onNodeWithTag("simulator_badge").assertIsDisplayed()
                 composeRule.onNodeWithTag("btn_clean").performScrollTo().assertIsEnabled()
+            } finally {
+                server.shutdown()
+            }
+        }
+    }
+
+    @Test
+    fun resumingMainActivityAfterMonotonicDeepSleepDeadlineExpiresAndWipesWithoutManualClicks() {
+        val server = MockWebServer()
+        server.start(InetAddress.getByName("127.0.0.1"), 0)
+        val app = ApplicationProvider.getApplicationContext<Application>() as WeBackApplication
+        var nowMs = 50_000L
+        val originHttp = "http://127.0.0.1:${server.port}"
+        val loopbackPolicy = TestLoopbackTrustPolicy(
+            setOf(
+                UriValidator.NormalizedOrigin("http", "127.0.0.1", server.port),
+                UriValidator.NormalizedOrigin("ws", "127.0.0.1", server.port)
+            )
+        )
+        val pilotTrust = AuthorizedPilotEndpointTrustPolicy(
+            endpointConfig = PilotEndpointConfig(
+                approvedAuthOrigin = originHttp,
+                approvedAuthPath = "/prod/oauth",
+                pinnedApiOrigin = "https://127.0.0.1:${server.port}",
+                pinnedWssOrigin = "wss://127.0.0.1:${server.port}"
+            ),
+            allowedAuthOrigins = setOf(originHttp),
+            allowLoopbackForHermeticTests = true
+        )
+        val expectedId = ExpectedCandidateIdentity(
+            candidateCommitSha = "bc7f6d6589b4962c092574d998f6dfce532b17c7",
+            applicationId = BuildConfig.APPLICATION_ID,
+            versionName = BuildConfig.VERSION_NAME,
+            apkSha256 = "b".repeat(64)
+        )
+        val tokenStore = memoryTokenStore()
+        app.replaceContainerForTesting(
+            DefaultAppContainer(
+                context = app,
+                authClock = AuthMonotonicClock { nowMs },
+                tokenStoreOverride = tokenStore,
+                pilotTestHooks = PilotContainerTestHooks(
+                    routerOverride = RegionEndpointRouter(
+                        cnOverrideUrl = "$originHttp/prod/oauth",
+                        globalOverrideUrl = "$originHttp/prod/oauth"
+                    ),
+                    trustPolicyOverride = pilotTrust,
+                    gatewayTrustPolicyOverride = loopbackPolicy,
+                    allowedAuthOriginsOverride = setOf(originHttp),
+                    expectedRuntimeIdentityOverride = expectedId,
+                    enableUiCountdownTicker = false
+                )
+            )
+        )
+
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            try {
+                if (BuildConfig.PILOT_INTERNET_CAPABLE) {
+                    val act = app.container.activateLivePilot(
+                        LivePilotActivationRequest(
+                            authorizationId = "FCT004C-RESUME-EXP-01",
+                            approvedByProductOwner = "PO-Human",
+                            approvedByLeadMaintainer = "Lead-Human",
+                            externalRecordRef = "EXT-RESUME-01",
+                            candidateCommitSha = expectedId.candidateCommitSha,
+                            apkSha256 = expectedId.apkSha256,
+                            regionCallingCode = "+1",
+                            authorizedAccountIdentifier = "pilot@test.invalid",
+                            expectedTargetThingName = "laser_target_01",
+                            approvedAuthOrigin = originHttp,
+                            pinnedApiOrigin = "https://127.0.0.1:${server.port}",
+                            pinnedWssOrigin = "wss://127.0.0.1:${server.port}",
+                            windowMinutes = 15
+                        )
+                    )
+                    assertTrue(act is GateActivationResult.Activated)
+                    server.enqueue(
+                        MockResponse().setResponseCode(200).setBody(
+                            """{"code":1,"data":{"api_url":"$originHttp/api","wss_url":"ws://127.0.0.1:${server.port}/ws","region_name":"us","jwt_token":"jwt-sleep-wake","expired_time":3600}}"""
+                        )
+                    )
+                    runBlocking {
+                        app.container.pilotSessionController.submitCredentials(
+                            AuthCredentials("+1", "pilot@test.invalid", "SecretWake1!".toCharArray())
+                        )
+                    }
+                    assertTrue(app.container.pilotAuthorizationGate.isAuthorized)
+                    assertTrue(runBlocking { tokenStore.load() } is TokenLoadResult.Loaded)
+
+                    // Simulate screen-off deep sleep past 15-min deadline, then Activity resume
+                    scenario.moveToState(Lifecycle.State.CREATED)
+                    nowMs += 900_000L
+                    scenario.moveToState(Lifecycle.State.RESUMED)
+
+                    composeRule.waitUntil(5_000L) {
+                        !app.container.pilotAuthorizationGate.isAuthorized &&
+                            app.container.pilotSessionController.pilotModeState.value == PilotModeState.OfflineDefault
+                    }
+                    assertEquals(
+                        PilotAbortReason.ObservationWindowExpired,
+                        app.container.pilotSessionController.lastAbortReason.value
+                    )
+                    assertTrue(runBlocking { tokenStore.load() } is TokenLoadResult.Empty)
+                } else {
+                    // Offline build: exercise preserved mock pilot resume expiry
+                    assertTrue(app.container.startOfflineMockPilot() is GateActivationResult.Activated)
+                    assertTrue(app.container.offlineMockAuthorizationGate.isAuthorized)
+                    scenario.moveToState(Lifecycle.State.CREATED)
+                    nowMs += 1_800_000L
+                    scenario.moveToState(Lifecycle.State.RESUMED)
+                    composeRule.waitUntil(5_000L) {
+                        !app.container.offlineMockAuthorizationGate.isAuthorized &&
+                            app.container.offlineMockPilotController.pilotModeState.value == PilotModeState.OfflineDefault
+                    }
+                    assertEquals(
+                        PilotAbortReason.ObservationWindowExpired,
+                        app.container.offlineMockPilotController.lastAbortReason.value
+                    )
+                }
             } finally {
                 server.shutdown()
             }

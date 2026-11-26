@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.weback.robot.domain.pilot.GateActivationResult
 import com.weback.robot.domain.pilot.PilotAbortReason
 import com.weback.robot.domain.pilot.PilotModeState
@@ -40,6 +41,15 @@ class MainActivity : ComponentActivity() {
             clock = app.container.clock,
             appVersion = getString(R.string.app_version)
         )
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val app = application as? WeBackApplication ?: return
+        lifecycleScope.launch {
+            app.container.pilotSessionController.enforceDeadlineIfExpired()
+            app.container.offlineMockPilotController.enforceDeadlineIfExpired()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
