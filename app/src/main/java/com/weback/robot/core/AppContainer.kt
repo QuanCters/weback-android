@@ -1,6 +1,7 @@
 package com.weback.robot.core
 
 import android.content.Context
+import com.weback.robot.BuildConfig
 import com.weback.robot.app.pilot.PilotSessionController
 import com.weback.robot.app.session.DeviceInventoryRepository
 import com.weback.robot.app.session.SessionCoordinator
@@ -14,12 +15,14 @@ import com.weback.robot.domain.pilot.PilotAccountScope
 import com.weback.robot.domain.pilot.PilotAccountScopeType
 import com.weback.robot.domain.pilot.PilotAuthorizationContext
 import com.weback.robot.domain.pilot.PilotAuthorizationGate
+import com.weback.robot.domain.pilot.PilotClock
 import com.weback.robot.domain.pilot.PilotEndpointConfig
 import com.weback.robot.domain.pilot.PilotEnvironment
 import com.weback.robot.domain.pilot.PilotExternalApproval
 import com.weback.robot.domain.pilot.PilotOperation
 import com.weback.robot.domain.pilot.PilotRequestBudgets
 import com.weback.robot.domain.pilot.PilotTargetDevice
+import com.weback.robot.domain.pilot.RuntimeAppIdentity
 import com.weback.robot.protocol.RobotTransport
 import com.weback.robot.protocol.SimulatorRobotTransport
 import com.weback.robot.protocol.auth.AuthEnvelopeConfig
@@ -163,7 +166,9 @@ class DefaultAppContainer(
     }
 
     override val pilotAuthorizationGate: PilotAuthorizationGate by lazy {
-        PilotAuthorizationGate()
+        PilotAuthorizationGate(
+            clock = PilotClock { authClock.elapsedRealtimeMs() }
+        )
     }
 
     private val pilotEndpointTrustPolicy: AuthorizedPilotEndpointTrustPolicy by lazy {
@@ -189,7 +194,8 @@ class DefaultAppContainer(
         PilotClientFactory.buildPilotOkHttpClient(
             trustPolicy = pilotEndpointTrustPolicy,
             activeCallRegistry = pilotActiveCallRegistry,
-            admissionGate = pilotAuthorizationGate
+            admissionGate = pilotAuthorizationGate,
+            authClock = authClock
         )
     }
 
@@ -272,18 +278,18 @@ class DefaultAppContainer(
         )
     }
 
-    // Live pilot remains structurally non-activatable offline (never populated with fake zero-filled candidate hashes)
-    private val nonActivatableLiveIdentity = ExpectedCandidateIdentity(
-        candidateCommitSha = "UNSET-OFFLINE-BUILD-REQUIRES-FCT004B-SIGN",
-        applicationId = "com.weback.robot",
-        versionName = "0.1.0-alpha",
-        apkSha256 = "UNSET-OFFLINE-BUILD-REQUIRES-FCT004B-SIGNATURE"
+    // Runtime identity derived from BuildConfig without embedding a self-referential APK SHA-256 (`FCT-004B`)
+    private val runtimeLiveIdentity = RuntimeAppIdentity(
+        applicationId = BuildConfig.APPLICATION_ID,
+        versionName = BuildConfig.VERSION_NAME,
+        versionCode = BuildConfig.VERSION_CODE,
+        pilotBuildEnabled = BuildConfig.PILOT_INTERNET_CAPABLE
     )
 
     override val pilotSessionController: PilotSessionController by lazy {
         PilotSessionController(
             gate = pilotAuthorizationGate,
-            expectedRuntimeIdentity = nonActivatableLiveIdentity,
+            expectedRuntimeIdentity = null,
             trustPolicy = pilotEndpointTrustPolicy,
             sessionCoordinator = pilotSessionCoordinator,
             inventoryRepository = pilotInventoryRepository,
@@ -295,7 +301,8 @@ class DefaultAppContainer(
             logger = diagnosticLogger,
             activeCallRegistry = pilotActiveCallRegistry,
             scope = pilotScope,
-            ownsScope = true
+            ownsScope = true,
+            runtimeAppIdentity = runtimeLiveIdentity
         )
     }
 
@@ -311,7 +318,8 @@ class DefaultAppContainer(
     override val offlineMockAuthorizationGate: PilotAuthorizationGate by lazy {
         PilotAuthorizationGate(
             allowedAuthOrigins = setOf("https://loopback.offline.invalid:443"),
-            allowedEnvironment = PilotEnvironment.OFFLINE_MOCK_FIXTURE
+            allowedEnvironment = PilotEnvironment.OFFLINE_MOCK_FIXTURE,
+            clock = PilotClock { authClock.elapsedRealtimeMs() }
         )
     }
 

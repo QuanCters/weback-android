@@ -20,6 +20,8 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        buildConfigField("boolean", "PILOT_INTERNET_CAPABLE", "false")
+        buildConfigField("String", "APP_CONNECTIVITY_MODE", "\"OFFLINE\"")
     }
 
     buildTypes {
@@ -32,6 +34,13 @@ android {
         }
         debug {
             applicationIdSuffix = ""
+        }
+        create("pilot") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".pilot"
+            matchingFallbacks += listOf("debug")
+            buildConfigField("boolean", "PILOT_INTERNET_CAPABLE", "true")
+            buildConfigField("String", "APP_CONNECTIVITY_MODE", "\"PILOT\"")
         }
     }
 
@@ -46,6 +55,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -100,4 +110,6 @@ dependencies {
 
     debugImplementation(platform(libs.androidx.compose.bom))
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    add("pilotImplementation", platform(libs.androidx.compose.bom))
+    add("pilotImplementation", libs.androidx.compose.ui.test.manifest)
 }

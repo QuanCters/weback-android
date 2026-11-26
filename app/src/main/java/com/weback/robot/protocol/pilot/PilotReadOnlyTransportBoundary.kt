@@ -247,6 +247,24 @@ class PilotCapabilityRestrictedAuthGateway(
             return PilotAuthProbeOutcome.Failed(AuthFailureReason.InvalidCredentials, "Account and secret must not be blank")
         }
 
+        if (admissionGate != null) {
+            val (accountValid, accountError) = admissionGate.verifyAccountCredentials(
+                credentials.regionCallingCode,
+                credentials.account
+            )
+            if (!accountValid) {
+                Arrays.fill(secretChars, '\u0000')
+                logger.log(
+                    DiagnosticEvent(
+                        category = "PILOT_AUTH_ACCOUNT_MISMATCH",
+                        opt = "login",
+                        errorCategory = "ACCOUNT_SCOPE_MISMATCH"
+                    )
+                )
+                return PilotAuthProbeOutcome.Failed(AuthFailureReason.ConfigurationError, accountError)
+            }
+        }
+
         val resolution = router.resolve(credentials.regionCallingCode)
         if (resolution is RegionResolution.Rejected) {
             Arrays.fill(secretChars, '\u0000')
@@ -274,7 +292,16 @@ class PilotCapabilityRestrictedAuthGateway(
                         ?: true
                 }
             if (preAdmitted != null && preAdmitted.operation == PilotOperation.LOGIN) {
-                when (val check = admissionGate.verifyTicket(preAdmitted, nowMs, endpointUrl, endpointMatcher)) {
+                when (
+                    val check = admissionGate.verifyTicket(
+                        ticket = preAdmitted,
+                        nowElapsedMs = nowMs,
+                        requestUrl = endpointUrl,
+                        endpointValidator = endpointMatcher,
+                        accountIdentifier = credentials.account,
+                        regionCallingCode = credentials.regionCallingCode
+                    )
+                ) {
                     is GateCheckResult.Allowed -> preAdmitted
                     is GateCheckResult.Denied -> {
                         Arrays.fill(secretChars, '\u0000')

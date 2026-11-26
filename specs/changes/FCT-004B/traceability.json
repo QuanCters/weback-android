@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "change_id": "FCT-004B",
+  "milestone": "FCT-004B",
+  "title": "Pre-INTERNET Security Corrections, Isolated Pilot Build & Verification Policy Transition",
+  "version": "1.0.0",
+  "risk_ceiling": "T4",
+  "acceptance_criteria": [
+    {
+      "ac_id": "AC-451.1",
+      "requirement_id": "REQ-PILOT-451",
+      "description": "PilotAuthorizationGate issues PilotAdmissionTicket with internal ticketId tracked in an authoritative ledger binding context, generation, operation, deadline, budgets, and request attributes; forged or modified tickets are rejected.",
+      "validation_test_id": "TEST-PILOT-451",
+      "test_oracle": "TEST-PILOT-451: Forged ticketId and .copy()-modified PilotAdmissionTicket fields rejected fail-closed.",
+      "implementation_task": "Task 1",
+      "check_id": "android-unit-tests",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004BPreInternetSecurityTest.kt::bSec01_forgedAndTamperedAdmissionTicketsRejectedFailClosed (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-451.2",
+      "requirement_id": "REQ-PILOT-451",
+      "description": "Intermediate layers verify tickets non-destructively while PilotClientFactory atomically consumes each ticket once at network dispatch, blocking replay across MockWebServer.",
+      "validation_test_id": "TEST-PILOT-452",
+      "test_oracle": "TEST-PILOT-452: Intermediate verify succeeds; first network dispatch hits MockWebServer once; replay blocked with 0 extra requests.",
+      "implementation_task": "Task 1, Task 2",
+      "check_id": "android-unit-tests",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004BPreInternetSecurityTest.kt::bSec01_singleUseTicketBlocksReplayAcrossMockWebServerAndDistinguishesIntermediateVerify (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-452.1",
+      "requirement_id": "REQ-PILOT-452",
+      "description": "PilotCapabilityRestrictedAuthGateway enforces exact authorized account and calling code before credential serialization or network dispatch.",
+      "validation_test_id": "TEST-PILOT-453",
+      "test_oracle": "TEST-PILOT-453: Direct gateway call with different account in same region produces 0 MockWebServer requests.",
+      "implementation_task": "Task 2",
+      "check_id": "android-unit-tests",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004BPreInternetSecurityTest.kt::bSec02_directAuthGatewayInvocationWithDifferentAccountInSameRegionMakesZeroNetworkRequests (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-453.1",
+      "requirement_id": "REQ-PILOT-453",
+      "description": "Pilot admission, request verification, and expiry handling rely strictly on injected AuthMonotonicClock (SystemClock.elapsedRealtime) with zero System.nanoTime deadlines.",
+      "validation_test_id": "TEST-PILOT-454",
+      "test_oracle": "TEST-PILOT-454: Zero System.nanoTime in pilot gate/ticket; deadlines strictly governed by injected AuthMonotonicClock.",
+      "implementation_task": "Task 1, Task 2",
+      "check_id": "android-unit-tests",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004BPreInternetSecurityTest.kt::bSec03_absoluteMonotonicClockAndDeepSleepTriggersFullGenerationFencedCleanup (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-453.2",
+      "requirement_id": "REQ-PILOT-453",
+      "description": "Deadline expiry (including simulated deep sleep) triggers complete generation-fenced 9-step cleanup rather than only clearing activeContext.",
+      "validation_test_id": "TEST-PILOT-455",
+      "test_oracle": "TEST-PILOT-455: Deterministic deep-sleep clock jump triggers full generation-fenced cleanup without affecting newer runs.",
+      "implementation_task": "Task 1, Task 2",
+      "check_id": "android-unit-tests",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004BPreInternetSecurityTest.kt::bSec03_absoluteMonotonicClockAndDeepSleepTriggersFullGenerationFencedCleanup (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-454.1",
+      "requirement_id": "REQ-PILOT-454",
+      "description": "Explicit pilot buildType builds com.weback.robot.pilot with INTERNET only in src/pilot/AndroidManifest.xml while preserving INTERNET-free debug APK (com.weback.robot).",
+      "validation_test_id": "TEST-PILOT-456",
+      "test_oracle": "TEST-PILOT-456: assembleDebug, assemblePilot, lintPilot, and testPilotUnitTest pass with isolated manifests.",
+      "implementation_task": "Task 3",
+      "check_id": "pilot-android-build",
+      "evidence_ref": "./gradlew assembleDebug assemblePilot lintDebug lintPilot testDebugUnitTest testPilotUnitTest + apkanalyzer manifest print (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-454.2",
+      "requirement_id": "REQ-PILOT-454",
+      "description": "Pilot APK provides separate storage sandbox, side-by-side installable permissions/authorities, clear pilot labeling, default offline startup, zero auto-auth, and zero live commands.",
+      "validation_test_id": "TEST-PILOT-457",
+      "test_oracle": "TEST-PILOT-457: Pilot BuildConfig/labels/authorities verified; DefaultAppContainer boots OfflineDefault.",
+      "implementation_task": "Task 3",
+      "check_id": "pilot-android-unit-tests",
+      "evidence_ref": "app/src/test/java/com/weback/robot/core/PilotBuildSeparationTest.kt::testVariantIdentityLabelingAndDefaultOfflineIsolation (PASS on testDebugUnitTest and testPilotUnitTest)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-454.3",
+      "requirement_id": "REQ-PILOT-454",
+      "description": "No self-referential final APK checksum embedded inside APK; external artifact verification and RuntimeAppIdentity are cleanly separated.",
+      "validation_test_id": "TEST-PILOT-456",
+      "test_oracle": "TEST-PILOT-456: RuntimeAppIdentity uses BuildConfig without embedded APK SHA-256.",
+      "implementation_task": "Task 2, Task 3",
+      "check_id": "android-unit-tests",
+      "evidence_ref": "app/src/test/java/com/weback/robot/core/PilotBuildSeparationTest.kt + app/src/main/java/com/weback/robot/core/AppContainer.kt (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-455.1",
+      "requirement_id": "REQ-PILOT-455",
+      "description": "apk_validator.py supports --connectivity-policy {offline,pilot} with offline default, binding expected APK path, package ID, and INTERNET requirement/prohibition.",
+      "validation_test_id": "TEST-PILOT-458",
+      "test_oracle": "TEST-PILOT-458: Selftests and live validator runs verify offline and pilot modes and reject cross-artifact substitution.",
+      "implementation_task": "Task 4",
+      "check_id": "harness-selftests",
+      "evidence_ref": "verification/selftests/test_apk_validator.py (193/193 PASS) + apk_validator.py --connectivity-policy offline/pilot (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-455.2",
+      "requirement_id": "REQ-PILOT-455",
+      "description": "apk_validator.py preserves cleartext, backup, networkSecurityConfig, signature, vendor binary, and DEX package checks in both modes.",
+      "validation_test_id": "TEST-PILOT-458",
+      "test_oracle": "TEST-PILOT-458: Negative selftests confirm all security invariants remain enforced in both offline and pilot modes.",
+      "implementation_task": "Task 4",
+      "check_id": "harness-selftests",
+      "evidence_ref": "verification/selftests/test_apk_validator.py::test_pilot_mode_negative_rejects_extra_permissions_and_backup_and_cleartext, test_pilot_mode_negative_rejects_provider_authority_collision (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-456.1",
+      "requirement_id": "REQ-PILOT-456",
+      "description": "Proposed verification policy preserves all 7 existing checks, adds pilot lint/unit/build/apk checks, measures runtime/duplication, and documents smaller alternative.",
+      "validation_test_id": "TEST-PILOT-459",
+      "test_oracle": "TEST-PILOT-459: Proposed 11-check policy executes in fast lane and runtime/alternative evaluation is documented.",
+      "implementation_task": "Task 5",
+      "check_id": "pilot-apk-validation",
+      "evidence_ref": "policies/checks.json (11/11 PASS in fast lane) + specs/changes/FCT-004B/proposal.md §3",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-456.2",
+      "requirement_id": "REQ-PILOT-456",
+      "description": "Baseline policy (e688b6...) and proposed candidate policy both execute and pass evidence audits with TRANSITION_AUTHORIZATION inactive.",
+      "validation_test_id": "TEST-PILOT-459",
+      "test_oracle": "TEST-PILOT-459: Candidate lane baseline audit and fast lane proposed audit both PASS.",
+      "implementation_task": "Task 5",
+      "check_id": "apk-validation",
+      "evidence_ref": "verification/run.py --lane candidate (baseline e688b6...) + verification/run.py --lane fast --config policies/checks.json + evidence.py audit (PASS)",
+      "status": "VERIFIED"
+    },
+    {
+      "ac_id": "AC-457.1",
+      "requirement_id": "REQ-PILOT-457",
+      "description": "Both candidate APKs, acceptance evidence ZIP, and physical-device verification checklist are prepared without unauthorized device execution.",
+      "validation_test_id": "TEST-PILOT-460",
+      "test_oracle": "TEST-PILOT-460: Artifacts exported and device acceptance checklist prepared; TEST-PILOT-414 remains NOT_RUN.",
+      "implementation_task": "Task 6",
+      "check_id": "android-smoke-test",
+      "evidence_ref": "specs/changes/FCT-004B/device-acceptance-plan.md prepared; physical device execution remains NOT_RUN until explicit human authorization",
+      "status": "NOT_RUN"
+    }
+  ]
+}

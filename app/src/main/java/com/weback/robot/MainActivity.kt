@@ -76,7 +76,11 @@ class MainActivity : ComponentActivity() {
                                         modeState = pilotMode,
                                         authorizationId = app.container.offlineMockAuthorizationGate.currentContext?.authorizationId
                                             ?: "DISABLED (OFFLINE)",
-                                        modeLabel = "OFFLINE / MOCK PILOT WORKFLOW — SYNTHETIC FIXTURES ONLY (NO NETWORK)",
+                                        modeLabel = if (BuildConfig.PILOT_INTERNET_CAPABLE) {
+                                            "PILOT BUILD (${BuildConfig.APPLICATION_ID}) — OFFLINE DEFAULT / SYNTHETIC MOCK WORKFLOW ONLY"
+                                        } else {
+                                            "OFFLINE / MOCK PILOT WORKFLOW — SYNTHETIC FIXTURES ONLY (NO NETWORK)"
+                                        },
                                         approvedAuthOrigin = app.container.offlineMockAuthorizationGate.currentContext
                                             ?.endpointConfig?.approvedAuthOrigin ?: "DISABLED",
                                         pinnedApiOrigin = app.container.offlineMockAuthorizationGate.currentContext
