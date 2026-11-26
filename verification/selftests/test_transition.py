@@ -744,5 +744,401 @@ class TestPolicyTransitionStateMachine(unittest.TestCase):
             self.assertEqual(bad_retired_grant.returncode, 2)
             self.assertIn("retired policy digest", bad_retired_grant.stderr)
 
+    def _run_resolve_context_cli(
+        self,
+        repo: Path,
+        env: dict[str, str],
+        event_name: str = "pull_request",
+        pr_head: str = "",
+        pr_base: str = "",
+        pr_base_ref: str = "main",
+        push_sha: str = "",
+        push_before: str = "",
+        run_id: str = "cli-ctx-run",
+    ) -> tuple[subprocess.CompletedProcess, dict[str, str]]:
+        """Invoke transition.py resolve-context and return (proc, parsed GITHUB_OUTPUT)."""
+        script = str(Path("verification/checks/transition.py").resolve())
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if k not in ("APPROVED_POLICY_SHA256", "TRANSITION_AUTHORIZATION", "GITHUB_EVENT_NAME")
+        }
+        clean_env.update(env)
+        with tempfile.NamedTemporaryFile("w+", encoding="utf-8", delete=False) as tf:
+            out_path = Path(tf.name)
+        try:
+            cmd = [
+                sys.executable, script, "resolve-context",
+                "--event-name", event_name,
+                "--pr-head", pr_head,
+                "--pr-base", pr_base,
+                "--pr-base-ref", pr_base_ref,
+                "--push-sha", push_sha,
+                "--push-before", push_before,
+                "--run-id", run_id,
+                "--repo-dir", str(repo),
+                "--output-github-env", str(out_path),
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+            parsed: dict[str, str] = {}
+            if out_path.is_file():
+                for line in out_path.read_text(encoding="utf-8").splitlines():
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        parsed[k.strip()] = v.strip()
+            return proc, parsed
+        finally:
+            out_path.unlink(missing_ok=True)
+
+    def test_12_ordinary_permanent_policy_skips_diagnostic_TEST_TRN_012(self):
+        """Ordinary permanent policy (checks.json == APPROVED_POLICY_SHA256) never triggers diagnostic."""
+        for event_name, base_ref in [
+            ("pull_request", "main"),
+            ("pull_request", "release/trusted"),
+            ("push", "main"),
+        ]:
+            git_ctx = {
+                "event_name": event_name,
+                "candidate_sha": self.cand_commit_sha,
+                "base_sha": self.base_commit_sha,
+                "base_ref": base_ref,
+                "tree_sha": self.cand_tree_sha,
+                "parent_shas": [self.base_commit_sha],
+                "run_id": f"perm-{event_name}",
+            }
+            ctx = resolve_verification_context(
+                {"APPROVED_POLICY_SHA256": self.canonical_sha}, git_ctx, self.repo
+            )
+            self.assertFalse(ctx.is_transition)
+            self.assertEqual(ctx.policy_file, CANONICAL_POLICY_PATH)
+            self.assertEqual(ctx.expected_policy_sha256, self.canonical_sha)
+            self.assertEqual(ctx.canonical_policy_sha256, self.canonical_sha)
+            self.assertFalse(ctx.has_unapproved_proposed_policy)
+
+        # Even if APPROVED_POLICY_SHA256 is unset, canonical checks.json applies without diagnostic
+        ctx_unset = resolve_verification_context({}, {
+            "event_name": "pull_request",
+            "candidate_sha": self.cand_commit_sha,
+            "base_sha": self.base_commit_sha,
+            "tree_sha": self.cand_tree_sha,
+            "run_id": "perm-unset",
+        }, self.repo)
+        self.assertFalse(ctx_unset.has_unapproved_proposed_policy)
+        self.assertEqual(ctx_unset.canonical_policy_sha256, self.canonical_sha)
+
+        # Identical baseline and canonical digests also skip diagnostic
+        (self.pol_dir / "checks.baseline.json").write_bytes(self.canonical_bytes)
+        ctx_same_bytes = resolve_verification_context(
+            {"APPROVED_POLICY_SHA256": self.canonical_sha},
+            {
+                "event_name": "pull_request",
+                "candidate_sha": self.cand_commit_sha,
+                "base_sha": self.base_commit_sha,
+                "tree_sha": self.cand_tree_sha,
+            },
+            self.repo,
+        )
+        self.assertEqual(ctx_same_bytes.policy_file, CANONICAL_POLICY_PATH)
+        self.assertFalse(ctx_same_bytes.has_unapproved_proposed_policy)
+
+    def test_13_proposed_policy_differs_triggers_diagnostic_TEST_TRN_013(self):
+        """Proposed checks.json differing from authoritative baseline policy triggers diagnostic preview."""
+        env = {"APPROVED_POLICY_SHA256": self.baseline_sha}
+        git_ctx = {
+            "event_name": "pull_request",
+            "candidate_sha": self.cand_commit_sha,
+            "base_sha": self.base_commit_sha,
+            "tree_sha": self.cand_tree_sha,
+            "run_id": "proposed-delta-1",
+        }
+        ctx = resolve_verification_context(env, git_ctx, self.repo)
+        self.assertFalse(ctx.is_transition)
+        self.assertEqual(ctx.policy_file, BASELINE_POLICY_PATH)
+        self.assertEqual(ctx.expected_policy_sha256, self.baseline_sha)
+        self.assertEqual(ctx.canonical_policy_sha256, self.canonical_sha)
+        self.assertNotEqual(ctx.canonical_policy_sha256, ctx.expected_policy_sha256)
+        self.assertTrue(ctx.has_unapproved_proposed_policy)
+
+        # Verify CLI GITHUB_OUTPUT for proposed delta vs permanent policy
+        proc_delta, out_delta = self._run_resolve_context_cli(
+            self.repo,
+            env={"APPROVED_POLICY_SHA256": self.baseline_sha},
+            event_name="pull_request",
+            pr_head=self.cand_commit_sha,
+            pr_base=self.base_commit_sha,
+        )
+        self.assertEqual(proc_delta.returncode, 0, proc_delta.stderr)
+        self.assertEqual(out_delta["is_transition"], "false")
+        self.assertEqual(out_delta["policy_file"], BASELINE_POLICY_PATH)
+        self.assertEqual(out_delta["canonical_policy_sha256"], self.canonical_sha)
+        self.assertEqual(out_delta["expected_policy_sha256"], self.baseline_sha)
+        self.assertEqual(out_delta["has_unapproved_proposed_policy"], "true")
+
+        proc_perm, out_perm = self._run_resolve_context_cli(
+            self.repo,
+            env={"APPROVED_POLICY_SHA256": self.canonical_sha},
+            event_name="pull_request",
+            pr_head=self.cand_commit_sha,
+            pr_base=self.base_commit_sha,
+        )
+        self.assertEqual(proc_perm.returncode, 0, proc_perm.stderr)
+        self.assertEqual(out_perm["is_transition"], "false")
+        self.assertEqual(out_perm["policy_file"], CANONICAL_POLICY_PATH)
+        self.assertEqual(out_perm["has_unapproved_proposed_policy"], "false")
+
+    def test_14_authorized_transition_skips_diagnostic_TEST_TRN_014(self):
+        """Authorized transition resolves canonical checks.json directly and disables diagnostic."""
+        auth = {
+            "candidate_sha": self.cand_commit_sha,
+            "target_base_sha": self.base_commit_sha,
+            "candidate_tree_sha": self.cand_tree_sha,
+            "canonical_policy_sha256": self.canonical_sha,
+            "required_checks": [
+                "spec-hygiene", "harness-selftests", "gradle-wrapper-validation",
+                "android-lint", "android-unit-tests", "android-build", "apk-validation",
+            ],
+        }
+        env = {
+            "TRANSITION_AUTHORIZATION": json.dumps(auth),
+            "APPROVED_POLICY_SHA256": self.baseline_sha,
+        }
+        proc, outputs = self._run_resolve_context_cli(
+            self.repo,
+            env=env,
+            event_name="pull_request",
+            pr_head=self.cand_commit_sha,
+            pr_base=self.base_commit_sha,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(outputs["is_transition"], "true")
+        self.assertEqual(outputs["policy_file"], CANONICAL_POLICY_PATH)
+        self.assertEqual(outputs["canonical_policy_sha256"], self.canonical_sha)
+        self.assertEqual(outputs["expected_policy_sha256"], self.canonical_sha)
+        self.assertEqual(outputs["has_unapproved_proposed_policy"], "false")
+
+    def test_15_unauthorized_policy_modification_fails_closed_TEST_TRN_015(self):
+        """Unauthorized modification of policies/checks.json fails closed without diagnostic bypass."""
+        unmatched_approved_sha = "a" * 64
+        git_ctx = {
+            "event_name": "pull_request",
+            "candidate_sha": self.cand_commit_sha,
+            "base_sha": self.base_commit_sha,
+            "tree_sha": self.cand_tree_sha,
+        }
+        with self.assertRaises(TransitionError) as cm:
+            resolve_verification_context(
+                {"APPROVED_POLICY_SHA256": unmatched_approved_sha}, git_ctx, self.repo
+            )
+        self.assertTrue(any("Policy mismatch" in e for e in cm.exception.errors))
+
+        proc, outputs = self._run_resolve_context_cli(
+            self.repo,
+            env={"APPROVED_POLICY_SHA256": unmatched_approved_sha},
+            event_name="pull_request",
+            pr_head=self.cand_commit_sha,
+            pr_base=self.base_commit_sha,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual(outputs, {})
+
+    def test_16_malformed_policy_context_fails_closed_TEST_TRN_016(self):
+        """Malformed JSON, missing canonical policy, or invalid SHA-256 digests fail closed."""
+        git_ctx = {
+            "event_name": "pull_request",
+            "candidate_sha": self.cand_commit_sha,
+            "base_sha": self.base_commit_sha,
+            "tree_sha": self.cand_tree_sha,
+        }
+
+        # 1. Invalid APPROVED_POLICY_SHA256 format
+        with self.assertRaises(TransitionError) as cm_bad_sha:
+            resolve_verification_context(
+                {"APPROVED_POLICY_SHA256": "not-a-valid-sha256"}, git_ctx, self.repo
+            )
+        self.assertTrue(any("APPROVED_POLICY_SHA256" in e for e in cm_bad_sha.exception.errors))
+
+        # 2. Malformed TRANSITION_AUTHORIZATION JSON
+        with self.assertRaises(TransitionError):
+            resolve_verification_context(
+                {"TRANSITION_AUTHORIZATION": "{broken-json"}, git_ctx, self.repo
+            )
+
+        # 3. Malformed baseline policy JSON when canonical does not match approved digest
+        (self.pol_dir / "checks.baseline.json").write_text("{broken-baseline-json", encoding="utf-8")
+        with self.assertRaises(TransitionError):
+            resolve_verification_context(
+                {"APPROVED_POLICY_SHA256": self.baseline_sha}, git_ctx, self.repo
+            )
+
+        # 4. Malformed canonical checks.json
+        (self.pol_dir / "checks.json").write_text("{broken-canonical-json", encoding="utf-8")
+        with self.assertRaises(TransitionError):
+            resolve_verification_context(
+                {"APPROVED_POLICY_SHA256": self.canonical_sha}, git_ctx, self.repo
+            )
+
+        # 5. Missing canonical checks.json
+        (self.pol_dir / "checks.json").unlink()
+        with self.assertRaises(TransitionError):
+            resolve_verification_context({}, git_ctx, self.repo)
+
+        # 6. CLI fails closed and writes no outputs on malformed context
+        proc, outputs = self._run_resolve_context_cli(
+            self.repo,
+            env={"APPROVED_POLICY_SHA256": "bad"},
+            event_name="pull_request",
+            pr_head=self.cand_commit_sha,
+            pr_base=self.base_commit_sha,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual(outputs, {})
+
+    def test_17_diagnostic_report_handling_TEST_TRN_017(self):
+        """Diagnostic fast-lane report passes policy audit when proposed delta exists, but cannot pass candidate gate."""
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "CI Tester"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "ci@weback.local"], cwd=repo, check=True)
+
+            pol_dir = repo / "policies"
+            pol_dir.mkdir(parents=True)
+
+            baseline_policy = {
+                "version": 1,
+                "checks": [
+                    {
+                        "id": "spec-hygiene",
+                        "type": "command",
+                        "argv": ["python3", "-c", "print('spec ok')"],
+                        "timeout_seconds": 10,
+                        "required": True,
+                    },
+                    {
+                        "id": "harness-selftests",
+                        "type": "test_suite",
+                        "argv": [
+                            "python3", "-c",
+                            "import json; print('TEST_SUMMARY_JSON: ' + json.dumps({'total': 1, 'passed': 1, 'failures': 0, 'errors': 0, 'skipped': 0}))",
+                        ],
+                        "timeout_seconds": 10,
+                        "required": True,
+                    },
+                ],
+            }
+            proposed_policy = {
+                "version": 1,
+                "checks": baseline_policy["checks"] + [
+                    {
+                        "id": "apk-validation",
+                        "type": "command",
+                        "argv": ["python3", "-c", "print('proposed apk ok')"],
+                        "timeout_seconds": 10,
+                        "required": True,
+                    }
+                ],
+            }
+            baseline_bytes = json.dumps(baseline_policy, indent=2).encode("utf-8")
+            proposed_bytes = json.dumps(proposed_policy, indent=2).encode("utf-8")
+            baseline_sha = compute_sha256_bytes(baseline_bytes)
+
+            (pol_dir / "checks.baseline.json").write_bytes(baseline_bytes)
+            (pol_dir / "checks.json").write_bytes(proposed_bytes)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "proposed policy delta"], cwd=repo, check=True, capture_output=True)
+            head_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+            tree_sha = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+            clean_env = {
+                k: v for k, v in os.environ.items()
+                if k not in ("APPROVED_POLICY_SHA256", "TRANSITION_AUTHORIZATION", "GITHUB_EVENT_NAME")
+            }
+            clean_env["APPROVED_POLICY_SHA256"] = baseline_sha
+
+            run_script = str(Path("verification/run.py").resolve())
+            evidence_script = str(Path("verification/checks/evidence.py").resolve())
+
+            cand_run = subprocess.run(
+                [
+                    sys.executable, run_script,
+                    "--lane", "candidate",
+                    "--event-name", "pull_request",
+                    "--base-ref", head_sha,
+                    "--run-id", "diag-test-cand",
+                    "--repo-dir", str(repo),
+                ],
+                capture_output=True,
+                text=True,
+                env=clean_env,
+            )
+            self.assertEqual(cand_run.returncode, 0, cand_run.stderr)
+
+            diag_run = subprocess.run(
+                [
+                    sys.executable, run_script,
+                    "--lane", "fast",
+                    "--config", "policies/checks.json",
+                    "--base-ref", head_sha,
+                    "--run-id", "diag-test-cand-diagnostic",
+                    "--repo-dir", str(repo),
+                ],
+                capture_output=True,
+                text=True,
+                env=clean_env,
+            )
+            self.assertEqual(diag_run.returncode, 0, diag_run.stderr)
+
+            cand_report = repo / "artifacts" / "verification" / "diag-test-cand" / "report.json"
+            diag_report = repo / "artifacts" / "verification" / "diag-test-cand-diagnostic" / "report.json"
+
+            # Authoritative audit passes candidate report against baseline policy
+            cand_audit = subprocess.run(
+                [
+                    sys.executable, evidence_script,
+                    "--report", str(cand_report),
+                    "--require-candidate",
+                    "--expected-run-id", "diag-test-cand",
+                    "--expected-sha", head_sha,
+                    "--expected-base-sha", head_sha,
+                    "--expected-policy-sha256", baseline_sha,
+                    "--expected-required-checks", "spec-hygiene", "harness-selftests",
+                    "--policy", str(repo / "policies" / "checks.baseline.json"),
+                    "--event-name", "pull_request",
+                    "--expected-tree-sha", tree_sha,
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(repo),
+                env=clean_env,
+            )
+            self.assertEqual(cand_audit.returncode, 0, cand_audit.stderr)
+
+            # Diagnostic audit passes against proposed policies/checks.json
+            diag_audit = subprocess.run(
+                [
+                    sys.executable, evidence_script,
+                    "--report", str(diag_report),
+                    "--policy", str(repo / "policies" / "checks.json"),
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(repo),
+                env=clean_env,
+            )
+            self.assertEqual(diag_audit.returncode, 0, diag_audit.stderr)
+
+            # Fast-lane diagnostic report must NEVER pass authoritative --require-candidate gate
+            ok_masquerade, errs_masquerade = verify_evidence_report(
+                report_path=diag_report,
+                expected_sha=head_sha,
+                expected_base_sha=head_sha,
+                expected_policy_sha256=compute_sha256_bytes(proposed_bytes),
+                required_check_ids=["spec-hygiene", "harness-selftests", "apk-validation"],
+                require_candidate=True,
+                expected_run_id="diag-test-cand-diagnostic",
+                policy_path=repo / "policies" / "checks.json",
+            )
+            self.assertFalse(ok_masquerade)
+            self.assertTrue(any("Fast lane report cannot be used" in e for e in errs_masquerade))
+
 if __name__ == "__main__":
     unittest.main()
