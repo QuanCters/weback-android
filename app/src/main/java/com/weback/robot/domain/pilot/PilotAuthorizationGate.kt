@@ -414,23 +414,26 @@ class PilotAuthorizationGate(
     )
 
     /**
-     * Atomic one-time ticket consumption performed strictly at the network dispatch boundary (`B-SEC-01`).
-     * Prevents ticket replay, forged tickets, field tampering, and cross-request substitution.
+     * Atomic one-time ticket consumption performed strictly at the network dispatch boundary (`B-SEC-01`, `B-FIX-01`).
+     * Prevents ticket replay, forged tickets, field tampering, cross-request substitution, and
+     * serialized login account/calling_code mismatch.
      */
     fun consumeTicketForDispatch(
         ticket: PilotAdmissionTicket,
         requestUrl: String,
         observedOperation: PilotOperation,
         nowElapsedMs: Long? = null,
-        endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)? = null
+        endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)? = null,
+        accountIdentifier: String? = null,
+        regionCallingCode: String? = null
     ): GateCheckResult = evaluateTicketInternal(
         ticket = ticket,
         nowElapsedMs = nowElapsedMs,
         requestUrl = requestUrl,
         observedOperation = observedOperation,
         endpointValidator = endpointValidator,
-        accountIdentifier = null,
-        regionCallingCode = null,
+        accountIdentifier = accountIdentifier,
+        regionCallingCode = regionCallingCode,
         consume = true
     )
 
@@ -491,11 +494,15 @@ class PilotAuthorizationGate(
                 )
             }
             if (record.operation == PilotOperation.LOGIN &&
-                (accountIdentifier != null || regionCallingCode != null)
+                (consume || accountIdentifier != null || regionCallingCode != null)
             ) {
                 val normAcct = accountIdentifier?.let { PilotAccountScope.normalizeAccount(it) }
                 val normCode = regionCallingCode?.let { PilotAccountScope.normalizeCallingCode(it) }
-                if (normAcct != record.boundAccountIdentifier || normCode != record.boundCallingCode) {
+                if (normAcct.isNullOrBlank() ||
+                    normCode.isNullOrBlank() ||
+                    normAcct != record.boundAccountIdentifier ||
+                    normCode != record.boundCallingCode
+                ) {
                     return@synchronized GateCheckResult.Denied(
                         PilotAbortReason.AuthorizationExpiredOrInvalid,
                         "Ticket account binding mismatch"

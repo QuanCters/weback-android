@@ -294,35 +294,62 @@ def validate_manifest_xml_structural(
     allowed_internal_perm = f"{expected_package_id}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
     allowed_permissions = {allowed_internal_perm} | allowed_external_perms
 
-    for perm in root.findall("permission"):
-        declared_name = get_android_attr(perm, "name")
-        if declared_name != allowed_internal_perm:
-            errors.append(
-                f"Unexpected custom <permission> '{declared_name}' for '{connectivity_policy}' policy; "
-                f"expected only '{allowed_internal_perm}'"
-            )
+    uses_permission_tags = {"uses-permission", "uses-permission-sdk-23", "uses-permission-sdk-m"}
+    effective_declared_uses_permissions: set[str] = set()
 
-    declared_uses_permissions: set[str] = set()
-    for up in root.findall("uses-permission"):
-        pname = get_android_attr(up, "name")
-        if pname:
-            declared_uses_permissions.add(pname)
-        if pname in allowed_permissions:
-            continue
-        if pname in PROHIBITED_PERMISSIONS:
-            errors.append(f"Prohibited application permission detected in manifest: '{pname}'")
-        elif connectivity_policy == "offline":
+    for elem in root.iter():
+        local_tag = elem.tag.rsplit("}", 1)[-1]
+        if local_tag == "permission":
+            declared_name = get_android_attr(elem, "name")
+            if declared_name != allowed_internal_perm:
+                errors.append(
+                    f"Unexpected custom <permission> '{declared_name}' for '{connectivity_policy}' policy; "
+                    f"expected only '{allowed_internal_perm}'"
+                )
+        elif local_tag in ("permission-tree", "permission-group"):
+            declared_name = get_android_attr(elem, "name")
             errors.append(
-                f"Unauthorized application permission detected in manifest: '{pname}'. "
-                f"FCT-001 authorizes zero external application permissions."
+                f"Unexpected custom <{local_tag}> '{declared_name}' for '{connectivity_policy}' policy"
             )
-        else:
-            errors.append(
-                f"Unauthorized application permission detected in manifest for '{connectivity_policy}' policy: '{pname}'."
-            )
+        elif local_tag in uses_permission_tags:
+            pname = get_android_attr(elem, "name")
+            if not pname:
+                errors.append(
+                    f"Permission declaration <{local_tag}> is missing required android:name attribute"
+                )
+                continue
+            if pname not in allowed_permissions:
+                if pname in PROHIBITED_PERMISSIONS:
+                    errors.append(f"Prohibited application permission detected in manifest: '{pname}'")
+                elif connectivity_policy == "offline":
+                    errors.append(
+                        f"Unauthorized application permission detected in manifest: '{pname}'. "
+                        f"FCT-001 authorizes zero external application permissions."
+                    )
+                else:
+                    errors.append(
+                        f"Unauthorized application permission detected in manifest for '{connectivity_policy}' policy: '{pname}'."
+                    )
+                continue
+
+            max_sdk_raw = get_android_attr(elem, "maxSdkVersion")
+            is_effective = True
+            if max_sdk_raw is not None:
+                try:
+                    max_sdk_val = int(max_sdk_raw)
+                    if max_sdk_val < int(EXPECTED_TARGET_SDK):
+                        is_effective = False
+                except ValueError:
+                    is_effective = False
+            if is_effective:
+                effective_declared_uses_permissions.add(pname)
+            elif pname in required_external_perms:
+                errors.append(
+                    f"Required permission '{pname}' in <{local_tag}> is not effective up to targetSdk {EXPECTED_TARGET_SDK} (maxSdkVersion='{max_sdk_raw}')"
+                )
 
     for req_perm in sorted(required_external_perms):
-        if req_perm not in declared_uses_permissions:
+        if req_perm not in effective_declared_uses_permissions:
             errors.append(
                 f"Missing required permission '{req_perm}' for '{connectivity_policy}' connectivity policy"
             )

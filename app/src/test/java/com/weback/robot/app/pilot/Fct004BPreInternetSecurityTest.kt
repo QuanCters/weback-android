@@ -224,7 +224,7 @@ class Fct004BPreInternetSecurityTest {
 
             server.enqueue(MockResponse().setResponseCode(200).setBody("""{"code":1}"""))
 
-            val loginBody = """{"header":{},"payload":{"opt":"login","pwd":"synthetic"}}"""
+            val loginBody = """{"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":"+1","account":"pilot-a@example.invalid","client_id":"yugong_app","language":"en"},"payload":{"opt":"login","pwd":"synthetic"}}"""
             val req = Request.Builder()
                 .url("$originHttp/prod/oauth")
                 .post(loginBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
@@ -552,6 +552,183 @@ class Fct004BPreInternetSecurityTest {
             wsDelegate.close()
         } finally {
             runCatching { serverWs?.close(1000, "teardown") }
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun bFix01_finalDispatchBindsSerializedLoginEnvelopeAccountAndCallingCode() {
+        val server = MockWebServer()
+        server.start(InetAddress.getByName("127.0.0.1"), 0)
+        try {
+            val nowMs = 10_000L
+            val authClock = AuthMonotonicClock { nowMs }
+            val originHttp = "http://127.0.0.1:${server.port}"
+            val gate = PilotAuthorizationGate(
+                allowedAuthOrigins = setOf(originHttp),
+                clock = PilotClock { authClock.elapsedRealtimeMs() }
+            )
+            val pilotTrust = AuthorizedPilotEndpointTrustPolicy(
+                PilotEndpointConfig(
+                    approvedAuthOrigin = originHttp,
+                    pinnedApiOrigin = "https://127.0.0.1:${server.port}",
+                    pinnedWssOrigin = "wss://127.0.0.1:${server.port}"
+                ),
+                allowedAuthOrigins = setOf(originHttp),
+                allowLoopbackForHermeticTests = true
+            )
+            val client = PilotClientFactory.buildPilotOkHttpClient(
+                trustPolicy = pilotTrust,
+                activeCallRegistry = PilotActiveCallRegistry(),
+                admissionGate = gate,
+                authClock = authClock
+            )
+
+            var authSeq = 0
+            fun setupGateAndClient(nowMsVal: Long = nowMs): Pair<PilotAuthorizationGate, okhttp3.OkHttpClient> {
+                val g = PilotAuthorizationGate(
+                    allowedAuthOrigins = setOf(originHttp),
+                    clock = PilotClock { nowMsVal }
+                )
+                val c = PilotClientFactory.buildPilotOkHttpClient(
+                    trustPolicy = pilotTrust,
+                    activeCallRegistry = PilotActiveCallRegistry(),
+                    admissionGate = g,
+                    authClock = authClock
+                )
+                assertTrue(
+                    g.activate(
+                        buildContext(
+                            authId = "FCT004B-BFIX01-${++authSeq}",
+                            originHttp = originHttp,
+                            port = server.port,
+                            accountIdentifier = "authorized-pilot@example.invalid",
+                            nowMs = nowMsVal
+                        ),
+                        runtimeIdentity,
+                        nowMsVal
+                    ) is GateActivationResult.Activated
+                )
+                return g to c
+            }
+
+            fun acquireFreshLoginTicket(g: PilotAuthorizationGate) = (
+                g.acquireAdmission(
+                    operation = PilotOperation.LOGIN,
+                    nowElapsedMs = nowMs,
+                    requestUrl = "$originHttp/prod/oauth"
+                ) as AdmissionResult.Admitted
+            ).ticket
+
+            fun sendRawLogin(c: okhttp3.OkHttpClient, ticket: PilotAdmissionTicket, bodyJson: String): Boolean {
+                val req = Request.Builder()
+                    .url("$originHttp/prod/oauth")
+                    .post(bodyJson.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    .tag(PilotAdmissionTicket::class.java, ticket)
+                    .build()
+                return try {
+                    c.newCall(req).execute().use { resp -> resp.isSuccessful }
+                } catch (_: IOException) {
+                    false
+                }
+            }
+
+            // Enqueue responses so any unblocked dispatch would hit MockWebServer and increment requestCount
+            repeat(12) {
+                server.enqueue(MockResponse().setResponseCode(200).setBody("""{"code":1}"""))
+            }
+
+            // 1. Valid ticket + mismatched serialized account -> 0 requests
+            val (g1, c1) = setupGateAndClient()
+            val mismatchAcctTicket = acquireFreshLoginTicket(g1)
+            val mismatchAcctBody = """
+                {"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":"+1","account":"attacker@example.invalid","client_id":"yugong_app","language":"en"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}
+            """.trimIndent()
+            var capturedExceptionMsg = ""
+            val mismatchAcctSent = try {
+                val req = Request.Builder()
+                    .url("$originHttp/prod/oauth")
+                    .post(mismatchAcctBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    .tag(PilotAdmissionTicket::class.java, mismatchAcctTicket)
+                    .build()
+                c1.newCall(req).execute().use { it.isSuccessful }
+            } catch (ioe: IOException) {
+                capturedExceptionMsg = ioe.message.orEmpty()
+                false
+            }
+            assertFalse("Mismatched serialized account must be rejected at dispatch", mismatchAcctSent)
+            assertFalse("Validation error must not leak secrets", capturedExceptionMsg.contains("SuperSecretPassword123!"))
+            assertFalse("Validation error must not leak account identifier", capturedExceptionMsg.contains("attacker@example.invalid"))
+            assertEquals("Mismatched serialized account must produce zero requests", 0, server.requestCount)
+
+            // 2. Valid ticket + mismatched serialized calling_code -> 0 requests
+            val (g2, c2) = setupGateAndClient()
+            val mismatchCodeTicket = acquireFreshLoginTicket(g2)
+            val mismatchCodeBody = """
+                {"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":"+86","account":"authorized-pilot@example.invalid","client_id":"yugong_app","language":"en"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}
+            """.trimIndent()
+            val mismatchCodeSent = sendRawLogin(c2, mismatchCodeTicket, mismatchCodeBody)
+            assertFalse("Mismatched calling_code must be rejected at dispatch", mismatchCodeSent)
+            assertEquals("Mismatched calling_code must produce zero requests", 0, server.requestCount)
+
+            // 3. Missing, malformed, wrong-type, ambiguous duplicate, or extra-operation identity fields -> 0 requests
+            val malformedPayloads = listOf(
+                // Missing identity fields (empty header)
+                """{"header":{},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}""",
+                // Missing calling_code
+                """{"header":{"api_version":"6.1.7","app_name":"WeBack","account":"authorized-pilot@example.invalid","client_id":"yugong_app","language":"en"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}""",
+                // Wrong type for account (number instead of string)
+                """{"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":"+1","account":12345,"client_id":"yugong_app","language":"en"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}""",
+                // Wrong type for calling_code (boolean instead of string)
+                """{"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":true,"account":"authorized-pilot@example.invalid","client_id":"yugong_app","language":"en"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}""",
+                // Ambiguous duplicate account key
+                """{"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":"+1","account":"authorized-pilot@example.invalid","account":"evil@example.invalid","client_id":"yugong_app","language":"en"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}""",
+                // Unauthorized extra operation in header or payload
+                """{"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":"+1","account":"authorized-pilot@example.invalid","client_id":"yugong_app","language":"en","opt":"send_to_device"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}""",
+                // Missing required envelope header field (client_id)
+                """{"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":"+1","account":"authorized-pilot@example.invalid","language":"en"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}"""
+            )
+            for (badBody in malformedPayloads) {
+                val (gBad, cBad) = setupGateAndClient()
+                val t = acquireFreshLoginTicket(gBad)
+                assertFalse("Malformed/ambiguous payload must fail closed", sendRawLogin(cBad, t, badBody))
+                assertEquals("Malformed/ambiguous payload must produce zero requests", 0, server.requestCount)
+            }
+
+            // Direct consumeTicketForDispatch without account/calling_code for LOGIN must also fail closed
+            val (gDirect, _) = setupGateAndClient()
+            val directTicket = acquireFreshLoginTicket(gDirect)
+            assertTrue(
+                gDirect.consumeTicketForDispatch(
+                    ticket = directTicket,
+                    requestUrl = "$originHttp/prod/oauth",
+                    observedOperation = PilotOperation.LOGIN,
+                    nowElapsedMs = nowMs
+                ) is GateCheckResult.Denied
+            )
+
+            // 4. Correct request-bound ticket -> intermediate verify remains non-consuming, final dispatch sends 1 request
+            val (gOk, cOk) = setupGateAndClient()
+            val validTicket = acquireFreshLoginTicket(gOk)
+            assertTrue(
+                gOk.verifyTicket(
+                    ticket = validTicket,
+                    nowElapsedMs = nowMs,
+                    requestUrl = "$originHttp/prod/oauth",
+                    accountIdentifier = "authorized-pilot@example.invalid",
+                    regionCallingCode = "+1"
+                ) is GateCheckResult.Allowed
+            )
+            val validBody = """
+                {"header":{"api_version":"6.1.7","app_name":"WeBack","calling_code":"+1","account":"authorized-pilot@example.invalid","client_id":"yugong_app","language":"en"},"payload":{"opt":"login","pwd":"SuperSecretPassword123!"}}
+            """.trimIndent()
+            assertTrue("Correct request-bound login ticket must succeed", sendRawLogin(cOk, validTicket, validBody))
+            assertEquals("Correct request-bound login must send exactly 1 request", 1, server.requestCount)
+
+            // 5. Replayed consumed ticket -> zero additional requests
+            assertFalse("Replayed consumed ticket must be rejected", sendRawLogin(cOk, validTicket, validBody))
+            assertEquals("Replayed consumed ticket must produce zero additional requests", 1, server.requestCount)
+        } finally {
             server.shutdown()
         }
     }

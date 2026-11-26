@@ -44,6 +44,9 @@ android {
         }
     }
 
+    // Target androidTest instrumentation APK against com.weback.robot.pilot for TEST-PILOT-460 Keystore verification
+    testBuildType = "pilot"
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

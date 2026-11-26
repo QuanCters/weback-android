@@ -599,16 +599,18 @@ object PilotClientFactory {
                 val req = chain.request()
                 val ticket = req.tag(PilotAdmissionTicket::class.java)
                     ?: throw IOException("Pilot network admission denied: missing admission ticket")
-                val observedOp = extractObservedOperation(req)
+                val dispatchReq = extractDispatchRequest(req)
                     ?: throw IOException("Pilot network admission denied: unauthorized HTTP method or payload")
                 val check = admissionGate.consumeTicketForDispatch(
                     ticket = ticket,
                     requestUrl = req.url.toString(),
-                    observedOperation = observedOp,
+                    observedOperation = dispatchReq.operation,
                     nowElapsedMs = authClock?.elapsedRealtimeMs(),
                     endpointValidator = { ctx, url ->
                         trustPolicy.isUrlAuthorizedForOperation(ctx, ticket.operation, url)
-                    }
+                    },
+                    accountIdentifier = dispatchReq.accountIdentifier,
+                    regionCallingCode = dispatchReq.regionCallingCode
                 )
                 if (check is GateCheckResult.Denied) {
                     throw IOException("Pilot network admission denied: ${check.safeMessage}")
@@ -631,10 +633,16 @@ object PilotClientFactory {
         return builder.build()
     }
 
-    private fun extractObservedOperation(req: okhttp3.Request): PilotOperation? {
+    private data class PilotDispatchRequest(
+        val operation: PilotOperation,
+        val accountIdentifier: String? = null,
+        val regionCallingCode: String? = null
+    )
+
+    private fun extractDispatchRequest(req: okhttp3.Request): PilotDispatchRequest? {
         if (req.header("Upgrade").equals("websocket", ignoreCase = true)) {
-            return if (req.method.equals("GET", ignoreCase = true)) {
-                PilotOperation.WS_TELEMETRY_OBSERVE
+            return if (req.method.equals("GET", ignoreCase = true) && req.body == null) {
+                PilotDispatchRequest(PilotOperation.WS_TELEMETRY_OBSERVE)
             } else {
                 null
             }
@@ -650,12 +658,21 @@ object PilotClientFactory {
         runCatching { body.writeTo(buffer) }.getOrNull() ?: return null
         if (buffer.size > 65_536L) return null
         val bodyText = buffer.readUtf8()
-        return when {
-            com.weback.robot.protocol.pilot.PilotHttpOperationGuard.validateOperationPayload("login", bodyText) ->
-                PilotOperation.LOGIN
-            com.weback.robot.protocol.pilot.PilotHttpOperationGuard.validateOperationPayload("user_thing_list_get", bodyText) ->
-                PilotOperation.USER_THING_LIST_GET
-            else -> null
+        val loginIdentity = com.weback.robot.protocol.pilot.PilotHttpOperationGuard
+            .validateLoginEnvelopeAndExtractIdentity(bodyText)
+        if (loginIdentity != null) {
+            return PilotDispatchRequest(
+                operation = PilotOperation.LOGIN,
+                accountIdentifier = loginIdentity.account,
+                regionCallingCode = loginIdentity.callingCode
+            )
+        }
+        return if (com.weback.robot.protocol.pilot.PilotHttpOperationGuard
+                .validateOperationPayload("user_thing_list_get", bodyText)
+        ) {
+            PilotDispatchRequest(PilotOperation.USER_THING_LIST_GET)
+        } else {
+            null
         }
     }
 }

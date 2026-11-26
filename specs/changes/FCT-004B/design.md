@@ -13,7 +13,7 @@
    - `PilotAdmissionTicket` constructor becomes `internal` and carries `ticketId`, `authorizationId`, `pilotGeneration`, `operation`, `deadlineElapsedMs`, `environment`, `httpCallTimeoutMs`, `maxWsReconnectAttempts`, `issuedElapsedMs`, `remainingWindowAtIssueMs`, `boundAccountIdentifier`, `boundCallingCode`, and `boundRequestUrl`.
 2. **Intermediate Verification vs. Atomic Dispatch Consumption:**
    - `verifyTicket(...)` (used by `PilotCapabilityRestrictedAuthGateway`, `PilotCapabilityRestrictedInventoryGateway`, and `OkHttpWebSocketTransport`) validates existence in `issuedTickets`, exact field equality against `IssuedTicketRecord` (blocking `.copy()` tampering), non-consumption, active generation, environment, deadline (`clock` / `nowElapsedMs`), operation, URL binding, and `endpointValidator` **without** consuming the ticket.
-   - `consumeTicketForDispatch(...)` (invoked in `PilotClientFactory`'s OkHttp dispatch interceptor immediately before `activeCallRegistry.registerForGeneration` and `chain.proceed`) atomically validates all ticket/request bindings (`POST` + `"login"` JSON for `LOGIN`, `POST` + `"user_thing_list_get"` JSON for `USER_THING_LIST_GET`, `GET` + `Upgrade: websocket` for `WS_TELEMETRY_OBSERVE`) and marks `record.consumed = true` under `lock`. Any subsequent replay fails closed before touching the socket.
+   - `consumeTicketForDispatch(...)` (invoked in `PilotClientFactory`'s OkHttp dispatch interceptor immediately before `activeCallRegistry.registerForGeneration` and `chain.proceed`) atomically validates all ticket/request bindings (`POST` + strict approved `"login"` JSON envelope extracting normalized `account` and `calling_code` bound against `IssuedTicketRecord` for `LOGIN`, `POST` + `"user_thing_list_get"` JSON for `USER_THING_LIST_GET`, `GET` + `Upgrade: websocket` for `WS_TELEMETRY_OBSERVE`) and marks `record.consumed = true` under `lock` (`B-FIX-01`). Strict JSON parsing rejects duplicate keys, wrong field types, missing identity fields, and unauthorized extra operations without logging secrets. Any mismatch or subsequent replay fails closed before touching the socket.
 
 ---
 
@@ -45,6 +45,7 @@
    - Enable `buildFeatures.buildConfig = true`.
    - `defaultConfig`: `applicationId = "com.weback.robot"`, `minSdk = 31`, `targetSdk = 35`, `PILOT_INTERNET_CAPABLE = false`, `APP_CONNECTIVITY_MODE = "OFFLINE"`.
    - `buildTypes.create("pilot")`: `initWith(getByName("debug"))`, `applicationIdSuffix = ".pilot"`, `matchingFallbacks += listOf("debug")`, `PILOT_INTERNET_CAPABLE = true`, `APP_CONNECTIVITY_MODE = "PILOT"`.
+   - Set `testBuildType = "pilot"` so `assemblePilotAndroidTest` targets `com.weback.robot.pilot` (`com.weback.robot.pilot.test`, `androidx.test.runner.AndroidJUnitRunner`, matching debug signing) for `TEST-PILOT-460` hardware Keystore verification inside the pilot package without altering the offline APK security contract.
    - Add `pilotImplementation(platform(libs.androidx.compose.bom))` and `pilotImplementation(libs.androidx.compose.ui.test.manifest)` so Robolectric Compose tests pass identically on `testPilotUnitTest`.
 2. **Manifest & Resources:**
    - `app/src/main/AndroidManifest.xml`: unchanged (`INTERNET`-free).
@@ -60,7 +61,8 @@
 
 1. **`apk_validator.py --connectivity-policy {offline,pilot}`:**
    - Default `--connectivity-policy offline` (`app/build/outputs/apk/debug/app-debug.apk`, `com.weback.robot`, forbids `INTERNET`).
-   - `--connectivity-policy pilot` (`app/build/outputs/apk/pilot/app-pilot.apk`, `com.weback.robot.pilot`, requires `INTERNET`, forbids all other external permissions, checks `${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` and `${applicationId}.androidx-startup` authorities).
+   - `--connectivity-policy pilot` (`app/build/outputs/apk/pilot/app-pilot.apk`, `com.weback.robot.pilot`, requires effective `INTERNET`, forbids all other external permissions, checks `${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` and `${applicationId}.androidx-startup` authorities).
+   - Permission boundary scans all Android permission declaration forms (`uses-permission`, `uses-permission-sdk-23`, `uses-permission-sdk-m`, `permission`, `permission-tree`, `permission-group`) across the manifest tree and rejects ineffective `maxSdkVersion` declarations on required pilot permissions (`B-FIX-02`).
    - Explicit `--apk` pointing to the opposite variant path (`debug` vs `pilot`) is rejected before inspection as artifact substitution.
 2. **Policy Files:**
    - `policies/checks.baseline.json` holds the currently approved 7-check baseline (`e688b6fef22290281facf91d26f42ae53ff527ca7f6b599a750d24d66873985e`).
