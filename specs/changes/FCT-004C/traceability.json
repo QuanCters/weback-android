@@ -1,0 +1,169 @@
+{
+  "change_id": "FCT-004C",
+  "milestone": "FCT-004C",
+  "title": "Controlled Live Authentication & Single-Inventory Pilot",
+  "risk_tier": "T4",
+  "requirements": [
+    {
+      "requirement_id": "REQ-PILOT-461",
+      "title": "Human-Triggered External Live-Pilot Authorization",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-461.1",
+          "description": "Countersigned PilotExternalApproval, candidate/APK identity, zero-WS budgets (0 initial, 0 reconnect), <= 15s HTTP timeout, and <= 15m monotonic deadline required for gate activation.",
+          "task_id": "Task 1",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-461",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-461.2",
+          "description": "Volatile-only authorization, OFFLINE_DEFAULT boot, offline APK live activation rejected, UI-checkbox-only rejected, and mock authorizations rejected on live gateways.",
+          "task_id": "Task 1",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-461",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-462",
+      "title": "Human-Operated In-Memory Credential Entry & Screen Protection",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-462.1",
+          "description": "FLAG_SECURE enforced on sensitive credential entry window.",
+          "task_id": "Task 2",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-462",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-462.2",
+          "description": "No rememberSaveable, persistent state, logs, or exports retain passwords; mutable CharArray buffers wiped on submit/serialization/cancel/failure/exit/teardown.",
+          "task_id": "Task 2",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-462",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-463",
+      "title": "Evidence-Grounded Wire Login Envelope & Parameter Validation",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-463.1",
+          "description": "Login payload matches reconciled 6.1.7 wire schema (api_version=6.1.7, app_name=WeBack, client_id=yugong_app, language=en, opt=login).",
+          "task_id": "Task 3",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-463",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-463.2",
+          "description": "PilotHttpOperationGuard rejects extra/duplicate/wrong-type JSON fields and unknown operations fail-closed.",
+          "task_id": "Task 3",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-463",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-464",
+      "title": "Single Login Budget, Anti-Retry & Challenge Fail-Closed Boundary",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-464.1",
+          "description": "At most ONE login attempt per authorization run, <= 15s HTTP timeout, 0 requests on account/region mismatch, 0 automatic retries, and 0 passwordless refresh.",
+          "task_id": "Task 4",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-464",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-464.2",
+          "description": "Zero MD5 fallback, zero speculative envelope retry, zero CAPTCHA automation; aborts fail-closed on challenge indicators.",
+          "task_id": "Task 4",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-464",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-465",
+      "title": "Trusted Authentication Origin & Conservative Dynamic-Origin Quarantine",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-465.1",
+          "description": "Requests routed strictly to approved region /prod/oauth endpoint over TLS without redirects or proxy.",
+          "task_id": "Task 5",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-465",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-465.2",
+          "description": "Unapproved dynamic origins retain only sanitized observation, discard session/token, revoke auth and clean up without auto-retry or resumable quarantined tokens.",
+          "task_id": "Task 5",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-465",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-466",
+      "title": "Single Read-Only Inventory Query & Exact Target Robot Validation",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-466.1",
+          "description": "At most ONE user_thing_list_get request when origins pre-approved; 0 WS initial connections, 0 reconnects, 0 outbound WS frames, 0 robot commands, and selectAndObserveDevice never called.",
+          "task_id": "Task 6",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-466",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-466.2",
+          "description": "Exact target validation separated from telemetry; exposes minimum authorized target data only; missing/mismatched/unsupported/malformed target terminates safely.",
+          "task_id": "Task 6",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-466",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-PILOT-467",
+      "title": "Minimal Live Pilot UI Integration, Monotonic Expiry & Pre-Live Device Readiness",
+      "workstream": "T4",
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-467.1",
+          "description": "Pilot-only 11-step live UI flow wired in MainActivity preserving mock workflow in both APKs, verified by Activity-level Compose integration tests.",
+          "task_id": "Task 7",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-467",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-467.2",
+          "description": "Monotonic deadline expiry and generation-fenced teardown verified on JVM; FCT-004B physical-device expiry NOT_RUN limitation recorded and mandatory offline physical-device monotonic expiry added to pre-live checklist.",
+          "task_id": "Task 7",
+          "verification_check_id": "pilot-android-unit-tests",
+          "test_oracle": "TEST-PILOT-468, TEST-PILOT-469",
+          "status": "PLANNED"
+        }
+      ]
+    }
+  ]
+}
