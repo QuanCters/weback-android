@@ -3,9 +3,9 @@
 - **Change ID:** `FCT-004`
 - **Milestone:** Milestone 4 — Controlled Connectivity Pilot
 - **Milestone Risk Ceiling:** `T4 (Critical Risk)` per [policies/risk-tiers.md](../../../policies/risk-tiers.md) (`POL-RISK-01`)
-- **Status:** `G0–G3 CALIBRATED SPECIFICATION BASELINE (STOP AT GATE G3; ZERO IMPLEMENTATION CODE, ZERO LIVE NETWORK)`
+- **Status:** `FCT-004A OFFLINE IMPLEMENTATION CANDIDATE (BOUNDED REMEDIATION FIX-401..FIX-405 COMPLETE; ZERO INTERNET PERMISSION, ZERO LIVE NETWORK)`
 - **Prerequisite:** [FCT-003](../FCT-003/proposal.md) squash-merged on `main` (`f6f39e7b62175a95c57606c7e3ede8656ccfe058`, tree `ccd37238d19ea157e63cd9d7e402575de6735ee3`, post-merge CI `45656859330` `PASS`; physical-device `TEST-AUTH-312` and Human T4 UAT accepted on `SM-S911B` Android 14 / API 34)
-- **Governance Links:** [specs/constitution.md](../../constitution.md) | [specs/roadmap.md](../../roadmap.md) | [specs/tech-stack.md](../../tech-stack.md) | [specs/deployment.md](../../deployment.md) | [docs/reference/RE_BASELINE.md](../../../docs/reference/RE_BASELINE.md) | [risk-assessment.md](risk-assessment.md)
+- **Governance Links:** [specs/constitution.md](../../constitution.md) | [specs/roadmap.md](../../roadmap.md) | [specs/tech-stack.md](../../tech-stack.md) | [specs/deployment.md](../../deployment.md) | [docs/reference/RE_BASELINE.md](../../../docs/reference/RE_BASELINE.md) | [risk-assessment.md](risk-assessment.md) | [regression-evidence.md](regression-evidence.md)
 
 ---
 
@@ -51,9 +51,9 @@ Before the project can progress to `FCT-005` (SLAM map ingestion) or `FCT-006` (
 
 ### 4.1 Immutable `PilotAuthorizationContext` Binding
 No pilot network admission may be granted unless an immutable `PilotAuthorizationContext` binds all of the following fields and passes `PilotAuthorizationGate` validation:
-1. `authorizationId`: Non-blank unique authorization identifier (`"FCT004-PILOT-YYYYMMDD-NN"`).
-2. **Candidate & APK Identity:** `targetCandidateSha` (40-char hex git SHA), `expectedApplicationId` (`"com.weback.robot"`), `expectedVersionName` (`"0.1.0-alpha"`), and `expectedApkSha256` (64-char hex SHA-256).
-3. **Authorized Test Account Scope:** `accountScopeType == DEDICATED_ISOLATED_TEST_ACCOUNT`, `authorizedRegionCallingCode` (valid `+`/`00` calling code), and `authorizedAccountAlias` (redacted/scoped identifier; personal/production accounts prohibited).
+1. `authorizationId`: Non-blank unique authorization identifier (`"FCT004-PILOT-YYYYMMDD-NN"`), valid for **one bounded pilot run only** (`PilotAuthorizationGate` tracks `consumedAuthorizationIds` and rejects replay/reactivation of previously consumed IDs or activation while cleanup is in-flight/incomplete; production restart continues to require a newly issued external authorization without claiming persistent cross-restart anti-replay storage).
+2. **Candidate & APK Identity:** `targetCandidateSha` (40-char hex git SHA), `expectedApplicationId` (`"com.weback.robot"`), `expectedVersionName` (`"0.1.0-alpha"`), and `expectedApkSha256` (64-char hex SHA-256). Offline mock fixture workflows use `PilotEnvironment.OFFLINE_MOCK_FIXTURE` with a distinct non-live gate/controller (`offlineMockPilotController`) incapable of activating live cloud endpoints (`PilotEnvironment.LIVE_PILOT`), and never populate live gateways with fake zero-filled candidate digests.
+3. **Authorized Test Account Scope:** `accountScopeType == DEDICATED_ISOLATED_TEST_ACCOUNT`, exact normalized `regionCallingCode` (`trim()`), separate exact `authorizedAccountIdentifier` (`trim()` equality checked before credential serialization/network I/O, redacted in `toString()`), and redacted display `authorizedAccountAlias` (personal/production accounts prohibited; redacted display alias never substitutes for exact account identity).
 4. **Exact Target Robot Identity:** `expectedSubTypeFamily == "LaserSlam"` and `expectedTargetThingName` (or pinned redacted tag/alias verified before telemetry hydration).
 5. **Permitted Operation Set:** Explicitly restricted to `{"login", "user_thing_list_get", "ws_telemetry_observe"}`.
 6. **Approved Endpoint Configuration:** Exact `approvedAuthOrigin` (`https://user.grit-cloud.cn:443` or `https://user.grit-cloud.com:443` + path `/prod/oauth`), optional pinned `pinnedApiOrigin` / `pinnedWssOrigin` (`https`/`wss`, `:443`), and `requireProvenanceVerification = true`.
@@ -137,5 +137,16 @@ The current `policies/checks.json` (`e688b6fef22290281facf91d26f42ae53ff527ca7f6
      - Negative test proving `--connectivity-policy pilot` rejects any APK containing `ACCESS_FINE_LOCATION`, `BLUETOOTH_SCAN`, `ACCESS_WIFI_STATE`, `CHANGE_NETWORK_STATE`, or unknown custom permissions.
      - Preservation checks proving `usesCleartextTraffic="false"`, `allowBackup="false"`, `networkSecurityConfig`, `apksigner` signature verification, `PROHIBITED_DEX_PACKAGES`, and `PROHIBITED_BINARY_PATTERNS` remain strictly non-waivable in both `offline` and `pilot` modes.
    - **Candidate-Specific Transition Authorization & Retirement Procedure:**
-     - FCT-004B policy edits (`policies/checks.json`, `verification/checks/apk_validator.py`) MUST be authorized via a candidate-specific `TRANSITION_AUTHORIZATION` JSON payload bound to exact `candidate_sha`, `tree_sha`, `base_sha`, `expected_policy_sha256`, and dual human review (`PO` + `Lead Maintainer`).
+     - FCT-004B policy edits (`policies/checks.json`, `verification/checks/apk_validator.py`) MUST be authorized via a candidate-specific `TRANSITION_AUTHORIZATION` JSON payload bound to exact `candidate_sha`, `tree_sha`, `base_sha`, `expected_policy_sha256`, and dual human review (`PO` + `Lead Maintainer`):
+       ```json
+       {
+         "change_id": "FCT-004B",
+         "candidate_sha": "<40-char-commit-sha>",
+         "tree_sha": "<40-char-tree-sha>",
+         "base_sha": "<40-char-main-sha>",
+         "expected_policy_sha256": "<64-char-new-checks-json-sha256>",
+         "approved_by_product_owner": "<Human PO Name & Date>",
+         "approved_by_lead_maintainer": "<Human Lead Maintainer Name & Date>"
+       }
+       ```
      - Post-merge procedure: Immediately after FCT-004B merges to `main`, compute the new canonical `policies/checks.json` SHA-256, update GitHub repository variable `APPROVED_POLICY_SHA256`, clear/retire the one-shot `TRANSITION_AUTHORIZATION` variable so stale transition grants cannot be replayed, and verify post-merge `push` CI passes against the new canonical policy hash.

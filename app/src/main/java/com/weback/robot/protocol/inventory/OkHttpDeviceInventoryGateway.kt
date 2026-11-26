@@ -12,12 +12,16 @@ import com.weback.robot.domain.model.DeviceInventoryItem
 import com.weback.robot.domain.model.RobotMode
 import com.weback.robot.domain.model.RobotState
 import com.weback.robot.domain.model.SessionCredentials
+import com.weback.robot.domain.pilot.PilotAdmissionTicket
+import com.weback.robot.protocol.pilot.PilotAdmissionContextElement
 import com.weback.robot.security.DiagnosticEvent
 import com.weback.robot.security.DiagnosticLogger
 import com.weback.robot.security.EndpointTrustDecision
 import com.weback.robot.security.EndpointTrustPolicy
 import com.weback.robot.security.NoOpDiagnosticLogger
 import com.weback.robot.security.OkHttpSecurityGuard
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -88,17 +92,35 @@ class OkHttpDeviceInventoryGateway(
 
         val bodyText = json.encodeToString(InventoryRequest())
         val startedMs = authClock.elapsedRealtimeMs()
+        val pilotTicket = coroutineContext[PilotAdmissionContextElement]?.ticket
+        val effectiveClient = if (pilotTicket != null) {
+            val perCallTimeout = minOf(
+                client.callTimeoutMillis.takeIf { it > 0 }?.toLong() ?: 15_000L,
+                pilotTicket.httpCallTimeoutMs
+            ).coerceIn(1L, 15_000L)
+            client.newBuilder()
+                .callTimeout(perCallTimeout, TimeUnit.MILLISECONDS)
+                .connectTimeout(minOf(client.connectTimeoutMillis.toLong().coerceAtLeast(1L), perCallTimeout), TimeUnit.MILLISECONDS)
+                .readTimeout(minOf(client.readTimeoutMillis.toLong().coerceAtLeast(1L), perCallTimeout), TimeUnit.MILLISECONDS)
+                .writeTimeout(minOf(client.writeTimeoutMillis.toLong().coerceAtLeast(1L), perCallTimeout), TimeUnit.MILLISECONDS)
+                .build()
+        } else {
+            client
+        }
 
         return withContext(dispatchers.io) {
             try {
-                val request = Request.Builder()
+                val requestBuilder = Request.Builder()
                     .url(session.apiUrl)
                     .addHeader("token", session.jwtToken)
                     .addHeader("region", session.regionName)
                     .post(bodyText.toRequestBody("application/json; charset=utf-8".toMediaType()))
-                    .build()
+                if (pilotTicket != null) {
+                    requestBuilder.tag(PilotAdmissionTicket::class.java, pilotTicket)
+                }
+                val request = requestBuilder.build()
 
-                client.newCall(request).execute().use { response ->
+                effectiveClient.newCall(request).execute().use { response ->
                     val latency = (authClock.elapsedRealtimeMs() - startedMs).coerceAtLeast(0L)
                     logger.log(
                         DiagnosticEvent(

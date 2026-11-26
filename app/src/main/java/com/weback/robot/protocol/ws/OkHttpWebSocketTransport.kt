@@ -12,6 +12,7 @@ import com.weback.robot.domain.model.ConnectivityError
 import com.weback.robot.domain.model.DeviceInventoryItem
 import com.weback.robot.domain.model.RobotState
 import com.weback.robot.domain.model.SessionCredentials
+import com.weback.robot.domain.pilot.PilotAdmissionTicket
 import com.weback.robot.protocol.inventory.OkHttpDeviceInventoryGateway
 import com.weback.robot.security.DiagnosticEvent
 import com.weback.robot.security.DiagnosticLogger
@@ -51,7 +52,8 @@ class OkHttpWebSocketTransport(
     private val connectionConfig: ConnectionConfig = ConnectionConfig(),
     private val logger: DiagnosticLogger = NoOpDiagnosticLogger,
     private val client: OkHttpClient = OkHttpSecurityGuard.buildHardenedClient(trustPolicy),
-    private val onSessionInvalidated: (Long, AuthFailureReason) -> Unit = { _, _ -> }
+    private val onSessionInvalidated: (Long, AuthFailureReason) -> Unit = { _, _ -> },
+    private val resetReconnectAttemptOnOpen: Boolean = true
 ) : RealtimeSessionTransport {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -75,6 +77,18 @@ class OkHttpWebSocketTransport(
     private var reconnectAttempt: Int = 0
     private var reconnectJob: Job? = null
     private var expiryWatchJob: Job? = null
+    @Volatile
+    private var pilotAdmissionPolicy: ((url: String, isReconnect: Boolean) -> PilotAdmissionTicket?)? = null
+    @Volatile
+    private var pilotMaxReconnectsProvider: (() -> Int?)? = null
+
+    fun attachPilotAdmissionPolicy(
+        maxReconnectsProvider: (() -> Int?)? = null,
+        policy: ((url: String, isReconnect: Boolean) -> PilotAdmissionTicket?)?
+    ) {
+        pilotMaxReconnectsProvider = maxReconnectsProvider
+        pilotAdmissionPolicy = policy
+    }
 
     @Serializable
     private data class WsTelemetryFrame(
@@ -144,7 +158,21 @@ class OkHttpWebSocketTransport(
             newGen to prev
         }
         oldSocket?.close(NORMAL_CLOSE_CODE, "Superseded connection")
-        openWebSocketInternal(session, epoch, gen)
+        val initialTicket = pilotAdmissionPolicy?.let { policy ->
+            val admitted = policy(session.wssUrl, false)
+            if (admitted == null) {
+                synchronized(commitLock) {
+                    if (!isClosed && epoch == activeEpoch && gen == activeGeneration) {
+                        activeSession = null
+                        activeGeneration++
+                        _connectionState.value = ConnectionState.Disconnected(ConnectivityError.AuthorizationDenied)
+                    }
+                }
+                return
+            }
+            admitted
+        }
+        openWebSocketInternal(session, epoch, gen, initialTicket)
         scheduleSessionExpiryWatch(session, epoch, gen)
     }
 
@@ -227,6 +255,33 @@ class OkHttpWebSocketTransport(
         socketToClose?.close(NORMAL_CLOSE_CODE, "Session invalidated")
     }
 
+    /**
+     * Unconditionally revokes and tears down any active or pending WebSocket connection
+     * without requiring an exact epoch match (`SEC-404` Emergency Disconnect race guard).
+     */
+    fun forceInvalidate(reason: ConnectivityError, expectedEpoch: Long? = null) {
+        val (socketToClose, wasConnecting) = synchronized(commitLock) {
+            if (isClosed) return
+            if (expectedEpoch != null && expectedEpoch != activeEpoch) return
+            val connecting = _connectionState.value is ConnectionState.Connecting
+            activeEpoch++
+            activeGeneration++
+            activeSession = null
+            activeSelectedDevice = null
+            _robotState.value = RobotState()
+            cancelJobsLocked()
+            val s = activeSocket
+            activeSocket = null
+            _connectionState.value = ConnectionState.Disconnected(reason)
+            s to connecting
+        }
+        if (wasConnecting) {
+            socketToClose?.cancel()
+        } else {
+            socketToClose?.close(NORMAL_CLOSE_CODE, "Emergency disconnect")
+        }
+    }
+
     override fun close() {
         val socketToClose = synchronized(commitLock) {
             if (isClosed) return
@@ -253,12 +308,20 @@ class OkHttpWebSocketTransport(
         handleInboundMessage(frameEpoch, frameGeneration, rawText)
     }
 
-    private fun openWebSocketInternal(session: SessionCredentials, epoch: Long, generation: Long) {
-        val request = Request.Builder()
+    private fun openWebSocketInternal(
+        session: SessionCredentials,
+        epoch: Long,
+        generation: Long,
+        admissionTicket: PilotAdmissionTicket? = null
+    ) {
+        val requestBuilder = Request.Builder()
             .url(session.wssUrl)
             .addHeader("token", session.jwtToken)
             .addHeader("region", session.regionName)
-            .build()
+        if (admissionTicket != null) {
+            requestBuilder.tag(PilotAdmissionTicket::class.java, admissionTicket)
+        }
+        val request = requestBuilder.build()
 
         val ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -272,7 +335,9 @@ class OkHttpWebSocketTransport(
                             1 // expired before open settled
                         } else {
                             lastActivityElapsedMs = nowMs
-                            reconnectAttempt = 0
+                            if (resetReconnectAttemptOnOpen) {
+                                reconnectAttempt = 0
+                            }
                             activeSocket = webSocket
                             _connectionState.value = ConnectionState.Connected(epoch, generation)
                             2
@@ -303,10 +368,26 @@ class OkHttpWebSocketTransport(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                logger.log(
+                    DiagnosticEvent(
+                        category = "WS_CLOSING",
+                        httpStatus = code,
+                        sessionEpoch = epoch,
+                        connectionGeneration = generation
+                    )
+                )
                 webSocket.close(code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                logger.log(
+                    DiagnosticEvent(
+                        category = "WS_CLOSED",
+                        httpStatus = code,
+                        sessionEpoch = epoch,
+                        connectionGeneration = generation
+                    )
+                )
                 synchronized(commitLock) {
                     if (isClosed || epoch != activeEpoch || generation != activeGeneration) return
                     activeSocket = null
@@ -418,7 +499,11 @@ class OkHttpWebSocketTransport(
             if (isClosed || epoch != activeEpoch || generation != activeGeneration) return
             reconnectJob?.cancel()
             val nextAttempt = reconnectAttempt + 1
-            if (nextAttempt > connectionConfig.maxReconnectAttempts) {
+            val effectiveMaxReconnects = minOf(
+                connectionConfig.maxReconnectAttempts,
+                pilotMaxReconnectsProvider?.invoke() ?: connectionConfig.maxReconnectAttempts
+            )
+            if (nextAttempt > effectiveMaxReconnects) {
                 _connectionState.value = ConnectionState.Disconnected(reason)
                 return
             }
@@ -456,7 +541,21 @@ class OkHttpWebSocketTransport(
                 handleExpiryInvalidation(epoch, generation)
                 return@launch
             }
-            openWebSocketInternal(session, epoch, newGen)
+            val reconnectTicket = pilotAdmissionPolicy?.let { policy ->
+                val admitted = policy(session.wssUrl, true)
+                if (admitted == null) {
+                    synchronized(commitLock) {
+                        if (!isClosed && epoch == activeEpoch && newGen == activeGeneration) {
+                            cancelJobsLocked()
+                            activeGeneration++
+                            _connectionState.value = ConnectionState.Disconnected(reason)
+                        }
+                    }
+                    return@launch
+                }
+                admitted
+            }
+            openWebSocketInternal(session, epoch, newGen, reconnectTicket)
             scheduleSessionExpiryWatch(session, epoch, newGen)
         }
         synchronized(commitLock) {

@@ -13,23 +13,27 @@
 ```text
 app/src/main/java/com/weback/robot/
 ├── domain/pilot/                    [PURE KOTLIN]
-│   ├── PilotModels.kt               (PilotAuthorizationContext, PilotRequestBudgets, PilotModeState,
+│   ├── PilotModels.kt               (PilotEnvironment, PilotAccountScope.authorizedAccountIdentifier + redacted toString,
+│   │                                 PilotAuthorizationContext, PilotRequestBudgets, PilotModeState,
 │   │                                 PilotAbortReason, PilotEmergencyDisconnectResult, ReadOnlyTelemetrySnapshot)
-│   ├── PilotAuthorizationGate.kt    (Default-disabled gate, immutable context validation, monotonic deadline)
+│   ├── PilotAuthorizationGate.kt    (Default-disabled gate, PilotEnvironment isolation, non-reusable authorizationId,
+│   │                                 cleanup barriers, PilotAdmissionTicket issuance/verification, monotonic deadline)
 │   └── ReadOnlyPilotGuard.kt        (Structural command guard; live command attempt -> Reject + PilotAbort)
 ├── security/
 │   ├── AuthorizedPilotEndpointTrustPolicy.kt (Exact auth + /prod/oauth, pinned/provenance-verified dynamic origins,
-│   │                                          explicit IPv4/IPv6 CIDR + socket destination validation, 15s callTimeout)
+│   │                                          explicit IPv4/IPv6 CIDR + socket destination validation,
+│   │                                          generation-ordered PilotActiveCallRegistry, OkHttp admission Interceptor)
 │   └── PilotSanitizedExporter.kt    (Allowlisted DiagnosticLogger + SecretRedactor evidence export)
 ├── protocol/pilot/
-│   └── PilotReadOnlyTransportBoundary.kt (Capability-restricted HTTP op validator + ReadOnlyWebSocketTransport
-│                                          blocking all outbound app text/binary frames while preserving WS control frames)
+│   └── PilotReadOnlyTransportBoundary.kt (PilotAdmissionContextElement, admission-enforced HTTP/WS boundaries,
+│                                          PilotReadOnlyWebSocketTransport, PilotReadOnlyFixtureTransport)
 ├── app/pilot/
-│   └── PilotSessionController.kt    (Bounded budgets, cumulative WS reconnect cap, active HTTP Call cancellation,
-│                                     quarantined dynamic origin gate, 9-step non-blocking Emergency Disconnect)
+│   └── PilotSessionController.kt    (Bounded budgets, exact account matching, cumulative WS reconnect cap,
+│                                     generation-fenced cleanup, quarantined dynamic origin gate, Emergency Disconnect)
 └── ui/pilot/
-    └── PilotReadinessSheet.kt       (Opt-in Compose UI: Auth summary, FLAG_SECURE synthetic CharArray entry,
-                                      endpoint review, read-only inventory, selected status, timer, Kill Switch)
+    └── PilotReadinessSheet.kt       (Opt-in Compose UI: explicit Start Offline Mock Pilot trigger, Auth summary,
+                                      FLAG_SECURE synthetic CharArray entry, endpoint review, read-only inventory,
+                                      selected status, live countdown timer, Kill Switch)
 ```
 
 ---
