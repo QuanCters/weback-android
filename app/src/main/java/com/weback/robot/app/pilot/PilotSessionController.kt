@@ -110,6 +110,12 @@ class PilotSessionController(
     private val _lastDisconnectResult = MutableStateFlow<PilotEmergencyDisconnectResult?>(null)
     val lastDisconnectResult: StateFlow<PilotEmergencyDisconnectResult?> = _lastDisconnectResult.asStateFlow()
 
+    private val _lastObservedOrigins = MutableStateFlow<com.weback.robot.domain.pilot.ObservedOriginSummary?>(null)
+    val lastObservedOrigins: StateFlow<com.weback.robot.domain.pilot.ObservedOriginSummary?> = _lastObservedOrigins.asStateFlow()
+
+    private val _lastTargetInventory = MutableStateFlow<com.weback.robot.domain.pilot.TargetInventorySummary?>(null)
+    val lastTargetInventory: StateFlow<com.weback.robot.domain.pilot.TargetInventorySummary?> = _lastTargetInventory.asStateFlow()
+
     private val _remainingObservationMs = MutableStateFlow(0L)
     val remainingObservationMs: StateFlow<Long> = _remainingObservationMs.asStateFlow()
 
@@ -261,6 +267,8 @@ class PilotSessionController(
             lastSensitiveAccountIdentifier = context.accountScope.authorizedAccountIdentifier
             _lastAbortReason.value = null
             _lastDisconnectResult.value = null
+            _lastObservedOrigins.value = null
+            _lastTargetInventory.value = null
             _remainingObservationMs.value = remaining
             _pilotModeState.value = PilotModeState.AuthorizedReady(context.authorizationId, remaining)
             pilotEpoch
@@ -372,15 +380,29 @@ class PilotSessionController(
 
         val quarantined = pilotAuthGateway?.consumeLastQuarantinedObservation()
         if (quarantined != null) {
-            synchronized(stateLock) {
+            val strictTerminate = synchronized(stateLock) {
                 if (capturedEpoch == pilotEpoch && capturedGeneration == gate.currentGeneration()) {
                     observedApiOrigin = quarantined.apiOrigin
                     observedWssOrigin = quarantined.wssOrigin
-                    _pilotModeState.value = PilotModeState.AwaitingOriginConfirmation(
-                        authorizationId = activeCtx.authorizationId,
-                        observedOrigins = quarantined
-                    )
+                    _lastObservedOrigins.value = quarantined
+                    if (activeCtx.isStrictAuthAndInventoryOnly()) {
+                        true
+                    } else {
+                        _pilotModeState.value = PilotModeState.AwaitingOriginConfirmation(
+                            authorizationId = activeCtx.authorizationId,
+                            observedOrigins = quarantined
+                        )
+                        false
+                    }
+                } else {
+                    false
                 }
+            }
+            if (strictTerminate) {
+                emergencyDisconnectAndWipe(
+                    PilotAbortReason.UntrustedOriginRejected,
+                    expectedGeneration = capturedGeneration
+                )
             }
             return AuthResult.Failure(AuthFailureReason.UntrustedEndpoint, quarantined.quarantineReason)
         }
@@ -405,7 +427,15 @@ class PilotSessionController(
                 observedWssOrigin = session.wssUrl
                 val remaining = (activeCtx.observationDeadlineElapsedMs - authClock.elapsedRealtimeMs()).coerceAtLeast(0L)
                 _remainingObservationMs.value = remaining
-                _pilotModeState.value = PilotModeState.Observing(activeCtx.authorizationId, remaining, null)
+                _pilotModeState.value = if (activeCtx.isStrictAuthAndInventoryOnly()) {
+                    PilotModeState.AuthenticatedInventoryReady(
+                        authorizationId = activeCtx.authorizationId,
+                        remainingWindowMs = remaining,
+                        sanitizedAuthSummary = "Authenticated (${session.accountAliasRedacted}, region=${session.regionName})"
+                    )
+                } else {
+                    PilotModeState.Observing(activeCtx.authorizationId, remaining, null)
+                }
             }
         }
         return authResult
@@ -418,6 +448,10 @@ class PilotSessionController(
         provenanceVerifier: OriginProvenanceVerifier
     ): DynamicOriginConfirmationResult {
         val currentState = synchronized(stateLock) { _pilotModeState.value }
+        val ctx = gate.currentContext
+        if (ctx?.isStrictAuthAndInventoryOnly() == true) {
+            return DynamicOriginConfirmationResult.Rejected("PILOT_QUARANTINE_TERMINATED_NO_RESUME")
+        }
         if (currentState !is PilotModeState.AwaitingOriginConfirmation || !gate.isAuthorized) {
             return DynamicOriginConfirmationResult.Rejected("PILOT_NOT_IN_QUARANTINE")
         }
@@ -479,6 +513,95 @@ class PilotSessionController(
         return state is InventoryState.Loaded || state is InventoryState.Empty
     }
 
+    suspend fun fetchAndValidateTargetInventory(): com.weback.robot.domain.pilot.TargetInventorySummary? {
+        val (capturedEpoch, capturedGeneration, activeCtx) = synchronized(stateLock) {
+            Triple(pilotEpoch, gate.currentGeneration(), gate.currentContext)
+        }
+        if (activeCtx == null) {
+            return null
+        }
+        val check = gate.authorizeOperation(PilotOperation.USER_THING_LIST_GET, authClock.elapsedRealtimeMs())
+        if (check is GateCheckResult.Denied) {
+            emergencyDisconnectAndWipe(check.reason, expectedGeneration = capturedGeneration)
+            return null
+        }
+        if (!refreshReadOnlyInventory()) {
+            // refreshReadOnlyInventory already triggers emergencyDisconnectAndWipe on budget/gate failure,
+            // ensure non-budget fetch errors (e.g. HTTP error/malformed response) also terminate safely.
+            val stillAuth = synchronized(stateLock) {
+                capturedEpoch == pilotEpoch &&
+                    capturedGeneration == gate.currentGeneration() &&
+                    gate.isAuthorized
+            }
+            if (stillAuth) {
+                emergencyDisconnectAndWipe(
+                    PilotAbortReason.TargetValidationFailed,
+                    expectedGeneration = capturedGeneration
+                )
+            }
+            return null
+        }
+        val stillCurrent = synchronized(stateLock) {
+            capturedEpoch == pilotEpoch &&
+                capturedGeneration == gate.currentGeneration() &&
+                gate.isAuthorized
+        }
+        if (!stillCurrent) {
+            return null
+        }
+
+        val loaded = inventoryRepository.inventoryState.value as? InventoryState.Loaded
+        val target = loaded?.items?.firstOrNull {
+            it.thingName == activeCtx.targetDevice.expectedTargetThingName
+        }
+        val isSupportedTarget = target != null &&
+            target.capability.category == com.weback.robot.domain.model.DeviceCapabilityCategory.LASER_SLAM &&
+            target.capability.compatibility.isMvpControlSupported
+
+        if (!isSupportedTarget) {
+            emergencyDisconnectAndWipe(
+                PilotAbortReason.TargetValidationFailed,
+                expectedGeneration = capturedGeneration
+            )
+            return null
+        }
+
+        val validTarget = target!!
+        val displayNickname = if (validTarget.nickname == validTarget.thingName) {
+            activeCtx.targetDevice.redactedTag
+        } else {
+            validTarget.nickname
+        }
+        val summary = com.weback.robot.domain.pilot.TargetInventorySummary(
+            thingNameRedacted = activeCtx.targetDevice.redactedTag,
+            nickname = displayNickname,
+            normalizedSubType = validTarget.capability.normalizedSubType,
+            isAdmin = validTarget.isAdmin,
+            compatibility = validTarget.capability.compatibility,
+            batteryPercentage = validTarget.initialState?.batteryPercentage,
+            mode = validTarget.initialState?.mode,
+            errorCode = validTarget.initialState?.errorCode
+        )
+        synchronized(stateLock) {
+            if (capturedEpoch == pilotEpoch &&
+                capturedGeneration == gate.currentGeneration() &&
+                gate.isAuthorized
+            ) {
+                val remaining = (activeCtx.observationDeadlineElapsedMs - authClock.elapsedRealtimeMs()).coerceAtLeast(0L)
+                _remainingObservationMs.value = remaining
+                _lastTargetInventory.value = summary
+                _pilotModeState.value = PilotModeState.InventoryVerified(
+                    authorizationId = activeCtx.authorizationId,
+                    remainingWindowMs = remaining,
+                    targetSummary = summary
+                )
+            } else {
+                return null
+            }
+        }
+        return summary
+    }
+
     fun selectAndObserveDevice(thingName: String): Boolean {
         val capturedGeneration = gate.currentGeneration()
         val check = gate.authorizeOperation(PilotOperation.WS_TELEMETRY_OBSERVE, authClock.elapsedRealtimeMs())
@@ -487,6 +610,10 @@ class PilotSessionController(
             return false
         }
         val ctx = (check as GateCheckResult.Allowed).context
+        if (ctx.isStrictAuthAndInventoryOnly() || ctx.budgets.maxInitialWsConnections == 0) {
+            revokeSynchronouslyAndLaunchCleanup(PilotAbortReason.BudgetExhausted, capturedGeneration)
+            return false
+        }
         val sessionAuth = sessionCoordinator.authorizeActiveSessionForSend() ?: return false
 
         val loaded = inventoryRepository.inventoryState.value as? InventoryState.Loaded ?: return false
@@ -874,10 +1001,12 @@ class PilotSessionController(
                         val rem = (deadlineElapsedMs - authClock.elapsedRealtimeMs()).coerceAtLeast(0L)
                         _remainingObservationMs.value = rem
                         val cur = _pilotModeState.value
-                        if (cur is PilotModeState.Observing) {
-                            _pilotModeState.value = cur.copy(remainingWindowMs = rem)
-                        } else if (cur is PilotModeState.AuthorizedReady) {
-                            _pilotModeState.value = cur.copy(remainingWindowMs = rem)
+                        when (cur) {
+                            is PilotModeState.Observing -> _pilotModeState.value = cur.copy(remainingWindowMs = rem)
+                            is PilotModeState.AuthorizedReady -> _pilotModeState.value = cur.copy(remainingWindowMs = rem)
+                            is PilotModeState.AuthenticatedInventoryReady -> _pilotModeState.value = cur.copy(remainingWindowMs = rem)
+                            is PilotModeState.InventoryVerified -> _pilotModeState.value = cur.copy(remainingWindowMs = rem)
+                            else -> Unit
                         }
                         if (rem <= 0L) {
                             expiredNow = true

@@ -668,6 +668,28 @@ class PilotAuthorizationGate(
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "Candidate commit SHA or APK SHA-256 format invalid"
         }
+        if (context.environment == PilotEnvironment.LIVE_PILOT &&
+            (context.candidateIdentity.candidateCommitSha == ZERO_40_HEX ||
+                context.candidateIdentity.apkSha256 == ZERO_64_HEX)
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Placeholder all-zero candidate SHA or APK SHA-256 rejected"
+        }
+        if (context.environment == PilotEnvironment.LIVE_PILOT &&
+            listOf(
+                context.authorizationId,
+                approval.approvedByProductOwner,
+                approval.approvedByLeadMaintainer,
+                approval.externalRecordRef,
+                context.accountScope.authorizedAccountIdentifier,
+                context.accountScope.authorizedAccountAlias,
+                context.targetDevice.expectedTargetThingName,
+                context.targetDevice.redactedTag
+            ).any { isPlaceholderOrMockToken(it) }
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Placeholder or synthetic mock authorization values rejected on LIVE_PILOT"
+        }
         if (expectedRuntimeIdentity != null && context.candidateIdentity != expectedRuntimeIdentity) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "Candidate commit SHA or APK identity mismatch"
@@ -734,7 +756,7 @@ class PilotAuthorizationGate(
             b.maxPasswordRetries != PilotRequestBudgets.MAX_PASSWORD_RETRIES ||
             b.maxCaptchaAutomation != PilotRequestBudgets.MAX_CAPTCHA_AUTOMATION ||
             b.maxInventoryRequests != PilotRequestBudgets.MAX_INVENTORY_REQUESTS ||
-            b.maxInitialWsConnections != PilotRequestBudgets.MAX_INITIAL_WS_CONNECTIONS ||
+            b.maxInitialWsConnections !in 0..PilotRequestBudgets.MAX_INITIAL_WS_CONNECTIONS ||
             b.maxWsReconnectAttempts !in 0..PilotRequestBudgets.MAX_WS_RECONNECT_ATTEMPTS ||
             b.httpCallTimeoutMs !in 1L..PilotRequestBudgets.MAX_HTTP_CALL_TIMEOUT_MS ||
             b.observationWindowMs !in 1L..PilotRequestBudgets.MAX_OBSERVATION_WINDOW_MS ||
@@ -742,6 +764,18 @@ class PilotAuthorizationGate(
         ) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "Pilot request budgets exceed SEC-404 maximum caps"
+        }
+        if (b.maxInitialWsConnections == 0 &&
+            (b.maxWsReconnectAttempts != 0 || PilotOperation.WS_TELEMETRY_OBSERVE in context.permittedOperations)
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Zero-WebSocket pilot budget requires maxWsReconnectAttempts=0 and excludes ws_telemetry_observe"
+        }
+        if (context.isStrictAuthAndInventoryOnly() &&
+            b.observationWindowMs > PilotRequestBudgets.MAX_AUTH_INVENTORY_WINDOW_MS
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "FCT-004C auth/inventory window must not exceed 15 minutes (900000ms)"
         }
         if (context.authorizedAtElapsedMs < 0L ||
             context.observationDeadlineElapsedMs <= context.authorizedAtElapsedMs
@@ -772,7 +806,17 @@ class PilotAuthorizationGate(
         )
         private val HEX_40_REGEX = Regex("^[0-9a-fA-F]{40}$")
         private val HEX_64_REGEX = Regex("^[0-9a-fA-F]{64}$")
+        private val ZERO_40_HEX = "0".repeat(40)
+        private val ZERO_64_HEX = "0".repeat(64)
         private val CALLING_CODE_REGEX = Regex("^(\\+|00)[0-9]{1,4}$")
+
+        private fun isPlaceholderOrMockToken(raw: String): Boolean {
+            val upper = raw.trim().uppercase()
+            return upper.isEmpty() ||
+                upper.contains("PLACEHOLDER") ||
+                upper.contains("PENDING") ||
+                upper == "SYNTHETIC_MOCK_WORKFLOW_ONLY"
+        }
 
         private fun normalizeTicketUrl(rawUrl: String, operation: PilotOperation): String {
             val uri = runCatching { URI(rawUrl.trim()) }.getOrNull() ?: return rawUrl.trim()

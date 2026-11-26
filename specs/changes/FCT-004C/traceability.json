@@ -15,7 +15,8 @@
           "task_id": "Task 1",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-461",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CPilotAdmissionTest.kt (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-461.2",
@@ -23,7 +24,8 @@
           "task_id": "Task 1",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-461",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CPilotAdmissionTest.kt & PilotBuildSeparationTest.kt & Fct004CLiveWorkflowActivityTest.kt (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -38,7 +40,8 @@
           "task_id": "Task 2",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-462",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/pilot/PilotSignInSheetTest.kt & Fct004CLiveWorkflowActivityTest.kt (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-462.2",
@@ -46,7 +49,8 @@
           "task_id": "Task 2",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-462",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/pilot/PilotSignInSheetTest.kt & PilotSanitizedExporterTest.kt (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -61,7 +65,8 @@
           "task_id": "Task 3",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-463",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CProtocolEnvelopeTest.kt (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-463.2",
@@ -69,7 +74,8 @@
           "task_id": "Task 3",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-463",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004BPreInternetSecurityTest.kt & PilotStructuralBoundaryTest.kt (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -84,7 +90,8 @@
           "task_id": "Task 4",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-464",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CProtocolEnvelopeTest.kt (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-464.2",
@@ -92,7 +99,8 @@
           "task_id": "Task 4",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-464",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CProtocolEnvelopeTest.kt & PilotProtocolProbeTest.kt (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -107,7 +115,8 @@
           "task_id": "Task 5",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-465",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicyTest.kt & Fct004CProtocolEnvelopeTest.kt (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-465.2",
@@ -115,7 +124,8 @@
           "task_id": "Task 5",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-465",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CQuarantineTerminationTest.kt & Fct004CLiveWorkflowActivityTest.kt (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -130,7 +140,8 @@
           "task_id": "Task 6",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-466",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CInventoryValidationTest.kt & Fct004CLiveWorkflowActivityTest.kt (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-466.2",
@@ -138,7 +149,8 @@
           "task_id": "Task 6",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-466",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CInventoryValidationTest.kt (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -153,15 +165,17 @@
           "task_id": "Task 7",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-467",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/pilot/Fct004CLiveWorkflowActivityTest.kt & MainActivityMockPilotFlowTest.kt (PASS on debug & pilot)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-467.2",
           "description": "Monotonic deadline expiry and generation-fenced teardown verified on JVM; FCT-004B physical-device expiry NOT_RUN limitation recorded and mandatory offline physical-device monotonic expiry added to pre-live checklist.",
           "task_id": "Task 7",
-          "verification_check_id": "pilot-android-unit-tests",
+          "verification_check_id": "android-smoke-test",
           "test_oracle": "TEST-PILOT-468, TEST-PILOT-469",
-          "status": "PLANNED"
+          "evidence_ref": "TEST-PILOT-468 JVM expiry PASSED (Fct004CExpiryAndTeardownTest.kt); TEST-PILOT-469 physical-device monotonic expiry in specs/changes/FCT-004C/device-acceptance-plan.md remains NOT_RUN pending device authorization",
+          "status": "NOT_RUN"
         }
       ]
     }

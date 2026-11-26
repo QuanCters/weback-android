@@ -51,14 +51,16 @@ import com.weback.robot.ui.RobotUiState
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     modifier: Modifier = Modifier,
-    onOpenPilotSheet: (() -> Unit)? = null
+    onOpenPilotSheet: (() -> Unit)? = null,
+    pilotButtonLabel: String = "Pilot Readiness (Offline / Mock)"
 ) {
     val uiState by viewModel.uiState.collectAsState()
     DashboardScreen(
         uiState = uiState,
         onIntent = viewModel::onIntent,
         modifier = modifier,
-        onOpenPilotSheet = onOpenPilotSheet
+        onOpenPilotSheet = onOpenPilotSheet,
+        pilotButtonLabel = pilotButtonLabel
     )
 }
 
@@ -68,7 +70,8 @@ fun DashboardScreen(
     uiState: RobotUiState,
     onIntent: (DashboardIntent) -> Unit,
     modifier: Modifier = Modifier,
-    onOpenPilotSheet: (() -> Unit)? = null
+    onOpenPilotSheet: (() -> Unit)? = null,
+    pilotButtonLabel: String = "Pilot Readiness (Offline / Mock)"
 ) {
     Scaffold(
         topBar = {
@@ -114,7 +117,7 @@ fun DashboardScreen(
                             .fillMaxWidth()
                             .testTag("btn_open_pilot_readiness")
                     ) {
-                        Text(text = "Pilot Readiness (Offline / Mock)")
+                        Text(text = pilotButtonLabel)
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))

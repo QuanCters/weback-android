@@ -108,7 +108,23 @@ data class PilotRequestBudgets(
         const val MAX_WS_RECONNECT_ATTEMPTS = 3
         const val MAX_HTTP_CALL_TIMEOUT_MS = 15_000L
         const val MAX_OBSERVATION_WINDOW_MS = 1_800_000L
+        const val MAX_AUTH_INVENTORY_WINDOW_MS = 900_000L
         const val MAX_PHYSICAL_ROBOT_COMMANDS = 0
+
+        fun strictAuthAndInventoryOnly(
+            observationWindowMs: Long = MAX_AUTH_INVENTORY_WINDOW_MS,
+            httpCallTimeoutMs: Long = MAX_HTTP_CALL_TIMEOUT_MS
+        ): PilotRequestBudgets = PilotRequestBudgets(
+            maxLoginAttempts = MAX_LOGIN_ATTEMPTS,
+            maxPasswordRetries = MAX_PASSWORD_RETRIES,
+            maxCaptchaAutomation = MAX_CAPTCHA_AUTOMATION,
+            maxInventoryRequests = MAX_INVENTORY_REQUESTS,
+            maxInitialWsConnections = 0,
+            maxWsReconnectAttempts = 0,
+            httpCallTimeoutMs = httpCallTimeoutMs,
+            observationWindowMs = observationWindowMs,
+            maxPhysicalRobotCommands = MAX_PHYSICAL_ROBOT_COMMANDS
+        )
     }
 }
 
@@ -133,6 +149,11 @@ data class PilotAuthorizationContext(
     val uiConsentCheckedOnly: Boolean = false,
     val environment: PilotEnvironment = PilotEnvironment.LIVE_PILOT
 ) {
+    fun isStrictAuthAndInventoryOnly(): Boolean =
+        PilotOperation.WS_TELEMETRY_OBSERVE !in permittedOperations &&
+            budgets.maxInitialWsConnections == 0 &&
+            budgets.maxWsReconnectAttempts == 0
+
     override fun toString(): String =
         "PilotAuthorizationContext(authorizationId='$authorizationId', environment=$environment, readOnlyMode=$readOnlyMode, " +
             "physicalRobotCommandsPermitted=$physicalRobotCommandsPermitted, targetTag='${targetDevice.redactedTag}', " +
@@ -181,6 +202,10 @@ sealed interface PilotAbortReason {
     data object AuthRejected : PilotAbortReason {
         override val safeCode: String = "AUTH_REJECTED"
     }
+
+    data object TargetValidationFailed : PilotAbortReason {
+        override val safeCode: String = "TARGET_VALIDATION_FAILED"
+    }
 }
 
 data class ObservedOriginSummary(
@@ -201,12 +226,39 @@ data class ReadOnlyTelemetrySnapshot(
     val errorCode: Int
 )
 
+data class TargetInventorySummary(
+    val thingNameRedacted: String,
+    val nickname: String,
+    val normalizedSubType: String,
+    val isAdmin: Boolean,
+    val compatibility: ControlCompatibility,
+    val batteryPercentage: Int? = null,
+    val mode: RobotMode? = null,
+    val errorCode: Int? = null
+) {
+    override fun toString(): String =
+        "TargetInventorySummary(thingNameRedacted='$thingNameRedacted', normalizedSubType='$normalizedSubType', " +
+            "isAdmin=$isAdmin, compatibility=$compatibility)"
+}
+
 sealed interface PilotModeState {
     data object OfflineDefault : PilotModeState
 
     data class AuthorizedReady(
         val authorizationId: String,
         val remainingWindowMs: Long
+    ) : PilotModeState
+
+    data class AuthenticatedInventoryReady(
+        val authorizationId: String,
+        val remainingWindowMs: Long,
+        val sanitizedAuthSummary: String
+    ) : PilotModeState
+
+    data class InventoryVerified(
+        val authorizationId: String,
+        val remainingWindowMs: Long,
+        val targetSummary: TargetInventorySummary
     ) : PilotModeState
 
     data class AwaitingOriginConfirmation(

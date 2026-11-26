@@ -58,6 +58,33 @@ import com.weback.robot.security.TokenSaveResult
 import com.weback.robot.security.TokenStore
 import java.io.File
 
+data class LivePilotActivationRequest(
+    val authorizationId: String,
+    val approvedByProductOwner: String,
+    val approvedByLeadMaintainer: String,
+    val externalRecordRef: String,
+    val candidateCommitSha: String,
+    val apkSha256: String,
+    val regionCallingCode: String,
+    val authorizedAccountIdentifier: String,
+    val expectedTargetThingName: String,
+    val approvedAuthOrigin: String,
+    val pinnedApiOrigin: String? = null,
+    val pinnedWssOrigin: String? = null,
+    val windowMinutes: Int = 15,
+    val uiConsentCheckedOnly: Boolean = false
+)
+
+data class PilotContainerTestHooks(
+    val routerOverride: RegionEndpointRouter? = null,
+    val trustPolicyOverride: AuthorizedPilotEndpointTrustPolicy? = null,
+    val gatewayTrustPolicyOverride: EndpointTrustPolicy? = null,
+    val allowedAuthOriginsOverride: Set<String>? = null,
+    val expectedRuntimeIdentityOverride: ExpectedCandidateIdentity? = null,
+    val runtimeAppIdentityOverride: RuntimeAppIdentity? = null,
+    val enableUiCountdownTicker: Boolean = false
+)
+
 /**
  * Manual dependency container owning transport, session, inventory, security, dispatcher, and clock lifecycles.
  * Preserves offline [SimulatorRobotTransport] as the default FCT-002/FCT-003 robot control path.
@@ -75,7 +102,11 @@ interface AppContainer : AutoCloseable {
     val pilotSessionController: PilotSessionController
     val offlineMockAuthorizationGate: PilotAuthorizationGate
     val offlineMockPilotController: PilotSessionController
+    val isLivePilotSupported: Boolean
+        get() = BuildConfig.PILOT_INTERNET_CAPABLE
     fun startOfflineMockPilot(): GateActivationResult
+    fun activateLivePilot(request: LivePilotActivationRequest): GateActivationResult =
+        GateActivationResult.Rejected(PilotAbortReason.AuthorizationExpiredOrInvalid, "Live pilot not implemented")
     override fun close() {}
 }
 
@@ -90,7 +121,8 @@ class DefaultAppContainer(
     override val diagnosticLogger: DiagnosticLogger = NoOpDiagnosticLogger,
     private val authGatewayOverride: AuthGateway? = null,
     private val inventoryGatewayOverride: DeviceInventoryGateway? = null,
-    private val realtimeTransportOverride: RealtimeSessionTransport? = null
+    private val realtimeTransportOverride: RealtimeSessionTransport? = null,
+    private val pilotTestHooks: PilotContainerTestHooks? = null
 ) : AppContainer {
 
     private val timeProvider: BootSessionTimeProvider by lazy {
@@ -167,12 +199,14 @@ class DefaultAppContainer(
 
     override val pilotAuthorizationGate: PilotAuthorizationGate by lazy {
         PilotAuthorizationGate(
+            allowedAuthOrigins = pilotTestHooks?.allowedAuthOriginsOverride
+                ?: PilotAuthorizationGate.CANONICAL_AUTH_ORIGINS,
             clock = PilotClock { authClock.elapsedRealtimeMs() }
         )
     }
 
     private val pilotEndpointTrustPolicy: AuthorizedPilotEndpointTrustPolicy by lazy {
-        AuthorizedPilotEndpointTrustPolicy(
+        pilotTestHooks?.trustPolicyOverride ?: AuthorizedPilotEndpointTrustPolicy(
             endpointConfig = PilotEndpointConfig(
                 approvedAuthOrigin = "https://user.grit-cloud.com:443",
                 approvedAuthPath = "/prod/oauth",
@@ -180,6 +214,10 @@ class DefaultAppContainer(
             ),
             allowLoopbackForHermeticTests = false
         )
+    }
+
+    private val pilotGatewayTrustPolicy: EndpointTrustPolicy by lazy {
+        pilotTestHooks?.gatewayTrustPolicyOverride ?: pilotEndpointTrustPolicy
     }
 
     private val pilotActiveCallRegistry: PilotActiveCallRegistry by lazy {
@@ -201,8 +239,8 @@ class DefaultAppContainer(
 
     private val restrictedPilotAuth: PilotCapabilityRestrictedAuthGateway by lazy {
         PilotCapabilityRestrictedAuthGateway(
-            router = RegionEndpointRouter(),
-            trustPolicy = pilotEndpointTrustPolicy,
+            router = pilotTestHooks?.routerOverride ?: RegionEndpointRouter(),
+            trustPolicy = pilotGatewayTrustPolicy,
             authClock = authClock,
             logger = diagnosticLogger,
             dispatchers = dispatcherProvider,
@@ -216,7 +254,7 @@ class DefaultAppContainer(
     private val restrictedPilotInventory: PilotCapabilityRestrictedInventoryGateway by lazy {
         PilotCapabilityRestrictedInventoryGateway(
             delegate = OkHttpDeviceInventoryGateway(
-                trustPolicy = pilotEndpointTrustPolicy,
+                trustPolicy = pilotGatewayTrustPolicy,
                 authClock = authClock,
                 dispatchers = dispatcherProvider,
                 logger = diagnosticLogger,
@@ -258,7 +296,7 @@ class DefaultAppContainer(
 
     private val pilotWsDelegate: OkHttpWebSocketTransport by lazy {
         OkHttpWebSocketTransport(
-            trustPolicy = pilotEndpointTrustPolicy,
+            trustPolicy = pilotGatewayTrustPolicy,
             authClock = authClock,
             dispatchers = dispatcherProvider,
             connectionConfig = ConnectionConfig(reconnectDelayMs = 4_000L, maxReconnectAttempts = 3),
@@ -289,7 +327,7 @@ class DefaultAppContainer(
     override val pilotSessionController: PilotSessionController by lazy {
         PilotSessionController(
             gate = pilotAuthorizationGate,
-            expectedRuntimeIdentity = null,
+            expectedRuntimeIdentity = pilotTestHooks?.expectedRuntimeIdentityOverride,
             trustPolicy = pilotEndpointTrustPolicy,
             sessionCoordinator = pilotSessionCoordinator,
             inventoryRepository = pilotInventoryRepository,
@@ -302,7 +340,13 @@ class DefaultAppContainer(
             activeCallRegistry = pilotActiveCallRegistry,
             scope = pilotScope,
             ownsScope = true,
-            runtimeAppIdentity = runtimeLiveIdentity
+            modeLabel = if (isLivePilotSupported) {
+                "PILOT BUILD (${BuildConfig.APPLICATION_ID}) — CONTROLLED AUTH & SINGLE INVENTORY (ZERO WS)"
+            } else {
+                "OFFLINE_BUILD_LIVE_PILOT_DISABLED"
+            },
+            enableUiCountdownTicker = pilotTestHooks?.enableUiCountdownTicker ?: false,
+            runtimeAppIdentity = pilotTestHooks?.runtimeAppIdentityOverride ?: runtimeLiveIdentity
         )
     }
 
@@ -444,6 +488,74 @@ class DefaultAppContainer(
             environment = PilotEnvironment.OFFLINE_MOCK_FIXTURE
         )
         return offlineMockPilotController.activatePilot(ctx)
+    }
+
+    override fun activateLivePilot(request: LivePilotActivationRequest): GateActivationResult {
+        if (!isLivePilotSupported) {
+            return GateActivationResult.Rejected(
+                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                "Live pilot authorization is disabled on offline build"
+            )
+        }
+        if (request.windowMinutes !in 1..15) {
+            return GateActivationResult.Rejected(
+                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                "FCT-004C observation window must be between 1 and 15 minutes"
+            )
+        }
+        val trimmedAccount = request.authorizedAccountIdentifier.trim()
+        val atIdx = trimmedAccount.indexOf('@')
+        val accountAlias = when {
+            trimmedAccount.isEmpty() -> ""
+            atIdx > 1 -> "${trimmedAccount.first()}***${trimmedAccount.substring(atIdx)}"
+            else -> "${trimmedAccount.first()}***"
+        }
+        val nowMs = authClock.elapsedRealtimeMs()
+        val windowMs = request.windowMinutes * 60_000L
+        val ctx = PilotAuthorizationContext(
+            authorizationId = request.authorizationId.trim(),
+            candidateIdentity = ExpectedCandidateIdentity(
+                candidateCommitSha = request.candidateCommitSha.trim(),
+                applicationId = BuildConfig.APPLICATION_ID,
+                versionName = BuildConfig.VERSION_NAME,
+                apkSha256 = request.apkSha256.trim()
+            ),
+            accountScope = PilotAccountScope(
+                scopeType = PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT,
+                regionCallingCode = request.regionCallingCode.trim(),
+                authorizedAccountAlias = accountAlias,
+                authorizedAccountIdentifier = trimmedAccount
+            ),
+            targetDevice = PilotTargetDevice(
+                expectedSubTypeFamily = PilotAuthorizationGate.REQUIRED_SUB_TYPE_FAMILY,
+                expectedTargetThingName = request.expectedTargetThingName.trim(),
+                redactedTag = "TARGET_LASER_01"
+            ),
+            permittedOperations = setOf(
+                PilotOperation.LOGIN,
+                PilotOperation.USER_THING_LIST_GET
+            ),
+            endpointConfig = PilotEndpointConfig(
+                approvedAuthOrigin = request.approvedAuthOrigin.trim(),
+                approvedAuthPath = PilotAuthorizationGate.REQUIRED_AUTH_PATH,
+                pinnedApiOrigin = request.pinnedApiOrigin?.trim()?.takeIf { it.isNotEmpty() },
+                pinnedWssOrigin = request.pinnedWssOrigin?.trim()?.takeIf { it.isNotEmpty() },
+                requireProvenanceVerification = true
+            ),
+            readOnlyMode = true,
+            physicalRobotCommandsPermitted = false,
+            budgets = PilotRequestBudgets.strictAuthAndInventoryOnly(observationWindowMs = windowMs),
+            authorizedAtElapsedMs = nowMs,
+            observationDeadlineElapsedMs = nowMs + windowMs,
+            externalApproval = PilotExternalApproval(
+                approvedByProductOwner = request.approvedByProductOwner.trim(),
+                approvedByLeadMaintainer = request.approvedByLeadMaintainer.trim(),
+                externalRecordRef = request.externalRecordRef.trim()
+            ),
+            uiConsentCheckedOnly = request.uiConsentCheckedOnly,
+            environment = PilotEnvironment.LIVE_PILOT
+        )
+        return pilotSessionController.activatePilot(ctx)
     }
 
     override fun close() {
