@@ -85,7 +85,8 @@ data class PilotEndpointConfig(
     val approvedAuthPath: String = "/prod/oauth",
     val pinnedApiOrigin: String? = null,
     val pinnedWssOrigin: String? = null,
-    val requireProvenanceVerification: Boolean = true
+    val requireProvenanceVerification: Boolean = true,
+    val endpointProvenanceRef: String? = null
 )
 
 data class PilotRequestBudgets(

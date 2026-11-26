@@ -182,7 +182,7 @@ object PilotHttpOperationGuard {
  * Validates strict RFC 8259 JSON syntax and rejects any JSON object containing duplicate keys
  * (preventing ambiguous parser-dependent "first-wins" vs "last-wins" account fields).
  */
-private object StrictJsonKeyUniquenessValidator {
+internal object StrictJsonKeyUniquenessValidator {
     fun hasUniqueObjectKeys(input: String): Boolean {
         val reader = Cursor(input)
         return reader.skipWs() &&

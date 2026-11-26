@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -195,5 +196,77 @@ class PilotSignInSheetTest {
         composeTestRule.waitForIdle()
         assertEquals(0, dialogWindow.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
         assertEquals(0, composeTestRule.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    @Test
+    fun testModeSpecificCredentialLabelsAndFlagSecureDuringLiveAuthReview() {
+        var isLiveWorkflow by mutableStateOf(false)
+        var showReview by mutableStateOf(false)
+        var modeState by mutableStateOf<PilotModeState>(
+            PilotModeState.AuthorizedReady("MOCK-OFFLINE-PILOT-1", 1_800_000L)
+        )
+
+        composeTestRule.setContent {
+            WeBackTheme(dynamicColor = false) {
+                PilotReadinessSheet(
+                    state = PilotSheetUiState(
+                        modeState = modeState,
+                        authorizationId = if (isLiveWorkflow) "FCT004C-EXT-01" else "MOCK-OFFLINE-PILOT-1",
+                        modeLabel = if (isLiveWorkflow) "PILOT LIVE MODE" else "OFFLINE MOCK MODE",
+                        approvedAuthOrigin = "https://user.grit-cloud.com:443",
+                        pinnedApiOrigin = null,
+                        pinnedWssOrigin = null,
+                        remainingObservationMs = 900_000L,
+                        connectionState = ConnectionState.Disconnected(),
+                        inventoryState = InventoryState.Idle,
+                        selectedDevice = null,
+                        lastAbortReason = null,
+                        lastDisconnectResult = null,
+                        isLivePilotSupported = true,
+                        isLiveWorkflowActive = isLiveWorkflow,
+                        showLiveAuthReview = showReview
+                    ),
+                    onSubmitCredentials = {},
+                    onCancelCredentialEntry = {},
+                    onRefreshInventory = {},
+                    onSelectDevice = {},
+                    onEmergencyDisconnect = {},
+                    onDismissSheet = {},
+                    onActivateLivePilot = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        // 1. Mock mode displays synthetic labels and NOT live real-server labels
+        composeTestRule.onNodeWithText("Synthetic Credential Entry", substring = true).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Synthetic Password", substring = true).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Real-Server Authentication", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("Real-Server Account Password", substring = true).assertDoesNotExist()
+
+        // 2. Live mode displays real-server labels and NOT synthetic labels
+        isLiveWorkflow = true
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Real-Server Authentication", substring = true).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Real-Server Account Password", substring = true).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Authenticate Live Account (1 Attempt)", substring = true).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Synthetic Credential Entry", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("Synthetic Password", substring = true).assertDoesNotExist()
+
+        // 3. FLAG_SECURE MUST be active during sensitive live authorization review even when OfflineDefault
+        modeState = PilotModeState.OfflineDefault
+        showReview = true
+        composeTestRule.waitForIdle()
+        assertTrue(
+            "FLAG_SECURE must be active during live authorization review",
+            (composeTestRule.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
+        )
+
+        showReview = false
+        composeTestRule.waitForIdle()
+        assertEquals(
+            0,
+            composeTestRule.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE
+        )
     }
 }

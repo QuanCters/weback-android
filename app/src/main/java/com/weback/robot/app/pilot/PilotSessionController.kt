@@ -119,6 +119,9 @@ class PilotSessionController(
     private val _remainingObservationMs = MutableStateFlow(0L)
     val remainingObservationMs: StateFlow<Long> = _remainingObservationMs.asStateFlow()
 
+    private val _isOperationInFlight = MutableStateFlow(false)
+    val isOperationInFlight: StateFlow<Boolean> = _isOperationInFlight.asStateFlow()
+
     val pilotTelemetryTransport: PilotReadOnlyTelemetryTransport =
         telemetryTransportOverride ?: PilotReadOnlyWebSocketTransport(
             delegate = requireNotNull(pilotWsDelegate) {
@@ -354,12 +357,18 @@ class PilotSessionController(
 
         val activeCtx = requireNotNull(ctx)
         val ticket = requireNotNull(loginTicket)
+        _isOperationInFlight.value = true
         val authResult = try {
             withContext(PilotAdmissionContextElement(ticket)) {
                 sessionCoordinator.signIn(credentials)
             }
         } finally {
             credentials.wipeSecret()
+            synchronized(stateLock) {
+                if (capturedEpoch == pilotEpoch && capturedGeneration == gate.currentGeneration()) {
+                    _isOperationInFlight.value = false
+                }
+            }
         }
 
         // Generation-fenced late callback check (`FIX-405`): NEVER sign out a newer pilot run
@@ -499,8 +508,17 @@ class PilotSessionController(
             return false
         }
 
-        val state = withContext(PilotAdmissionContextElement(requireNotNull(inventoryTicket))) {
-            inventoryRepository.refreshInventory()
+        _isOperationInFlight.value = true
+        val state = try {
+            withContext(PilotAdmissionContextElement(requireNotNull(inventoryTicket))) {
+                inventoryRepository.refreshInventory()
+            }
+        } finally {
+            synchronized(stateLock) {
+                if (capturedEpoch == pilotEpoch && capturedGeneration == gate.currentGeneration()) {
+                    _isOperationInFlight.value = false
+                }
+            }
         }
         val stillCurrent = synchronized(stateLock) {
             capturedEpoch == pilotEpoch &&
@@ -714,6 +732,14 @@ class PilotSessionController(
         return readOnlyPilotGuard.guardLiveCommand(command)
     }
 
+    fun revokeAndBeginCleanupAsync(reason: PilotAbortReason = PilotAbortReason.UserEmergencyDisconnect) {
+        val targetGen = synchronized(stateLock) {
+            _isOperationInFlight.value = false
+            if (gate.isAuthorized) gate.currentGeneration() else activeAuthorizedGeneration
+        }
+        revokeSynchronouslyAndLaunchCleanup(reason, targetGen)
+    }
+
     /**
      * Generation-fenced Emergency Disconnect & Wipe (`SEC-404`, `AC-408.1`, `FIX-405`):
      * When [expectedGeneration] is provided, ignores calls targeting stale generations so old
@@ -728,6 +754,12 @@ class PilotSessionController(
             if (expectedGeneration != null &&
                 expectedGeneration != currentGen &&
                 expectedGeneration != activeAuthorizedGeneration
+            ) {
+                return@synchronized null
+            }
+            if (expectedGeneration != null &&
+                !gate.isAuthorized &&
+                expectedGeneration <= lastCleanedGeneration
             ) {
                 return@synchronized null
             }
@@ -748,6 +780,7 @@ class PilotSessionController(
             countdownJob?.cancel()
             countdownJob = null
             pendingInitialWsTicket = null
+            _isOperationInFlight.value = false
             _lastAbortReason.value = reason
             _remainingObservationMs.value = 0L
             _pilotModeState.value = PilotModeState.OfflineDefault
@@ -905,6 +938,7 @@ class PilotSessionController(
             countdownJob?.cancel()
             countdownJob = null
             pendingInitialWsTicket = null
+            _isOperationInFlight.value = false
             _lastAbortReason.value = PilotAbortReason.ObservationWindowExpired
             _remainingObservationMs.value = 0L
             _pilotModeState.value = PilotModeState.OfflineDefault
@@ -937,6 +971,7 @@ class PilotSessionController(
             countdownJob?.cancel()
             countdownJob = null
             pendingInitialWsTicket = null
+            _isOperationInFlight.value = false
             _lastAbortReason.value = reason
             _remainingObservationMs.value = 0L
             _pilotModeState.value = PilotModeState.OfflineDefault
@@ -1043,6 +1078,7 @@ class PilotSessionController(
         countdownJob?.cancel()
         countdownJob = null
         pendingInitialWsTicket = null
+        _isOperationInFlight.value = false
         _lastAbortReason.value = reason
         _remainingObservationMs.value = 0L
         _pilotModeState.value = PilotModeState.Aborted(reason, safeMessage)

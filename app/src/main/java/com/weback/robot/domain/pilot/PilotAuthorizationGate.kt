@@ -739,6 +739,12 @@ class PilotAuthorizationGate(
                 "Approved auth origin/path or provenance enforcement invalid"
         }
         val strictPort443 = (allowedAuthOrigins == CANONICAL_AUTH_ORIGINS)
+        context.endpointConfig.endpointProvenanceRef?.let { provRef ->
+            if (isPlaceholderOrMockToken(provRef) || provRef.trim().equals("UI_CONFIRMED", ignoreCase = true)) {
+                return PilotAbortReason.UntrustedOriginRejected to
+                    "Endpoint provenance reference is invalid or UI-confirmed"
+            }
+        }
         context.endpointConfig.pinnedApiOrigin?.let { pinnedApi ->
             if (!isValidPinnedOrigin(pinnedApi, expectedScheme = "https", requirePort443 = strictPort443)) {
                 return PilotAbortReason.UntrustedOriginRejected to
@@ -810,7 +816,7 @@ class PilotAuthorizationGate(
         private val ZERO_64_HEX = "0".repeat(64)
         private val CALLING_CODE_REGEX = Regex("^(\\+|00)[0-9]{1,4}$")
 
-        private fun isPlaceholderOrMockToken(raw: String): Boolean {
+        internal fun isPlaceholderOrMockToken(raw: String): Boolean {
             val upper = raw.trim().uppercase()
             return upper.isEmpty() ||
                 upper.contains("PLACEHOLDER") ||

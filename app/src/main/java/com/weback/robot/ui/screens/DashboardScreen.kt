@@ -71,7 +71,8 @@ fun DashboardScreen(
     onIntent: (DashboardIntent) -> Unit,
     modifier: Modifier = Modifier,
     onOpenPilotSheet: (() -> Unit)? = null,
-    pilotButtonLabel: String = "Pilot Readiness (Offline / Mock)"
+    pilotButtonLabel: String = "Pilot Readiness (Offline / Mock)",
+    unresolvedCleanupNotice: String? = null
 ) {
     Scaffold(
         topBar = {
@@ -107,6 +108,22 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 HeaderSection(uiState = uiState)
+                if (unresolvedCleanupNotice != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("live_cleanup_failure_banner")
+                    ) {
+                        Text(
+                            text = unresolvedCleanupNotice,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
                 TelemetryCard(uiState = uiState)
                 ControlsCard(uiState = uiState, onIntent = onIntent)
                 CommandFeedbackCard(uiState = uiState, onIntent = onIntent)
