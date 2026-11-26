@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Debug APK Artifact & Security Validator.
-Verifies APK existence, SHA-256 checksum, archive structure, package ID, SDK levels,
-version name, launcher activity, valid signature, and absence of prohibited vendor binaries.
+APK Artifact & Security Validator.
+Supports explicit --connectivity-policy {offline,pilot} (offline default), binding each mode
+to its expected APK path, application ID, permission allowlist, provider authority scope,
+cleartext/backup flags, signature verification, DEX class inventory, and vendor binary exclusion.
 Standard library only. Zero third-party dependencies.
 """
 import argparse
@@ -16,11 +17,30 @@ import sys
 import xml.etree.ElementTree as ET
 import zipfile
 
-EXPECTED_PACKAGE_ID = "com.weback.robot"
 EXPECTED_MIN_SDK = "31"
 EXPECTED_TARGET_SDK = "35"
 EXPECTED_VERSION_NAME = "0.1.0-alpha"
 REQUIRED_LAUNCHER_ACTIVITY = "com.weback.robot.MainActivity"
+
+CONNECTIVITY_POLICY_CONFIG = {
+    "offline": {
+        "expected_apk_path": Path("app/build/outputs/apk/debug/app-debug.apk"),
+        "expected_package_id": "com.weback.robot",
+        "required_external_permissions": set(),
+        "allowed_external_permissions": set(),
+        "forbidden_variant_tokens": ("pilot", "app-pilot.apk"),
+    },
+    "pilot": {
+        "expected_apk_path": Path("app/build/outputs/apk/pilot/app-pilot.apk"),
+        "expected_package_id": "com.weback.robot.pilot",
+        "required_external_permissions": {"android.permission.INTERNET"},
+        "allowed_external_permissions": {"android.permission.INTERNET"},
+        "forbidden_variant_tokens": ("debug", "app-debug.apk"),
+    },
+}
+
+# Preserve backward-compatible module constant for offline default
+EXPECTED_PACKAGE_ID = CONNECTIVITY_POLICY_CONFIG["offline"]["expected_package_id"]
 
 PROHIBITED_BINARY_PATTERNS = [
     "libIOTCAPIs.so",
@@ -48,6 +68,11 @@ PROHIBITED_PERMISSIONS = {
     "android.permission.CHANGE_NETWORK_STATE"
 }
 
+def get_policy_config(connectivity_policy: str) -> dict:
+    if connectivity_policy not in CONNECTIVITY_POLICY_CONFIG:
+        raise ValueError(f"Unsupported connectivity policy: '{connectivity_policy}'")
+    return CONNECTIVITY_POLICY_CONFIG[connectivity_policy]
+
 def get_android_attr(elem: ET.Element, attr_name: str) -> str | None:
     for k, v in elem.attrib.items():
         if k == attr_name or k.endswith(f"}}{attr_name}") or k == f"android:{attr_name}":
@@ -68,7 +93,6 @@ def parse_dex_classes(data: bytes, dex_name: str = "classes.dex") -> list[str]:
             data.startswith(b"dex\n")):
         raise ValueError(f"Invalid DEX magic in '{dex_name}': {data[:8]!r}")
 
-    # Header file_size check at byte 32 (uint32)
     declared_file_size = struct.unpack_from("<I", data, 32)[0]
     if declared_file_size != len(data):
         raise ValueError(
@@ -76,12 +100,10 @@ def parse_dex_classes(data: bytes, dex_name: str = "classes.dex") -> list[str]:
             f"actual file size is {len(data)} bytes"
         )
 
-    # String, type, and class_defs offsets and counts
     string_ids_size, string_ids_off = struct.unpack_from("<II", data, 56)
     type_ids_size, type_ids_off = struct.unpack_from("<II", data, 64)
     class_defs_size, class_defs_off = struct.unpack_from("<II", data, 96)
 
-    # Bounds validation against data length
     if string_ids_size < 0 or string_ids_off < 112 or (string_ids_off + string_ids_size * 4) > len(data):
         raise ValueError(f"Invalid string_ids table bounds in '{dex_name}': off={string_ids_off}, size={string_ids_size}")
     if type_ids_size < 0 or type_ids_off < 112 or (type_ids_off + type_ids_size * 4) > len(data):
@@ -100,7 +122,6 @@ def parse_dex_classes(data: bytes, dex_name: str = "classes.dex") -> list[str]:
         off = string_offsets[idx]
         if off >= len(data):
             raise ValueError(f"String offset {off} out of file bounds in '{dex_name}'")
-        # Skip UTF-8 length ULEB128
         while off < len(data) and (data[off] & 0x80):
             off += 1
         off += 1
@@ -148,13 +169,11 @@ def validate_dex_classes_in_apk(apk_path: Path) -> tuple[bool, list[str]]:
             if not all_classes:
                 errors.append("Empty or uninspectable class inventory across APK DEX files")
             else:
-                # Check for prohibited legacy vendor classes
                 for cls in all_classes:
                     for prohibited in PROHIBITED_DEX_PACKAGES:
                         if cls.startswith(prohibited):
                             errors.append(f"Prohibited legacy vendor DEX class detected: {cls}")
 
-                # Verify presence of clean MainActivity class
                 has_main = any(c == "Lcom/weback/robot/MainActivity;" for c in all_classes)
                 if not has_main:
                     errors.append("Required MainActivity class descriptor 'Lcom/weback/robot/MainActivity;' not found in APK DEX inventory")
@@ -163,10 +182,23 @@ def validate_dex_classes_in_apk(apk_path: Path) -> tuple[bool, list[str]]:
 
     return len(errors) == 0, errors
 
-def validate_manifest_xml_structural(manifest_xml: str) -> tuple[bool, list[str]]:
+def validate_manifest_xml_structural(
+    manifest_xml: str,
+    connectivity_policy: str = "offline"
+) -> tuple[bool, list[str]]:
     """
-    Structurally validates the printed AndroidManifest.xml ElementTree.
+    Structurally validates the printed AndroidManifest.xml ElementTree against the
+    selected connectivity policy ('offline' or 'pilot').
     """
+    try:
+        cfg = get_policy_config(connectivity_policy)
+    except ValueError as ve:
+        return False, [str(ve)]
+
+    expected_package_id = cfg["expected_package_id"]
+    required_external_perms = cfg["required_external_permissions"]
+    allowed_external_perms = cfg["allowed_external_permissions"]
+
     errors: list[str] = []
     try:
         root = ET.fromstring(manifest_xml)
@@ -175,8 +207,11 @@ def validate_manifest_xml_structural(manifest_xml: str) -> tuple[bool, list[str]
 
     # 1. Package ID
     pkg = root.attrib.get("package") or get_android_attr(root, "package")
-    if pkg != EXPECTED_PACKAGE_ID:
-        errors.append(f"Manifest package mismatch: expected '{EXPECTED_PACKAGE_ID}', got '{pkg}'")
+    if pkg != expected_package_id:
+        errors.append(
+            f"Manifest package mismatch for '{connectivity_policy}' policy: "
+            f"expected '{expected_package_id}', got '{pkg}'"
+        )
 
     # 2. Version name
     ver_name = get_android_attr(root, "versionName")
@@ -193,7 +228,7 @@ def validate_manifest_xml_structural(manifest_xml: str) -> tuple[bool, list[str]
         if target_sdk and target_sdk != EXPECTED_TARGET_SDK:
             errors.append(f"Manifest targetSdk mismatch: expected '{EXPECTED_TARGET_SDK}', got '{target_sdk}'")
 
-    # 4. application tag & security settings
+    # 4. application tag, security settings, launcher activity & provider authorities
     app = root.find("application")
     if app is None:
         errors.append("Missing <application> element in manifest XML")
@@ -210,6 +245,14 @@ def validate_manifest_xml_structural(manifest_xml: str) -> tuple[bool, list[str]
         if not sec_config:
             errors.append("networkSecurityConfig attribute missing from <application>")
 
+        for provider in app.findall("provider"):
+            authorities = get_android_attr(provider, "authorities") or ""
+            for auth in [a.strip() for a in authorities.split(";") if a.strip()]:
+                if not auth.startswith(f"{expected_package_id}."):
+                    errors.append(
+                        f"Provider authority '{auth}' does not match expected package namespace '{expected_package_id}.*'"
+                    )
+
         # 5. Launcher Activity verification with exact intent-filter
         launcher_found = False
         for act in app.findall("activity"):
@@ -220,7 +263,6 @@ def validate_manifest_xml_structural(manifest_xml: str) -> tuple[bool, list[str]
                     errors.append(f"Launcher activity '{name}' must have exported='true', got '{exported}'")
                     continue
 
-                # Require MAIN action and LAUNCHER category within the SAME intent-filter
                 matching_filter = False
                 for ifilter in act.findall("intent-filter"):
                     has_main_in_filter = any(
@@ -248,26 +290,101 @@ def validate_manifest_xml_structural(manifest_xml: str) -> tuple[bool, list[str]
         if not launcher_found and not any("missing an intent-filter" in e or "must have exported" in e for e in errors):
             errors.append(f"Required launcher activity '{REQUIRED_LAUNCHER_ACTIVITY}' not found in manifest")
 
-    # 6. Approved permissions boundary verification (Zero external application permissions authorized for FCT-001)
-    ALLOWED_INTERNAL_PERMISSIONS = {
-        f"{EXPECTED_PACKAGE_ID}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
-    }
-    for up in root.findall("uses-permission"):
-        pname = get_android_attr(up, "name")
-        if pname in PROHIBITED_PERMISSIONS:
-            errors.append(f"Prohibited application permission detected in manifest: '{pname}'")
-        elif pname not in ALLOWED_INTERNAL_PERMISSIONS:
-            errors.append(f"Unauthorized application permission detected in manifest: '{pname}'. FCT-001 authorizes zero external application permissions.")
+    # 6. Approved permissions boundary verification per connectivity policy
+    allowed_internal_perm = f"{expected_package_id}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+    allowed_permissions = {allowed_internal_perm} | allowed_external_perms
+
+    uses_permission_tags = {"uses-permission", "uses-permission-sdk-23", "uses-permission-sdk-m"}
+    effective_declared_uses_permissions: set[str] = set()
+
+    for elem in root.iter():
+        local_tag = elem.tag.rsplit("}", 1)[-1]
+        if local_tag == "permission":
+            declared_name = get_android_attr(elem, "name")
+            if declared_name != allowed_internal_perm:
+                errors.append(
+                    f"Unexpected custom <permission> '{declared_name}' for '{connectivity_policy}' policy; "
+                    f"expected only '{allowed_internal_perm}'"
+                )
+        elif local_tag in ("permission-tree", "permission-group"):
+            declared_name = get_android_attr(elem, "name")
+            errors.append(
+                f"Unexpected custom <{local_tag}> '{declared_name}' for '{connectivity_policy}' policy"
+            )
+        elif local_tag in uses_permission_tags:
+            pname = get_android_attr(elem, "name")
+            if not pname:
+                errors.append(
+                    f"Permission declaration <{local_tag}> is missing required android:name attribute"
+                )
+                continue
+            if pname not in allowed_permissions:
+                if pname in PROHIBITED_PERMISSIONS:
+                    errors.append(f"Prohibited application permission detected in manifest: '{pname}'")
+                elif connectivity_policy == "offline":
+                    errors.append(
+                        f"Unauthorized application permission detected in manifest: '{pname}'. "
+                        f"FCT-001 authorizes zero external application permissions."
+                    )
+                else:
+                    errors.append(
+                        f"Unauthorized application permission detected in manifest for '{connectivity_policy}' policy: '{pname}'."
+                    )
+                continue
+
+            max_sdk_raw = get_android_attr(elem, "maxSdkVersion")
+            is_effective = True
+            if max_sdk_raw is not None:
+                try:
+                    max_sdk_val = int(max_sdk_raw)
+                    if max_sdk_val < int(EXPECTED_TARGET_SDK):
+                        is_effective = False
+                except ValueError:
+                    is_effective = False
+            if is_effective:
+                effective_declared_uses_permissions.add(pname)
+            elif pname in required_external_perms:
+                errors.append(
+                    f"Required permission '{pname}' in <{local_tag}> is not effective up to targetSdk {EXPECTED_TARGET_SDK} (maxSdkVersion='{max_sdk_raw}')"
+                )
+
+    for req_perm in sorted(required_external_perms):
+        if req_perm not in effective_declared_uses_permissions:
+            errors.append(
+                f"Missing required permission '{req_perm}' for '{connectivity_policy}' connectivity policy"
+            )
 
     return len(errors) == 0, errors
 
+def validate_apk_path_for_policy(apk_path: Path, connectivity_policy: str) -> tuple[bool, list[str]]:
+    """
+    Rejects obvious cross-variant APK artifact substitution when an explicit --apk path
+    targets a build output path belonging to the opposite connectivity policy.
+    """
+    cfg = get_policy_config(connectivity_policy)
+    expected_path = cfg["expected_apk_path"]
+    parts_lower = [p.lower() for p in apk_path.parts]
+    name_lower = apk_path.name.lower()
+    errors: list[str] = []
+
+    if name_lower in ("app-debug.apk", "app-pilot.apk") and name_lower != expected_path.name:
+        errors.append(
+            f"Artifact substitution rejected: '{apk_path}' cannot be validated under "
+            f"'--connectivity-policy {connectivity_policy}' (expected '{expected_path}')"
+        )
+    elif "outputs" in parts_lower and "apk" in parts_lower:
+        if any(tok in parts_lower for tok in cfg["forbidden_variant_tokens"]):
+            errors.append(
+                f"Artifact path '{apk_path}' targets opposite variant for "
+                f"'--connectivity-policy {connectivity_policy}' (expected '{expected_path}')"
+            )
+    return len(errors) == 0, errors
+
 def find_sdk_tool(tool_name: str) -> Path | None:
-    # 1. PATH lookup
     p = shutil.which(tool_name)
     if p:
         return Path(p)
 
-    # 2. ANDROID_HOME lookup
     android_home = os.environ.get("ANDROID_HOME") or os.path.expanduser("~/.android/sdk")
     home_path = Path(android_home)
 
@@ -293,19 +410,16 @@ def validate_apk_archive(apk_path: Path) -> tuple[bool, list[str]]:
     errors: list[str] = []
     try:
         with zipfile.ZipFile(apk_path, "r") as zf:
-            # 1. Test zip integrity
             corrupted = zf.testzip()
             if corrupted:
                 errors.append(f"Corrupted entry in APK archive: {corrupted}")
 
             names = set(zf.namelist())
 
-            # 2. Essential files
             for req in ["AndroidManifest.xml", "classes.dex", "resources.arsc"]:
                 if req not in names:
                     errors.append(f"Missing essential file in APK archive: {req}")
 
-            # 3. Prohibited vendor binaries in lib/
             for name in names:
                 for prohibited in PROHIBITED_BINARY_PATTERNS:
                     if prohibited in name:
@@ -316,7 +430,12 @@ def validate_apk_archive(apk_path: Path) -> tuple[bool, list[str]]:
 
     return len(errors) == 0, errors
 
-def validate_apk_with_tools(apk_path: Path) -> tuple[bool, list[str]]:
+def validate_apk_with_tools(
+    apk_path: Path,
+    connectivity_policy: str = "offline"
+) -> tuple[bool, list[str]]:
+    cfg = get_policy_config(connectivity_policy)
+    expected_package_id = cfg["expected_package_id"]
     errors: list[str] = []
     apkanalyzer = find_sdk_tool("apkanalyzer")
     apksigner = find_sdk_tool("apksigner")
@@ -324,17 +443,15 @@ def validate_apk_with_tools(apk_path: Path) -> tuple[bool, list[str]]:
     if not apkanalyzer:
         errors.append("apkanalyzer binary not found in PATH or ANDROID_HOME")
     else:
-        # Check application ID
         try:
             res = subprocess.run([str(apkanalyzer), "manifest", "application-id", str(apk_path)],
                                  capture_output=True, text=True, check=True)
             app_id = res.stdout.strip()
-            if app_id != EXPECTED_PACKAGE_ID:
-                errors.append(f"Application ID mismatch: expected '{EXPECTED_PACKAGE_ID}', got '{app_id}'")
+            if app_id != expected_package_id:
+                errors.append(f"Application ID mismatch: expected '{expected_package_id}', got '{app_id}'")
         except Exception as e:
             errors.append(f"Failed to query application-id via apkanalyzer: {e}")
 
-        # Check minSdk
         try:
             res = subprocess.run([str(apkanalyzer), "manifest", "min-sdk", str(apk_path)],
                                  capture_output=True, text=True, check=True)
@@ -344,7 +461,6 @@ def validate_apk_with_tools(apk_path: Path) -> tuple[bool, list[str]]:
         except Exception as e:
             errors.append(f"Failed to query min-sdk via apkanalyzer: {e}")
 
-        # Check targetSdk
         try:
             res = subprocess.run([str(apkanalyzer), "manifest", "target-sdk", str(apk_path)],
                                  capture_output=True, text=True, check=True)
@@ -354,7 +470,6 @@ def validate_apk_with_tools(apk_path: Path) -> tuple[bool, list[str]]:
         except Exception as e:
             errors.append(f"Failed to query target-sdk via apkanalyzer: {e}")
 
-        # Check version-name
         try:
             res = subprocess.run([str(apkanalyzer), "manifest", "version-name", str(apk_path)],
                                  capture_output=True, text=True, check=True)
@@ -364,12 +479,11 @@ def validate_apk_with_tools(apk_path: Path) -> tuple[bool, list[str]]:
         except Exception as e:
             errors.append(f"Failed to query version-name via apkanalyzer: {e}")
 
-        # Check structural manifest XML via apkanalyzer
         try:
             res = subprocess.run([str(apkanalyzer), "manifest", "print", str(apk_path)],
                                  capture_output=True, text=True, check=True)
             manifest_xml = res.stdout
-            m_ok, m_errs = validate_manifest_xml_structural(manifest_xml)
+            _, m_errs = validate_manifest_xml_structural(manifest_xml, connectivity_policy=connectivity_policy)
             errors.extend(m_errs)
         except Exception as e:
             errors.append(f"Failed to print manifest via apkanalyzer: {e}")
@@ -387,7 +501,19 @@ def validate_apk_with_tools(apk_path: Path) -> tuple[bool, list[str]]:
 
     return len(errors) == 0, errors
 
-def validate_apk(apk_path: Path) -> tuple[bool, list[str], str]:
+def validate_apk(
+    apk_path: Path,
+    connectivity_policy: str = "offline"
+) -> tuple[bool, list[str], str]:
+    try:
+        get_policy_config(connectivity_policy)
+    except ValueError as ve:
+        return False, [str(ve)], ""
+
+    path_ok, path_errs = validate_apk_path_for_policy(apk_path, connectivity_policy)
+    if not path_ok:
+        return False, path_errs, ""
+
     errors: list[str] = []
     if not apk_path.is_file():
         return False, [f"APK artifact not found at {apk_path}"], ""
@@ -398,35 +524,44 @@ def validate_apk(apk_path: Path) -> tuple[bool, list[str], str]:
 
     sha256 = compute_sha256(apk_path)
 
-    # Archive checks
-    arch_ok, arch_errs = validate_apk_archive(apk_path)
+    _, arch_errs = validate_apk_archive(apk_path)
     errors.extend(arch_errs)
 
-    # DEX bytecode class inspection
-    dex_ok, dex_errs = validate_dex_classes_in_apk(apk_path)
+    _, dex_errs = validate_dex_classes_in_apk(apk_path)
     errors.extend(dex_errs)
 
-    # Tool checks
-    tool_ok, tool_errs = validate_apk_with_tools(apk_path)
+    _, tool_errs = validate_apk_with_tools(apk_path, connectivity_policy=connectivity_policy)
     errors.extend(tool_errs)
 
     return len(errors) == 0, errors, sha256
 
 def main():
-    parser = argparse.ArgumentParser(description="Debug APK Artifact & Security Validator")
-    parser.add_argument("--apk", type=str, default="app/build/outputs/apk/debug/app-debug.apk",
-                        help="Path to debug APK file")
+    parser = argparse.ArgumentParser(description="APK Artifact & Security Validator")
+    parser.add_argument(
+        "--connectivity-policy",
+        choices=["offline", "pilot"],
+        default="offline",
+        help="Target connectivity policy mode ('offline' default or 'pilot')"
+    )
+    parser.add_argument(
+        "--apk",
+        type=str,
+        default=None,
+        help="Optional APK path (defaults to the exact artifact bound to --connectivity-policy)"
+    )
     args = parser.parse_args()
 
-    apk_path = Path(args.apk)
-    valid, errors, sha256 = validate_apk(apk_path)
+    cfg = get_policy_config(args.connectivity_policy)
+    apk_path = Path(args.apk) if args.apk else cfg["expected_apk_path"]
+    valid, errors, sha256 = validate_apk(apk_path, connectivity_policy=args.connectivity_policy)
 
     if valid:
         print("[SUCCESS] APK Artifact and Security validation passed.")
+        print(f"  Policy Mode:    {args.connectivity_policy}")
         print(f"  Artifact Path:  {apk_path}")
         print(f"  Size:           {apk_path.stat().st_size} bytes")
         print(f"  SHA-256 Digest: {sha256}")
-        print(f"  Application ID: {EXPECTED_PACKAGE_ID}")
+        print(f"  Application ID: {cfg['expected_package_id']}")
         print(f"  minSdk:         {EXPECTED_MIN_SDK}")
         print(f"  targetSdk:      {EXPECTED_TARGET_SDK}")
         print(f"  versionName:    {EXPECTED_VERSION_NAME}")

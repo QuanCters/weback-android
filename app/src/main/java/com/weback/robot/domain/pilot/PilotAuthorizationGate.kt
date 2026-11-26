@@ -1,5 +1,8 @@
 package com.weback.robot.domain.pilot
 
+import java.net.URI
+import java.util.UUID
+
 sealed interface GateActivationResult {
     data class Activated(val context: PilotAuthorizationContext) : GateActivationResult
     data class Rejected(val reason: PilotAbortReason, val safeMessage: String) : GateActivationResult
@@ -18,11 +21,13 @@ sealed interface GateCheckResult {
 }
 
 /**
- * Per-call admission ticket binding an outbound pilot network request or WebSocket handshake
- * to the exact active authorization run, generation, operation, deadline, and timeout budgets
- * (`FIX-401`, `FIX-403`).
+ * Internally issued, single-use, request-bound admission ticket (`B-SEC-01`, `B-SEC-03`).
+ * Bound inside [PilotAuthorizationGate] by [ticketId] and verified against an internal
+ * authoritative record so caller-constructed or tampered tickets cannot bypass budgets.
  */
-data class PilotAdmissionTicket(
+@ConsistentCopyVisibility
+data class PilotAdmissionTicket internal constructor(
+    val ticketId: String,
     val authorizationId: String,
     val pilotGeneration: Long,
     val operation: PilotOperation,
@@ -32,7 +37,9 @@ data class PilotAdmissionTicket(
     val maxWsReconnectAttempts: Int,
     val issuedElapsedMs: Long,
     val remainingWindowAtIssueMs: Long,
-    val issuedSystemNanoTime: Long
+    val boundAccountIdentifier: String? = null,
+    val boundCallingCode: String? = null,
+    val boundRequestUrl: String? = null
 )
 
 sealed interface AdmissionResult {
@@ -41,21 +48,44 @@ sealed interface AdmissionResult {
 }
 
 /**
- * Pure Kotlin pilot authorization gate (`SEC-401`, `SEC-404`, `FIX-401`..`FIX-405`).
+ * Pure Kotlin pilot authorization gate (`SEC-401`, `SEC-404`, `FIX-401`..`FIX-405`, `B-SEC-01`..`B-SEC-03`).
  * - Defaults strictly to disabled (`isAuthorized == false`).
  * - Never persists or restores authorization across process restart.
- * - Rejects incomplete, mismatched, expired, replayed, wrong-environment, or UI-checkbox-only contexts.
- * - Blocks new activation while prior run is active or cleanup is in-flight/incomplete.
+ * - Uses injected [PilotClock] (backed by Android `SystemClock.elapsedRealtime()`) exclusively for deadlines.
+ * - Issues single-use, request-bound admission tickets verified at intermediate layers and consumed once at dispatch.
+ * - Notifies attached expiry cleanup listener so deadline expiry triggers complete generation-fenced teardown.
  */
 class PilotAuthorizationGate(
     private val allowedAuthOrigins: Set<String> = CANONICAL_AUTH_ORIGINS,
-    val allowedEnvironment: PilotEnvironment = PilotEnvironment.LIVE_PILOT
+    val allowedEnvironment: PilotEnvironment = PilotEnvironment.LIVE_PILOT,
+    private val clock: PilotClock? = null
 ) {
+    private data class IssuedTicketRecord(
+        val ticketId: String,
+        val authorizationId: String,
+        val pilotGeneration: Long,
+        val operation: PilotOperation,
+        val deadlineElapsedMs: Long,
+        val environment: PilotEnvironment,
+        val httpCallTimeoutMs: Long,
+        val maxWsReconnectAttempts: Int,
+        val issuedElapsedMs: Long,
+        val remainingWindowAtIssueMs: Long,
+        val boundAccountIdentifier: String?,
+        val boundCallingCode: String?,
+        val initialBoundRequestUrl: String?,
+        var boundRequestUrl: String? = initialBoundRequestUrl,
+        var consumed: Boolean = false
+    )
+
     private val lock = Any()
     private var activeContext: PilotAuthorizationContext? = null
     private var lastAbortReason: PilotAbortReason? = null
     private var pilotGeneration: Long = 0L
+    private var ticketSeq: Long = 0L
+    private var lastKnownElapsedMs: Long = 0L
     private val consumedAuthorizationIds: MutableSet<String> = mutableSetOf()
+    private val issuedTickets: MutableMap<String, IssuedTicketRecord> = mutableMapOf()
     private var cleanupInFlight: Boolean = false
     private var incompleteCleanupPending: Boolean = false
     private var cleanupTokenSeq: Long = 0L
@@ -64,6 +94,13 @@ class PilotAuthorizationGate(
     private var inventoryRequestsAdmitted: Int = 0
     private var wsInitialConnectionsAdmitted: Int = 0
     private var wsReconnectsAdmitted: Int = 0
+
+    @Volatile
+    private var onWindowExpiredListener: ((Long) -> Unit)? = null
+
+    fun attachOnWindowExpiredListener(listener: ((Long) -> Unit)?) {
+        onWindowExpiredListener = listener
+    }
 
     val isAuthorized: Boolean
         get() = synchronized(lock) { activeContext != null }
@@ -84,18 +121,45 @@ class PilotAuthorizationGate(
     fun activate(
         context: PilotAuthorizationContext,
         expectedRuntimeIdentity: ExpectedCandidateIdentity,
-        nowElapsedMs: Long,
+        nowElapsedMs: Long = resolveClockOrThrow(null),
         isUiCheckboxOnly: Boolean = false
     ): GateActivationResult {
         val validationError = validateContext(
             context = context,
             expectedRuntimeIdentity = expectedRuntimeIdentity,
+            runtimeAppIdentity = null,
             nowElapsedMs = nowElapsedMs,
             isUiCheckboxOnly = isUiCheckboxOnly
         )
         if (validationError != null) {
             return GateActivationResult.Rejected(validationError.first, validationError.second)
         }
+        return commitActivation(context, nowElapsedMs)
+    }
+
+    fun activate(
+        context: PilotAuthorizationContext,
+        runtimeAppIdentity: RuntimeAppIdentity,
+        nowElapsedMs: Long = resolveClockOrThrow(null),
+        isUiCheckboxOnly: Boolean = false
+    ): GateActivationResult {
+        val validationError = validateContext(
+            context = context,
+            expectedRuntimeIdentity = null,
+            runtimeAppIdentity = runtimeAppIdentity,
+            nowElapsedMs = nowElapsedMs,
+            isUiCheckboxOnly = isUiCheckboxOnly
+        )
+        if (validationError != null) {
+            return GateActivationResult.Rejected(validationError.first, validationError.second)
+        }
+        return commitActivation(context, nowElapsedMs)
+    }
+
+    private fun commitActivation(
+        context: PilotAuthorizationContext,
+        nowElapsedMs: Long
+    ): GateActivationResult {
         synchronized(lock) {
             if (activeContext != null) {
                 return GateActivationResult.Rejected(
@@ -119,7 +183,9 @@ class PilotAuthorizationGate(
             consumedAuthorizationIds.add(normalizedAuthId)
             activeContext = context
             lastAbortReason = null
+            lastKnownElapsedMs = nowElapsedMs
             pilotGeneration++
+            issuedTickets.clear()
             loginRequestsAdmitted = 0
             inventoryRequestsAdmitted = 0
             wsInitialConnectionsAdmitted = 0
@@ -148,78 +214,86 @@ class PilotAuthorizationGate(
 
     fun authorizeOperation(
         operation: PilotOperation,
-        nowElapsedMs: Long
+        nowElapsedMs: Long? = null
     ): GateCheckResult {
-        synchronized(lock) {
+        var expiredGenToNotify: Long? = null
+        val result = synchronized(lock) {
             val ctx = activeContext
-                ?: return GateCheckResult.Denied(
+                ?: return@synchronized GateCheckResult.Denied(
                     lastAbortReason ?: PilotAbortReason.AuthorizationExpiredOrInvalid,
                     "Pilot authorization is disabled"
                 )
 
-            if (nowElapsedMs < ctx.authorizedAtElapsedMs || nowElapsedMs >= ctx.observationDeadlineElapsedMs) {
+            val effectiveNow = effectiveElapsedMsLocked(nowElapsedMs)
+            if (effectiveNow < ctx.authorizedAtElapsedMs || effectiveNow >= ctx.observationDeadlineElapsedMs) {
+                expiredGenToNotify = pilotGeneration
                 revokeLocked(PilotAbortReason.ObservationWindowExpired)
-                return GateCheckResult.Denied(
+                return@synchronized GateCheckResult.Denied(
                     PilotAbortReason.ObservationWindowExpired,
                     "Pilot observation window expired"
                 )
             }
 
             if (operation !in ctx.permittedOperations) {
-                return GateCheckResult.Denied(
+                return@synchronized GateCheckResult.Denied(
                     PilotAbortReason.AuthorizationExpiredOrInvalid,
                     "Operation ${operation.wireOpt} not permitted"
                 )
             }
 
-            return GateCheckResult.Allowed(
+            GateCheckResult.Allowed(
                 context = ctx,
-                remainingWindowMs = ctx.observationDeadlineElapsedMs - nowElapsedMs
+                remainingWindowMs = ctx.observationDeadlineElapsedMs - effectiveNow
             )
         }
+        expiredGenToNotify?.let { onWindowExpiredListener?.invoke(it) }
+        return result
     }
 
     fun acquireAdmission(
         operation: PilotOperation,
-        nowElapsedMs: Long,
+        nowElapsedMs: Long? = null,
         requestUrl: String? = null,
         isReconnect: Boolean = false,
         expectedGeneration: Long? = null,
         endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)? = null
     ): AdmissionResult {
-        synchronized(lock) {
+        var expiredGenToNotify: Long? = null
+        val result = synchronized(lock) {
             val ctx = activeContext
-                ?: return AdmissionResult.Denied(
+                ?: return@synchronized AdmissionResult.Denied(
                     lastAbortReason ?: PilotAbortReason.AuthorizationExpiredOrInvalid,
                     "Pilot authorization is disabled"
                 )
             if (expectedGeneration != null && expectedGeneration != pilotGeneration) {
-                return AdmissionResult.Denied(
+                return@synchronized AdmissionResult.Denied(
                     PilotAbortReason.AuthorizationExpiredOrInvalid,
                     "Pilot generation is stale"
                 )
             }
             if (ctx.environment != allowedEnvironment) {
-                return AdmissionResult.Denied(
+                return@synchronized AdmissionResult.Denied(
                     PilotAbortReason.AuthorizationExpiredOrInvalid,
                     "Pilot environment mismatch"
                 )
             }
-            if (nowElapsedMs < ctx.authorizedAtElapsedMs || nowElapsedMs >= ctx.observationDeadlineElapsedMs) {
+            val effectiveNow = effectiveElapsedMsLocked(nowElapsedMs)
+            if (effectiveNow < ctx.authorizedAtElapsedMs || effectiveNow >= ctx.observationDeadlineElapsedMs) {
+                expiredGenToNotify = pilotGeneration
                 revokeLocked(PilotAbortReason.ObservationWindowExpired)
-                return AdmissionResult.Denied(
+                return@synchronized AdmissionResult.Denied(
                     PilotAbortReason.ObservationWindowExpired,
                     "Pilot observation window expired"
                 )
             }
             if (operation !in ctx.permittedOperations) {
-                return AdmissionResult.Denied(
+                return@synchronized AdmissionResult.Denied(
                     PilotAbortReason.AuthorizationExpiredOrInvalid,
                     "Operation ${operation.wireOpt} not permitted"
                 )
             }
             if (requestUrl != null && endpointValidator != null && !endpointValidator(ctx, requestUrl)) {
-                return AdmissionResult.Denied(
+                return@synchronized AdmissionResult.Denied(
                     PilotAbortReason.UntrustedOriginRejected,
                     "Request endpoint rejected by pilot trust policy"
                 )
@@ -228,7 +302,7 @@ class PilotAuthorizationGate(
             when (operation) {
                 PilotOperation.LOGIN -> {
                     if (loginRequestsAdmitted >= ctx.budgets.maxLoginAttempts) {
-                        return AdmissionResult.Denied(
+                        return@synchronized AdmissionResult.Denied(
                             PilotAbortReason.BudgetExhausted,
                             "Login budget exhausted (max ${ctx.budgets.maxLoginAttempts})"
                         )
@@ -237,7 +311,7 @@ class PilotAuthorizationGate(
                 }
                 PilotOperation.USER_THING_LIST_GET -> {
                     if (inventoryRequestsAdmitted >= ctx.budgets.maxInventoryRequests) {
-                        return AdmissionResult.Denied(
+                        return@synchronized AdmissionResult.Denied(
                             PilotAbortReason.BudgetExhausted,
                             "Inventory request budget exhausted (max ${ctx.budgets.maxInventoryRequests})"
                         )
@@ -247,7 +321,7 @@ class PilotAuthorizationGate(
                 PilotOperation.WS_TELEMETRY_OBSERVE -> {
                     if (!isReconnect) {
                         if (wsInitialConnectionsAdmitted >= ctx.budgets.maxInitialWsConnections) {
-                            return AdmissionResult.Denied(
+                            return@synchronized AdmissionResult.Denied(
                                 PilotAbortReason.BudgetExhausted,
                                 "Initial WebSocket connection budget exhausted"
                             )
@@ -255,7 +329,7 @@ class PilotAuthorizationGate(
                         wsInitialConnectionsAdmitted++
                     } else {
                         if (wsReconnectsAdmitted >= ctx.budgets.maxWsReconnectAttempts) {
-                            return AdmissionResult.Denied(
+                            return@synchronized AdmissionResult.Denied(
                                 PilotAbortReason.BudgetExhausted,
                                 "Cumulative WebSocket reconnect budget exhausted (max ${ctx.budgets.maxWsReconnectAttempts})"
                             )
@@ -265,75 +339,249 @@ class PilotAuthorizationGate(
                 }
             }
 
-            return AdmissionResult.Admitted(
+            val normalizedBoundUrl = requestUrl?.let { normalizeTicketUrl(it, operation) }
+            val boundAcct = if (operation == PilotOperation.LOGIN) {
+                PilotAccountScope.normalizeAccount(ctx.accountScope.authorizedAccountIdentifier)
+            } else {
+                null
+            }
+            val boundCode = if (operation == PilotOperation.LOGIN) {
+                PilotAccountScope.normalizeCallingCode(ctx.accountScope.regionCallingCode)
+            } else {
+                null
+            }
+            val remaining = (ctx.observationDeadlineElapsedMs - effectiveNow).coerceAtLeast(0L)
+            val ticketId = "adm-$pilotGeneration-${++ticketSeq}-${UUID.randomUUID()}"
+            val record = IssuedTicketRecord(
+                ticketId = ticketId,
+                authorizationId = ctx.authorizationId,
+                pilotGeneration = pilotGeneration,
+                operation = operation,
+                deadlineElapsedMs = ctx.observationDeadlineElapsedMs,
+                environment = ctx.environment,
+                httpCallTimeoutMs = ctx.budgets.httpCallTimeoutMs,
+                maxWsReconnectAttempts = ctx.budgets.maxWsReconnectAttempts,
+                issuedElapsedMs = effectiveNow,
+                remainingWindowAtIssueMs = remaining,
+                boundAccountIdentifier = boundAcct,
+                boundCallingCode = boundCode,
+                initialBoundRequestUrl = normalizedBoundUrl
+            )
+            issuedTickets[ticketId] = record
+
+            AdmissionResult.Admitted(
                 PilotAdmissionTicket(
-                    authorizationId = ctx.authorizationId,
-                    pilotGeneration = pilotGeneration,
-                    operation = operation,
-                    deadlineElapsedMs = ctx.observationDeadlineElapsedMs,
-                    environment = ctx.environment,
-                    httpCallTimeoutMs = ctx.budgets.httpCallTimeoutMs,
-                    maxWsReconnectAttempts = ctx.budgets.maxWsReconnectAttempts,
-                    issuedElapsedMs = nowElapsedMs,
-                    remainingWindowAtIssueMs = (ctx.observationDeadlineElapsedMs - nowElapsedMs).coerceAtLeast(0L),
-                    issuedSystemNanoTime = System.nanoTime()
+                    ticketId = ticketId,
+                    authorizationId = record.authorizationId,
+                    pilotGeneration = record.pilotGeneration,
+                    operation = record.operation,
+                    deadlineElapsedMs = record.deadlineElapsedMs,
+                    environment = record.environment,
+                    httpCallTimeoutMs = record.httpCallTimeoutMs,
+                    maxWsReconnectAttempts = record.maxWsReconnectAttempts,
+                    issuedElapsedMs = record.issuedElapsedMs,
+                    remainingWindowAtIssueMs = record.remainingWindowAtIssueMs,
+                    boundAccountIdentifier = record.boundAccountIdentifier,
+                    boundCallingCode = record.boundCallingCode,
+                    boundRequestUrl = record.initialBoundRequestUrl
                 )
             )
         }
+        expiredGenToNotify?.let { onWindowExpiredListener?.invoke(it) }
+        return result
     }
 
+    /**
+     * Non-consuming intermediate verification used by gateway/transport layers before
+     * credential serialization or request dispatch (`B-SEC-01`).
+     */
     fun verifyTicket(
         ticket: PilotAdmissionTicket,
         nowElapsedMs: Long? = null,
         requestUrl: String? = null,
-        endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)? = null
+        endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)? = null,
+        accountIdentifier: String? = null,
+        regionCallingCode: String? = null
+    ): GateCheckResult = evaluateTicketInternal(
+        ticket = ticket,
+        nowElapsedMs = nowElapsedMs,
+        requestUrl = requestUrl,
+        observedOperation = null,
+        endpointValidator = endpointValidator,
+        accountIdentifier = accountIdentifier,
+        regionCallingCode = regionCallingCode,
+        consume = false
+    )
+
+    /**
+     * Atomic one-time ticket consumption performed strictly at the network dispatch boundary (`B-SEC-01`, `B-FIX-01`).
+     * Prevents ticket replay, forged tickets, field tampering, cross-request substitution, and
+     * serialized login account/calling_code mismatch.
+     */
+    fun consumeTicketForDispatch(
+        ticket: PilotAdmissionTicket,
+        requestUrl: String,
+        observedOperation: PilotOperation,
+        nowElapsedMs: Long? = null,
+        endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)? = null,
+        accountIdentifier: String? = null,
+        regionCallingCode: String? = null
+    ): GateCheckResult = evaluateTicketInternal(
+        ticket = ticket,
+        nowElapsedMs = nowElapsedMs,
+        requestUrl = requestUrl,
+        observedOperation = observedOperation,
+        endpointValidator = endpointValidator,
+        accountIdentifier = accountIdentifier,
+        regionCallingCode = regionCallingCode,
+        consume = true
+    )
+
+    private fun evaluateTicketInternal(
+        ticket: PilotAdmissionTicket,
+        nowElapsedMs: Long?,
+        requestUrl: String?,
+        observedOperation: PilotOperation?,
+        endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)?,
+        accountIdentifier: String?,
+        regionCallingCode: String?,
+        consume: Boolean
     ): GateCheckResult {
-        synchronized(lock) {
+        var expiredGenToNotify: Long? = null
+        val result = synchronized(lock) {
             val ctx = activeContext
-                ?: return GateCheckResult.Denied(
+                ?: return@synchronized GateCheckResult.Denied(
                     lastAbortReason ?: PilotAbortReason.AuthorizationExpiredOrInvalid,
                     "Pilot authorization is disabled"
                 )
-            if (ticket.environment != allowedEnvironment ||
+            val record = issuedTickets[ticket.ticketId]
+                ?: return@synchronized GateCheckResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Unknown or caller-forged pilot admission ticket"
+                )
+            if (!ticketMatchesRecord(ticket, record)) {
+                return@synchronized GateCheckResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Tampered pilot admission ticket fields rejected"
+                )
+            }
+            if (record.consumed) {
+                return@synchronized GateCheckResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Pilot admission ticket already consumed (replay blocked)"
+                )
+            }
+            if (record.environment != allowedEnvironment ||
                 ctx.environment != allowedEnvironment ||
-                ticket.authorizationId != ctx.authorizationId ||
-                ticket.pilotGeneration != pilotGeneration
+                record.authorizationId != ctx.authorizationId ||
+                record.pilotGeneration != pilotGeneration
             ) {
-                return GateCheckResult.Denied(
+                return@synchronized GateCheckResult.Denied(
                     PilotAbortReason.AuthorizationExpiredOrInvalid,
                     "Pilot admission ticket is stale or mismatched"
                 )
             }
-            if (ticket.operation !in ctx.permittedOperations) {
-                return GateCheckResult.Denied(
+            if (record.operation !in ctx.permittedOperations) {
+                return@synchronized GateCheckResult.Denied(
                     PilotAbortReason.AuthorizationExpiredOrInvalid,
-                    "Operation ${ticket.operation.wireOpt} not permitted"
+                    "Operation ${record.operation.wireOpt} not permitted"
                 )
             }
-            val elapsedSinceIssueMs = ((System.nanoTime() - ticket.issuedSystemNanoTime) / 1_000_000L).coerceAtLeast(0L)
-            val realTimeExpired = elapsedSinceIssueMs >= ticket.remainingWindowAtIssueMs
-            val clockExpired = nowElapsedMs != null &&
-                (nowElapsedMs < ctx.authorizedAtElapsedMs || nowElapsedMs >= ctx.observationDeadlineElapsedMs)
-            if (realTimeExpired || clockExpired) {
+            if (observedOperation != null && observedOperation != record.operation) {
+                return@synchronized GateCheckResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Request operation mismatches admission ticket"
+                )
+            }
+            if (record.operation == PilotOperation.LOGIN &&
+                (consume || accountIdentifier != null || regionCallingCode != null)
+            ) {
+                val normAcct = accountIdentifier?.let { PilotAccountScope.normalizeAccount(it) }
+                val normCode = regionCallingCode?.let { PilotAccountScope.normalizeCallingCode(it) }
+                if (normAcct.isNullOrBlank() ||
+                    normCode.isNullOrBlank() ||
+                    normAcct != record.boundAccountIdentifier ||
+                    normCode != record.boundCallingCode
+                ) {
+                    return@synchronized GateCheckResult.Denied(
+                        PilotAbortReason.AuthorizationExpiredOrInvalid,
+                        "Ticket account binding mismatch"
+                    )
+                }
+            }
+
+            val effectiveNow = effectiveElapsedMsLocked(nowElapsedMs)
+            if (effectiveNow < ctx.authorizedAtElapsedMs || effectiveNow >= ctx.observationDeadlineElapsedMs) {
+                expiredGenToNotify = pilotGeneration
                 revokeLocked(PilotAbortReason.ObservationWindowExpired)
-                return GateCheckResult.Denied(
+                return@synchronized GateCheckResult.Denied(
                     PilotAbortReason.ObservationWindowExpired,
                     "Pilot observation window expired"
                 )
             }
-            if (requestUrl != null && endpointValidator != null && !endpointValidator(ctx, requestUrl)) {
-                return GateCheckResult.Denied(
+
+            if (requestUrl != null) {
+                val normalizedRequestUrl = normalizeTicketUrl(requestUrl, record.operation)
+                if (endpointValidator != null && !endpointValidator(ctx, requestUrl)) {
+                    return@synchronized GateCheckResult.Denied(
+                        PilotAbortReason.UntrustedOriginRejected,
+                        "Request endpoint rejected by pilot trust policy"
+                    )
+                }
+                val boundUrl = record.boundRequestUrl
+                if (boundUrl != null && normalizedRequestUrl != boundUrl) {
+                    return@synchronized GateCheckResult.Denied(
+                        PilotAbortReason.UntrustedOriginRejected,
+                        "Request URL mismatches admission ticket binding"
+                    )
+                }
+                if (boundUrl == null) {
+                    record.boundRequestUrl = normalizedRequestUrl
+                }
+            } else if (consume) {
+                return@synchronized GateCheckResult.Denied(
                     PilotAbortReason.UntrustedOriginRejected,
-                    "Request endpoint rejected by pilot trust policy"
+                    "Missing request URL at dispatch consumption"
                 )
             }
-            val remaining = if (nowElapsedMs != null) {
-                (ctx.observationDeadlineElapsedMs - nowElapsedMs).coerceAtLeast(0L)
-            } else {
-                (ticket.remainingWindowAtIssueMs - elapsedSinceIssueMs).coerceAtLeast(0L)
+
+            if (consume) {
+                record.consumed = true
             }
-            return GateCheckResult.Allowed(ctx, remaining)
+
+            val remaining = (ctx.observationDeadlineElapsedMs - effectiveNow).coerceAtLeast(0L)
+            GateCheckResult.Allowed(ctx, remaining)
         }
+        expiredGenToNotify?.let { onWindowExpiredListener?.invoke(it) }
+        return result
+    }
+
+    private fun ticketMatchesRecord(ticket: PilotAdmissionTicket, record: IssuedTicketRecord): Boolean {
+        return ticket.ticketId == record.ticketId &&
+            ticket.authorizationId == record.authorizationId &&
+            ticket.pilotGeneration == record.pilotGeneration &&
+            ticket.operation == record.operation &&
+            ticket.deadlineElapsedMs == record.deadlineElapsedMs &&
+            ticket.environment == record.environment &&
+            ticket.httpCallTimeoutMs == record.httpCallTimeoutMs &&
+            ticket.maxWsReconnectAttempts == record.maxWsReconnectAttempts &&
+            ticket.issuedElapsedMs == record.issuedElapsedMs &&
+            ticket.remainingWindowAtIssueMs == record.remainingWindowAtIssueMs &&
+            ticket.boundAccountIdentifier == record.boundAccountIdentifier &&
+            ticket.boundCallingCode == record.boundCallingCode &&
+            ticket.boundRequestUrl == record.initialBoundRequestUrl
+    }
+
+    private fun effectiveElapsedMsLocked(explicitNowMs: Long?): Long {
+        val resolved = explicitNowMs ?: clock?.elapsedRealtimeMs() ?: lastKnownElapsedMs
+        if (resolved > lastKnownElapsedMs) {
+            lastKnownElapsedMs = resolved
+        }
+        return resolved
+    }
+
+    private fun resolveClockOrThrow(explicitNowMs: Long?): Long {
+        return explicitNowMs ?: clock?.elapsedRealtimeMs() ?: lastKnownElapsedMs
     }
 
     fun revoke(reason: PilotAbortReason = PilotAbortReason.UserEmergencyDisconnect) {
@@ -343,6 +591,20 @@ class PilotAuthorizationGate(
     }
 
     fun beginCleanup(reason: PilotAbortReason = PilotAbortReason.UserEmergencyDisconnect): Long {
+        synchronized(lock) {
+            revokeLocked(reason)
+            val token = ++cleanupTokenSeq
+            inFlightCleanupTokens.add(token)
+            cleanupInFlight = true
+            return token
+        }
+    }
+
+    /**
+     * Acquires a cleanup barrier token when expiration already revoked the active context inside
+     * [PilotAuthorizationGate], ensuring new activations stay blocked until storage cleanup finishes.
+     */
+    fun beginCleanupForRevokedGeneration(reason: PilotAbortReason = PilotAbortReason.ObservationWindowExpired): Long {
         synchronized(lock) {
             revokeLocked(reason)
             val token = ++cleanupTokenSeq
@@ -369,12 +631,14 @@ class PilotAuthorizationGate(
             activeContext = null
             pilotGeneration++
         }
+        issuedTickets.clear()
         lastAbortReason = reason
     }
 
     private fun validateContext(
         context: PilotAuthorizationContext,
-        expectedRuntimeIdentity: ExpectedCandidateIdentity,
+        expectedRuntimeIdentity: ExpectedCandidateIdentity?,
+        runtimeAppIdentity: RuntimeAppIdentity?,
         nowElapsedMs: Long,
         isUiCheckboxOnly: Boolean
     ): Pair<PilotAbortReason, String>? {
@@ -393,17 +657,32 @@ class PilotAuthorizationGate(
         }
         if (context.environment != allowedEnvironment) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
-                "Pilot authorization environment (${context.environment}) is not permitted on ${allowedEnvironment} gate"
+                "Pilot authorization environment (${context.environment}) is not permitted on $allowedEnvironment gate"
         }
         if (context.authorizationId.isBlank()) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to "Authorization ID must not be blank"
         }
         if (!HEX_40_REGEX.matches(context.candidateIdentity.candidateCommitSha) ||
-            !HEX_64_REGEX.matches(context.candidateIdentity.apkSha256) ||
-            context.candidateIdentity != expectedRuntimeIdentity
+            !HEX_64_REGEX.matches(context.candidateIdentity.apkSha256)
         ) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Candidate commit SHA or APK SHA-256 format invalid"
+        }
+        if (expectedRuntimeIdentity != null && context.candidateIdentity != expectedRuntimeIdentity) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "Candidate commit SHA or APK identity mismatch"
+        }
+        if (runtimeAppIdentity != null) {
+            if (context.environment == PilotEnvironment.LIVE_PILOT && !runtimeAppIdentity.pilotBuildEnabled) {
+                return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                    "Live pilot authorization is disabled on non-pilot build"
+            }
+            if (context.candidateIdentity.applicationId != runtimeAppIdentity.applicationId ||
+                context.candidateIdentity.versionName != runtimeAppIdentity.versionName
+            ) {
+                return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                    "Runtime application identity mismatch"
+            }
         }
         if (context.accountScope.scopeType != PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT ||
             !CALLING_CODE_REGEX.matches(PilotAccountScope.normalizeCallingCode(context.accountScope.regionCallingCode)) ||
@@ -495,6 +774,29 @@ class PilotAuthorizationGate(
         private val HEX_64_REGEX = Regex("^[0-9a-fA-F]{64}$")
         private val CALLING_CODE_REGEX = Regex("^(\\+|00)[0-9]{1,4}$")
 
+        private fun normalizeTicketUrl(rawUrl: String, operation: PilotOperation): String {
+            val uri = runCatching { URI(rawUrl.trim()) }.getOrNull() ?: return rawUrl.trim()
+            val rawScheme = uri.scheme?.lowercase().orEmpty()
+            val scheme = if (operation == PilotOperation.WS_TELEMETRY_OBSERVE) {
+                when (rawScheme) {
+                    "wss" -> "https"
+                    "ws" -> "http"
+                    else -> rawScheme
+                }
+            } else {
+                rawScheme
+            }
+            val host = uri.host?.lowercase()?.removePrefix("[")?.removeSuffix("]").orEmpty()
+            val port = when {
+                uri.port in 1..65535 -> uri.port
+                rawScheme == "https" || rawScheme == "wss" -> 443
+                rawScheme == "http" || rawScheme == "ws" -> 80
+                else -> -1
+            }
+            val path = uri.rawPath.orEmpty()
+            return "$scheme://$host:$port$path"
+        }
+
         private fun isValidPinnedOrigin(
             rawOrigin: String,
             expectedScheme: String,
@@ -504,7 +806,7 @@ class PilotAuthorizationGate(
             if (trimmed.isEmpty() || trimmed.contains('@') || trimmed.contains('?') || trimmed.contains('#')) {
                 return false
             }
-            val uri = runCatching { java.net.URI(trimmed) }.getOrNull() ?: return false
+            val uri = runCatching { URI(trimmed) }.getOrNull() ?: return false
             val scheme = uri.scheme?.lowercase() ?: return false
             val host = uri.host?.lowercase()?.removePrefix("[")?.removeSuffix("]") ?: return false
             if (scheme != expectedScheme || host.isBlank() || !uri.userInfo.isNullOrEmpty()) return false

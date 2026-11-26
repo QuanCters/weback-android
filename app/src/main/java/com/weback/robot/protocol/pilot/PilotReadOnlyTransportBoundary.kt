@@ -15,6 +15,7 @@ import com.weback.robot.domain.model.SessionCredentials
 import com.weback.robot.domain.pilot.AdmissionResult
 import com.weback.robot.domain.pilot.GateCheckResult
 import com.weback.robot.domain.pilot.ObservedOriginSummary
+import com.weback.robot.domain.pilot.PilotAccountScope
 import com.weback.robot.domain.pilot.PilotAdmissionTicket
 import com.weback.robot.domain.pilot.PilotAuthorizationGate
 import com.weback.robot.domain.pilot.PilotOperation
@@ -50,10 +51,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -90,33 +88,248 @@ interface PilotReadOnlyTelemetryTransport : AutoCloseable {
     override fun close()
 }
 
+data class LoginEnvelopeIdentity(
+    val account: String,
+    val callingCode: String
+)
+
 /**
- * Structural HTTP operation allowlist validator (`SEC-402`).
+ * Structural HTTP operation allowlist validator (`SEC-402`, `B-FIX-01`).
  * Permits ONLY `"login"` and `"user_thing_list_get"` request envelopes; rejects `"send_to_device"`,
- * unknown operations, extra command fields, and malformed JSON prior to network dispatch.
+ * unknown operations, extra command fields, duplicate JSON keys, wrong field types, and malformed JSON
+ * prior to network dispatch without logging secrets.
  */
 object PilotHttpOperationGuard {
 
     private val allowedOpts = setOf("login", "user_thing_list_get")
+    private val approvedLoginHeaderKeys = setOf(
+        "api_version",
+        "app_name",
+        "calling_code",
+        "account",
+        "client_id",
+        "language"
+    )
+    private val approvedLoginPayloadKeys = setOf("opt", "pwd")
+    private val callingCodeRegex = Regex("^(\\+|00)[0-9]{1,4}$")
     private val json = Json { ignoreUnknownKeys = false }
 
     fun validateOperationPayload(expectedOpt: String, rawJson: String): Boolean {
         if (expectedOpt !in allowedOpts) return false
-        val root = runCatching { json.parseToJsonElement(rawJson) }.getOrNull() as? JsonObject ?: return false
+        val root = parseStrictObject(rawJson) ?: return false
         return when (expectedOpt) {
             "login" -> {
                 if (root.keys != setOf("header", "payload")) return false
+                val header = root["header"] as? JsonObject ?: return false
                 val payload = root["payload"] as? JsonObject ?: return false
-                val opt = payload["opt"]?.jsonPrimitive?.contentOrNull
-                opt == "login"
+                if (!header.keys.all { it in approvedLoginHeaderKeys }) return false
+                if (!payload.keys.all { it in approvedLoginPayloadKeys }) return false
+                payload.strictString("opt") == "login"
             }
             "user_thing_list_get" -> {
                 if (root.keys != setOf("opt")) return false
-                val opt = root["opt"]?.jsonPrimitive?.contentOrNull
-                opt == "user_thing_list_get"
+                root.strictString("opt") == "user_thing_list_get"
             }
             else -> false
         }
+    }
+
+    /**
+     * Validates that [rawJson] matches the exact approved login wire envelope (`header` + `payload`),
+     * rejects missing/extra/duplicate/wrong-type fields, and returns normalized account + calling_code.
+     */
+    fun validateLoginEnvelopeAndExtractIdentity(rawJson: String): LoginEnvelopeIdentity? {
+        val root = parseStrictObject(rawJson) ?: return null
+        if (root.keys != setOf("header", "payload")) return null
+        val header = root["header"] as? JsonObject ?: return null
+        val payload = root["payload"] as? JsonObject ?: return null
+        if (header.keys != approvedLoginHeaderKeys) return null
+        if (payload.keys != approvedLoginPayloadKeys) return null
+
+        for (key in approvedLoginHeaderKeys) {
+            val value = header.strictString(key) ?: return null
+            if (value.isBlank() || value.any { it.isISOControl() }) return null
+        }
+        val opt = payload.strictString("opt") ?: return null
+        if (opt != "login") return null
+        val pwd = payload.strictString("pwd") ?: return null
+        if (pwd.isBlank()) return null
+
+        val normalizedCallingCode = PilotAccountScope.normalizeCallingCode(header.strictString("calling_code") ?: return null)
+        if (!callingCodeRegex.matches(normalizedCallingCode)) return null
+        val normalizedAccount = PilotAccountScope.normalizeAccount(header.strictString("account") ?: return null)
+        if (normalizedAccount.isBlank()) return null
+
+        return LoginEnvelopeIdentity(
+            account = normalizedAccount,
+            callingCode = normalizedCallingCode
+        )
+    }
+
+    private fun JsonObject.strictString(key: String): String? {
+        val prim = this[key] as? JsonPrimitive ?: return null
+        if (!prim.isString) return null
+        return prim.content
+    }
+
+    private fun parseStrictObject(rawJson: String): JsonObject? {
+        if (!StrictJsonKeyUniquenessValidator.hasUniqueObjectKeys(rawJson)) return null
+        return runCatching { json.parseToJsonElement(rawJson) }.getOrNull() as? JsonObject
+    }
+}
+
+/**
+ * Validates strict RFC 8259 JSON syntax and rejects any JSON object containing duplicate keys
+ * (preventing ambiguous parser-dependent "first-wins" vs "last-wins" account fields).
+ */
+private object StrictJsonKeyUniquenessValidator {
+    fun hasUniqueObjectKeys(input: String): Boolean {
+        val reader = Cursor(input)
+        return reader.skipWs() &&
+            parseValue(reader, depth = 0) &&
+            reader.isAtEndAfterWs()
+    }
+
+    private class Cursor(val s: String) {
+        var pos: Int = 0
+
+        fun skipWs(): Boolean {
+            while (pos < s.length && (s[pos] == ' ' || s[pos] == '\t' || s[pos] == '\n' || s[pos] == '\r')) {
+                pos++
+            }
+            return pos < s.length
+        }
+
+        fun isAtEndAfterWs(): Boolean {
+            skipWs()
+            return pos == s.length
+        }
+
+        fun peek(): Char? = if (pos < s.length) s[pos] else null
+        fun next(): Char? = if (pos < s.length) s[pos++] else null
+    }
+
+    private fun parseValue(c: Cursor, depth: Int): Boolean {
+        if (depth > 32) return false
+        c.skipWs()
+        return when (c.peek()) {
+            '{' -> parseObject(c, depth + 1)
+            '[' -> parseArray(c, depth + 1)
+            '"' -> parseString(c) != null
+            't' -> consumeLiteral(c, "true")
+            'f' -> consumeLiteral(c, "false")
+            'n' -> consumeLiteral(c, "null")
+            '-', in '0'..'9' -> parseNumber(c)
+            else -> false
+        }
+    }
+
+    private fun parseObject(c: Cursor, depth: Int): Boolean {
+        if (c.next() != '{') return false
+        c.skipWs()
+        if (c.peek() == '}') {
+            c.next()
+            return true
+        }
+        val seenKeys = HashSet<String>()
+        while (true) {
+            c.skipWs()
+            val key = parseString(c) ?: return false
+            if (!seenKeys.add(key)) return false
+            c.skipWs()
+            if (c.next() != ':') return false
+            if (!parseValue(c, depth)) return false
+            c.skipWs()
+            when (c.next()) {
+                ',' -> continue
+                '}' -> return true
+                else -> return false
+            }
+        }
+    }
+
+    private fun parseArray(c: Cursor, depth: Int): Boolean {
+        if (c.next() != '[') return false
+        c.skipWs()
+        if (c.peek() == ']') {
+            c.next()
+            return true
+        }
+        while (true) {
+            if (!parseValue(c, depth)) return false
+            c.skipWs()
+            when (c.next()) {
+                ',' -> continue
+                ']' -> return true
+                else -> return false
+            }
+        }
+    }
+
+    private fun parseString(c: Cursor): String? {
+        if (c.next() != '"') return null
+        val sb = StringBuilder()
+        while (true) {
+            val ch = c.next() ?: return null
+            when {
+                ch == '"' -> return sb.toString()
+                ch == '\\' -> {
+                    val esc = c.next() ?: return null
+                    when (esc) {
+                        '"', '\\', '/' -> sb.append(esc)
+                        'b' -> sb.append('\b')
+                        'f' -> sb.append('\u000C')
+                        'n' -> sb.append('\n')
+                        'r' -> sb.append('\r')
+                        't' -> sb.append('\t')
+                        'u' -> {
+                            var code = 0
+                            repeat(4) {
+                                val hex = c.next() ?: return null
+                                val digit = Character.digit(hex, 16)
+                                if (digit < 0) return null
+                                code = (code shl 4) or digit
+                            }
+                            sb.append(code.toChar())
+                        }
+                        else -> return null
+                    }
+                }
+                ch.code < 0x20 -> return null
+                else -> sb.append(ch)
+            }
+        }
+    }
+
+    private fun consumeLiteral(c: Cursor, lit: String): Boolean {
+        if (!c.s.startsWith(lit, c.pos)) return false
+        c.pos += lit.length
+        return true
+    }
+
+    private fun parseNumber(c: Cursor): Boolean {
+        if (c.peek() == '-') c.next()
+        val first = c.next() ?: return false
+        if (first == '0') {
+            // leading zero cannot be followed by another digit
+            if (c.peek() in '0'..'9') return false
+        } else if (first in '1'..'9') {
+            while (c.peek() in '0'..'9') c.next()
+        } else {
+            return false
+        }
+        if (c.peek() == '.') {
+            c.next()
+            if (c.peek() !in '0'..'9') return false
+            while (c.peek() in '0'..'9') c.next()
+        }
+        if (c.peek() == 'e' || c.peek() == 'E') {
+            c.next()
+            if (c.peek() == '+' || c.peek() == '-') c.next()
+            if (c.peek() !in '0'..'9') return false
+            while (c.peek() in '0'..'9') c.next()
+        }
+        return true
     }
 }
 
@@ -247,6 +460,24 @@ class PilotCapabilityRestrictedAuthGateway(
             return PilotAuthProbeOutcome.Failed(AuthFailureReason.InvalidCredentials, "Account and secret must not be blank")
         }
 
+        if (admissionGate != null) {
+            val (accountValid, accountError) = admissionGate.verifyAccountCredentials(
+                credentials.regionCallingCode,
+                credentials.account
+            )
+            if (!accountValid) {
+                Arrays.fill(secretChars, '\u0000')
+                logger.log(
+                    DiagnosticEvent(
+                        category = "PILOT_AUTH_ACCOUNT_MISMATCH",
+                        opt = "login",
+                        errorCategory = "ACCOUNT_SCOPE_MISMATCH"
+                    )
+                )
+                return PilotAuthProbeOutcome.Failed(AuthFailureReason.ConfigurationError, accountError)
+            }
+        }
+
         val resolution = router.resolve(credentials.regionCallingCode)
         if (resolution is RegionResolution.Rejected) {
             Arrays.fill(secretChars, '\u0000')
@@ -274,7 +505,16 @@ class PilotCapabilityRestrictedAuthGateway(
                         ?: true
                 }
             if (preAdmitted != null && preAdmitted.operation == PilotOperation.LOGIN) {
-                when (val check = admissionGate.verifyTicket(preAdmitted, nowMs, endpointUrl, endpointMatcher)) {
+                when (
+                    val check = admissionGate.verifyTicket(
+                        ticket = preAdmitted,
+                        nowElapsedMs = nowMs,
+                        requestUrl = endpointUrl,
+                        endpointValidator = endpointMatcher,
+                        accountIdentifier = credentials.account,
+                        regionCallingCode = credentials.regionCallingCode
+                    )
+                ) {
                     is GateCheckResult.Allowed -> preAdmitted
                     is GateCheckResult.Denied -> {
                         Arrays.fill(secretChars, '\u0000')
@@ -322,7 +562,7 @@ class PilotCapabilityRestrictedAuthGateway(
             Arrays.fill(secretChars, '\u0000')
         }
 
-        if (!PilotHttpOperationGuard.validateOperationPayload("login", requestJson)) {
+        if (PilotHttpOperationGuard.validateLoginEnvelopeAndExtractIdentity(requestJson) == null) {
             return PilotAuthProbeOutcome.Failed(AuthFailureReason.ConfigurationError, "Blocked non-login payload")
         }
 

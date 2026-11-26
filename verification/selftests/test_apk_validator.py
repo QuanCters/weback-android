@@ -3,6 +3,8 @@ Selftests for Debug APK Artifact Validator (apk_validator.py).
 Standard library only. Zero third-party dependencies.
 """
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -12,6 +14,7 @@ from verification.checks.apk_validator import (
     compute_sha256,
     validate_apk,
     validate_apk_archive,
+    validate_apk_path_for_policy,
     validate_manifest_xml_structural,
     validate_dex_classes_in_apk,
     parse_dex_classes
@@ -347,6 +350,282 @@ class TestApkValidator(unittest.TestCase):
             ok, errors = validate_dex_classes_in_apk(apk_p)
             self.assertTrue(ok, f"Expected multidex valid, got errors: {errors}")
             self.assertEqual(len(errors), 0)
+
+    def _build_manifest_xml(
+        self,
+        package_id: str = "com.weback.robot",
+        permissions: list[str] | None = None,
+        custom_permission: str | None = None,
+        cleartext: str = "false",
+        allow_backup: str = "false",
+        provider_authority: str | None = None
+    ) -> str:
+        perm_decl = (
+            f'  <permission android:name="{custom_permission}" android:protectionLevel="0x2" />\n'
+            if custom_permission else ""
+        )
+        uses_perms = "".join(
+            f'  <uses-permission android:name="{p}" />\n' for p in (permissions or [])
+        )
+        provider_tag = (
+            f'    <provider android:name="androidx.startup.InitializationProvider" '
+            f'android:exported="false" android:authorities="{provider_authority}" />\n'
+            if provider_authority else ""
+        )
+        return (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+            f'package="{package_id}" android:versionName="0.1.0-alpha">\n'
+            '  <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="35" />\n'
+            f'{perm_decl}{uses_perms}'
+            f'  <application android:usesCleartextTraffic="{cleartext}" android:allowBackup="{allow_backup}" '
+            'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+            '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+            '      <intent-filter>\n'
+            '        <action android:name="android.intent.action.MAIN" />\n'
+            '        <category android:name="android.intent.category.LAUNCHER" />\n'
+            '      </intent-filter>\n'
+            '    </activity>\n'
+            f'{provider_tag}'
+            '  </application>\n'
+            '</manifest>'
+        )
+
+    def test_pilot_mode_accepts_valid_pilot_manifest_with_internet(self):
+        pilot_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.pilot",
+            custom_permission="com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=[
+                "android.permission.INTERNET",
+                "com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            ],
+            provider_authority="com.weback.robot.pilot.androidx-startup",
+        )
+        ok, errors = validate_manifest_xml_structural(pilot_xml, connectivity_policy="pilot")
+        self.assertTrue(ok, f"Expected valid pilot manifest, got errors: {errors}")
+
+    def test_pilot_mode_negative_missing_internet_permission(self):
+        pilot_no_net = self._build_manifest_xml(
+            package_id="com.weback.robot.pilot",
+            custom_permission="com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=["com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"],
+        )
+        ok, errors = validate_manifest_xml_structural(pilot_no_net, connectivity_policy="pilot")
+        self.assertFalse(ok)
+        self.assertTrue(any("Missing required permission 'android.permission.INTERNET'" in e for e in errors))
+
+    def test_pilot_mode_negative_rejects_offline_package_substitution(self):
+        offline_xml = self._build_manifest_xml(
+            package_id="com.weback.robot",
+            custom_permission="com.weback.robot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=["com.weback.robot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"],
+        )
+        ok, errors = validate_manifest_xml_structural(offline_xml, connectivity_policy="pilot")
+        self.assertFalse(ok)
+        self.assertTrue(any("expected 'com.weback.robot.pilot'" in e for e in errors))
+
+    def test_offline_mode_negative_rejects_pilot_package_and_internet(self):
+        pilot_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.pilot",
+            custom_permission="com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=[
+                "android.permission.INTERNET",
+                "com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            ],
+        )
+        ok, errors = validate_manifest_xml_structural(pilot_xml, connectivity_policy="offline")
+        self.assertFalse(ok)
+        self.assertTrue(any("expected 'com.weback.robot'" in e for e in errors))
+        self.assertTrue(any("android.permission.INTERNET" in e for e in errors))
+
+    def test_pilot_mode_negative_rejects_extra_permissions_and_backup_and_cleartext(self):
+        for bad_perm in (
+            "android.permission.ACCESS_FINE_LOCATION",
+            "android.permission.BLUETOOTH_SCAN",
+            "android.permission.ACCESS_WIFI_STATE",
+            "android.permission.CHANGE_NETWORK_STATE",
+        ):
+            bad_xml = self._build_manifest_xml(
+                package_id="com.weback.robot.pilot",
+                permissions=[
+                    "android.permission.INTERNET",
+                    "com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+                    bad_perm,
+                ],
+            )
+            ok, errors = validate_manifest_xml_structural(bad_xml, connectivity_policy="pilot")
+            self.assertFalse(ok)
+            self.assertTrue(any(bad_perm in e for e in errors))
+
+        backup_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.pilot",
+            permissions=["android.permission.INTERNET"],
+            allow_backup="true",
+        )
+        ok_b, errs_b = validate_manifest_xml_structural(backup_xml, connectivity_policy="pilot")
+        self.assertFalse(ok_b)
+        self.assertTrue(any("allowBackup must be strictly 'false'" in e for e in errs_b))
+
+        cleartext_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.pilot",
+            permissions=["android.permission.INTERNET"],
+            cleartext="true",
+        )
+        ok_c, errs_c = validate_manifest_xml_structural(cleartext_xml, connectivity_policy="pilot")
+        self.assertFalse(ok_c)
+        self.assertTrue(any("usesCleartextTraffic must be strictly 'false'" in e for e in errs_c))
+
+    def test_pilot_mode_negative_rejects_provider_authority_collision(self):
+        colliding_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.pilot",
+            permissions=["android.permission.INTERNET"],
+            provider_authority="com.weback.robot.androidx-startup",
+        )
+        ok, errors = validate_manifest_xml_structural(colliding_xml, connectivity_policy="pilot")
+        self.assertFalse(ok)
+        self.assertTrue(any("Provider authority" in e for e in errors))
+
+    def test_path_substitution_and_cli_default_offline_binding(self):
+        ok_sub_1, errs_1 = validate_apk_path_for_policy(
+            Path("app/build/outputs/apk/pilot/app-pilot.apk"), "offline"
+        )
+        self.assertFalse(ok_sub_1)
+        self.assertTrue(any("Artifact substitution rejected" in e for e in errs_1))
+
+        ok_sub_2, errs_2 = validate_apk_path_for_policy(
+            Path("app/build/outputs/apk/debug/app-debug.apk"), "pilot"
+        )
+        self.assertFalse(ok_sub_2)
+        self.assertTrue(any("Artifact substitution rejected" in e for e in errs_2))
+
+        res_cli = subprocess.run(
+            [
+                sys.executable,
+                "verification/checks/apk_validator.py",
+                "--apk",
+                "app/build/outputs/apk/pilot/app-pilot.apk",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(res_cli.returncode, 1)
+        self.assertIn("Artifact substitution rejected", res_cli.stderr)
+
+    def test_offline_mode_negative_rejects_alternate_permission_forms(self):
+        # uses-permission-sdk-23 with INTERNET or LOCATION must fail in offline mode
+        for bad_perm in ("android.permission.INTERNET", "android.permission.ACCESS_FINE_LOCATION", "android.permission.CAMERA"):
+            xml_sdk23 = (
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+                'package="com.weback.robot" android:versionName="0.1.0-alpha">\n'
+                '  <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="35" />\n'
+                f'  <uses-permission-sdk-23 android:name="{bad_perm}" />\n'
+                '  <application android:usesCleartextTraffic="false" android:allowBackup="false" '
+                'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+                '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+                '      <intent-filter>\n'
+                '        <action android:name="android.intent.action.MAIN" />\n'
+                '        <category android:name="android.intent.category.LAUNCHER" />\n'
+                '      </intent-filter>\n'
+                '    </activity>\n'
+                '  </application>\n'
+                '</manifest>'
+            )
+            ok, errors = validate_manifest_xml_structural(xml_sdk23, connectivity_policy="offline")
+            self.assertFalse(ok, f"Expected offline rejection for uses-permission-sdk-23 '{bad_perm}'")
+            self.assertTrue(any(bad_perm in e for e in errors), f"Expected '{bad_perm}' in errors: {errors}")
+
+        # Nested uses-permission inside <application> must fail
+        nested_xml = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+            'package="com.weback.robot" android:versionName="0.1.0-alpha">\n'
+            '  <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="35" />\n'
+            '  <application android:usesCleartextTraffic="false" android:allowBackup="false" '
+            'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+            '    <uses-permission android:name="android.permission.INTERNET" />\n'
+            '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+            '      <intent-filter>\n'
+            '        <action android:name="android.intent.action.MAIN" />\n'
+            '        <category android:name="android.intent.category.LAUNCHER" />\n'
+            '      </intent-filter>\n'
+            '    </activity>\n'
+            '  </application>\n'
+            '</manifest>'
+        )
+        ok_nested, errs_nested = validate_manifest_xml_structural(nested_xml, connectivity_policy="offline")
+        self.assertFalse(ok_nested)
+        self.assertTrue(any("android.permission.INTERNET" in e for e in errs_nested))
+
+    def test_pilot_mode_negative_rejects_sdk23_extra_and_ineffective_internet(self):
+        # uses-permission-sdk-23 with unauthorized external permission must fail in pilot mode
+        for bad_perm in ("android.permission.ACCESS_FINE_LOCATION", "android.permission.BLUETOOTH_SCAN", "android.permission.CAMERA"):
+            xml_sdk23 = (
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+                'package="com.weback.robot.pilot" android:versionName="0.1.0-alpha">\n'
+                '  <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="35" />\n'
+                '  <uses-permission android:name="android.permission.INTERNET" />\n'
+                f'  <uses-permission-sdk-23 android:name="{bad_perm}" />\n'
+                '  <application android:usesCleartextTraffic="false" android:allowBackup="false" '
+                'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+                '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+                '      <intent-filter>\n'
+                '        <action android:name="android.intent.action.MAIN" />\n'
+                '        <category android:name="android.intent.category.LAUNCHER" />\n'
+                '      </intent-filter>\n'
+                '    </activity>\n'
+                '  </application>\n'
+                '</manifest>'
+            )
+            ok, errors = validate_manifest_xml_structural(xml_sdk23, connectivity_policy="pilot")
+            self.assertFalse(ok, f"Expected pilot rejection for uses-permission-sdk-23 '{bad_perm}'")
+            self.assertTrue(any(bad_perm in e for e in errors), f"Expected '{bad_perm}' in errors: {errors}")
+
+        # INTERNET with maxSdkVersion < targetSdk is not effective and must fail in pilot mode
+        xml_capped_net = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+            'package="com.weback.robot.pilot" android:versionName="0.1.0-alpha">\n'
+            '  <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="35" />\n'
+            '  <uses-permission android:name="android.permission.INTERNET" android:maxSdkVersion="30" />\n'
+            '  <application android:usesCleartextTraffic="false" android:allowBackup="false" '
+            'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+            '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+            '      <intent-filter>\n'
+            '        <action android:name="android.intent.action.MAIN" />\n'
+            '        <category android:name="android.intent.category.LAUNCHER" />\n'
+            '      </intent-filter>\n'
+            '    </activity>\n'
+            '  </application>\n'
+            '</manifest>'
+        )
+        ok_cap, errs_cap = validate_manifest_xml_structural(xml_capped_net, connectivity_policy="pilot")
+        self.assertFalse(ok_cap)
+        self.assertTrue(any("INTERNET" in e for e in errs_cap))
+
+        # Unexpected permission-tree / permission-group must fail
+        xml_perm_group = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+            'package="com.weback.robot.pilot" android:versionName="0.1.0-alpha">\n'
+            '  <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="35" />\n'
+            '  <uses-permission android:name="android.permission.INTERNET" />\n'
+            '  <permission-group android:name="com.weback.robot.pilot.CUSTOM_GROUP" />\n'
+            '  <application android:usesCleartextTraffic="false" android:allowBackup="false" '
+            'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+            '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+            '      <intent-filter>\n'
+            '        <action android:name="android.intent.action.MAIN" />\n'
+            '        <category android:name="android.intent.category.LAUNCHER" />\n'
+            '      </intent-filter>\n'
+            '    </activity>\n'
+            '  </application>\n'
+            '</manifest>'
+        )
+        ok_pg, errs_pg = validate_manifest_xml_structural(xml_perm_group, connectivity_policy="pilot")
+        self.assertFalse(ok_pg)
+        self.assertTrue(any("permission-group" in e for e in errs_pg))
 
 if __name__ == "__main__":
     unittest.main()

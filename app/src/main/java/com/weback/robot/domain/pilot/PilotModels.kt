@@ -4,6 +4,25 @@ import com.weback.robot.domain.model.ControlCompatibility
 import com.weback.robot.domain.model.RobotMode
 
 /**
+ * Pure Kotlin monotonic elapsed-realtime clock abstraction for pilot admission and expiry
+ * (`B-SEC-03`), wired to Android `SystemClock.elapsedRealtime()` outside the domain layer.
+ */
+fun interface PilotClock {
+    fun elapsedRealtimeMs(): Long
+}
+
+/**
+ * Runtime application identity derived from `BuildConfig` without embedding a self-referential
+ * final APK SHA-256 inside the APK itself (`FCT-004B`).
+ */
+data class RuntimeAppIdentity(
+    val applicationId: String,
+    val versionName: String,
+    val versionCode: Int,
+    val pilotBuildEnabled: Boolean
+)
+
+/**
  * Operations permitted inside an authorized read-only FCT-004 pilot session.
  */
 enum class PilotOperation(val wireOpt: String) {

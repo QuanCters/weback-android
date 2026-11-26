@@ -1,5 +1,6 @@
 package com.weback.robot.security
 
+import com.weback.robot.core.AuthMonotonicClock
 import com.weback.robot.domain.model.AuthFailureReason
 import com.weback.robot.domain.pilot.GateCheckResult
 import com.weback.robot.domain.pilot.PilotAdmissionTicket
@@ -541,7 +542,8 @@ object PilotClientFactory {
         baseDns: Dns = Dns.SYSTEM,
         callTimeoutMs: Long = 15_000L,
         activeCallRegistry: PilotActiveCallRegistry? = null,
-        admissionGate: PilotAuthorizationGate? = null
+        admissionGate: PilotAuthorizationGate? = null,
+        authClock: AuthMonotonicClock? = null
     ): OkHttpClient {
         val boundedCallTimeout = callTimeoutMs.coerceIn(1L, 15_000L)
         val guardedDns = object : Dns {
@@ -597,13 +599,18 @@ object PilotClientFactory {
                 val req = chain.request()
                 val ticket = req.tag(PilotAdmissionTicket::class.java)
                     ?: throw IOException("Pilot network admission denied: missing admission ticket")
-                val check = admissionGate.verifyTicket(
+                val dispatchReq = extractDispatchRequest(req)
+                    ?: throw IOException("Pilot network admission denied: unauthorized HTTP method or payload")
+                val check = admissionGate.consumeTicketForDispatch(
                     ticket = ticket,
-                    nowElapsedMs = null,
                     requestUrl = req.url.toString(),
+                    observedOperation = dispatchReq.operation,
+                    nowElapsedMs = authClock?.elapsedRealtimeMs(),
                     endpointValidator = { ctx, url ->
                         trustPolicy.isUrlAuthorizedForOperation(ctx, ticket.operation, url)
-                    }
+                    },
+                    accountIdentifier = dispatchReq.accountIdentifier,
+                    regionCallingCode = dispatchReq.regionCallingCode
                 )
                 if (check is GateCheckResult.Denied) {
                     throw IOException("Pilot network admission denied: ${check.safeMessage}")
@@ -624,5 +631,48 @@ object PilotClientFactory {
         }
 
         return builder.build()
+    }
+
+    private data class PilotDispatchRequest(
+        val operation: PilotOperation,
+        val accountIdentifier: String? = null,
+        val regionCallingCode: String? = null
+    )
+
+    private fun extractDispatchRequest(req: okhttp3.Request): PilotDispatchRequest? {
+        if (req.header("Upgrade").equals("websocket", ignoreCase = true)) {
+            return if (req.method.equals("GET", ignoreCase = true) && req.body == null) {
+                PilotDispatchRequest(PilotOperation.WS_TELEMETRY_OBSERVE)
+            } else {
+                null
+            }
+        }
+        if (!req.method.equals("POST", ignoreCase = true)) {
+            return null
+        }
+        val body = req.body ?: return null
+        if (body.isOneShot()) return null
+        val contentLength = runCatching { body.contentLength() }.getOrDefault(-1L)
+        if (contentLength > 65_536L) return null
+        val buffer = okio.Buffer()
+        runCatching { body.writeTo(buffer) }.getOrNull() ?: return null
+        if (buffer.size > 65_536L) return null
+        val bodyText = buffer.readUtf8()
+        val loginIdentity = com.weback.robot.protocol.pilot.PilotHttpOperationGuard
+            .validateLoginEnvelopeAndExtractIdentity(bodyText)
+        if (loginIdentity != null) {
+            return PilotDispatchRequest(
+                operation = PilotOperation.LOGIN,
+                accountIdentifier = loginIdentity.account,
+                regionCallingCode = loginIdentity.callingCode
+            )
+        }
+        return if (com.weback.robot.protocol.pilot.PilotHttpOperationGuard
+                .validateOperationPayload("user_thing_list_get", bodyText)
+        ) {
+            PilotDispatchRequest(PilotOperation.USER_THING_LIST_GET)
+        } else {
+            null
+        }
     }
 }
