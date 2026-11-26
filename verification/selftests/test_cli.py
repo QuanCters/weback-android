@@ -332,6 +332,143 @@ class TestCliRunner(unittest.TestCase):
             self.test_candidate_alternate_config_prohibited_TEST_RUN_010()
             self.test_fast_lane_with_custom_config()
 
+    def test_candidate_targeted_tests_prohibited_OPT_09(self):
+        res = subprocess.run(
+            [sys.executable, "verification/run.py", "--lane", "candidate", "--tests", "com.weback.robot.FooTest"],
+            capture_output=True,
+            text=True,
+            env=self._clean_env(),
+        )
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("Targeted --tests filtering is prohibited in candidate lane", res.stderr)
+
+    def test_fast_lane_forwards_tests_filter_to_gradle_test_adapter_OPT_09(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            results_dir = td_path / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
+            argv_log = td_path / "argv.json"
+            mock_gradle = td_path / "mock_gradle.py"
+            xml_content = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<testsuite name="com.weback.TargetTest" tests="1" skipped="0" failures="0" errors="0">\n'
+                '  <testcase name="testTarget" classname="com.weback.TargetTest"/>\n'
+                '</testsuite>\n'
+            )
+            mock_gradle.write_text(
+                "import json, sys\n"
+                "from pathlib import Path\n"
+                f"Path({repr(str(argv_log))}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+                f"(Path({repr(str(results_dir))}) / 'TEST-target.xml').write_text({repr(xml_content)}, encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            cfg = td_path / "fast.json"
+            cfg.write_text(json.dumps({
+                "checks": [
+                    {
+                        "id": "android-unit-tests",
+                        "type": "test_suite",
+                        "argv": [
+                            sys.executable,
+                            "-m",
+                            "verification.checks.gradle_test_adapter",
+                            "--results-dir",
+                            str(results_dir),
+                            "--gradle-bin",
+                            sys.executable,
+                            "--task",
+                            str(mock_gradle),
+                        ],
+                        "required": True,
+                        "timeout_seconds": 30,
+                    }
+                ]
+            }), encoding="utf-8")
+            out_dir = td_path / "artifacts"
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    "verification/run.py",
+                    "--lane",
+                    "fast",
+                    "--config",
+                    str(cfg),
+                    "--output-dir",
+                    str(out_dir),
+                    "--tests",
+                    "com.weback.TargetTest",
+                ],
+                capture_output=True,
+                text=True,
+                env=self._clean_env(),
+            )
+            self.assertEqual(res.returncode, 0, f"stderr: {res.stderr}\nstdout: {res.stdout}")
+            recorded = json.loads(argv_log.read_text(encoding="utf-8"))
+            self.assertIn("--tests", recorded)
+            idx = recorded.index("--tests")
+            self.assertEqual(recorded[idx + 1], "com.weback.TargetTest")
+
+    def test_dag_parallelism_preserves_order_and_serializes_gradle_OPT_08(self):
+        from verification.checks.registry import CheckDefinition
+        from verification.run import execute_checks_dag
+
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            events_file = td_path / "events.log"
+            # Build a small DAG mirroring policy IDs:
+            # - spec-hygiene & harness-selftests run concurrently with android-lint
+            # - android-lint and android-unit-tests (gradlew/gradle_test_adapter) NEVER overlap
+            # - apk-validation waits for android-build
+            def make_check(cid: str, argv: list[str]) -> CheckDefinition:
+                return CheckDefinition(id=cid, argv=argv, required=True, timeout_seconds=10, cwd=td_path)
+
+            py_script = (
+                "import fcntl, sys, time\n"
+                "from pathlib import Path\n"
+                "cid, delay = sys.argv[1], float(sys.argv[2])\n"
+                f"p = Path({repr(str(events_file))})\n"
+                "def log(ev):\n"
+                "    with open(p, 'a', encoding='utf-8') as f:\n"
+                "        fcntl.flock(f, fcntl.LOCK_EX)\n"
+                "        f.write(f'{ev}:{cid}\\n')\n"
+                "log('START')\n"
+                "time.sleep(delay)\n"
+                "log('END')\n"
+            )
+            script_path = td_path / "rec.py"
+            script_path.write_text(py_script, encoding="utf-8")
+
+            checks = [
+                make_check("spec-hygiene", [sys.executable, str(script_path), "spec-hygiene", "0.05"]),
+                make_check("harness-selftests", [sys.executable, str(script_path), "harness-selftests", "0.20"]),
+                make_check("gradle-wrapper-validation", [sys.executable, str(script_path), "gradle-wrapper-validation", "0.02"]),
+                make_check("android-lint", [sys.executable, str(script_path), "android-lint", "0.10", "./gradlew"]),
+                make_check("android-unit-tests", [sys.executable, str(script_path), "android-unit-tests", "0.10", "gradle_test_adapter"]),
+                make_check("android-build", [sys.executable, str(script_path), "android-build", "0.10", "./gradlew"]),
+                make_check("apk-validation", [sys.executable, str(script_path), "apk-validation", "0.15"]),
+                make_check("pilot-android-lint", [sys.executable, str(script_path), "pilot-android-lint", "0.25", "./gradlew"]),
+            ]
+
+            results = execute_checks_dag(checks, max_parallel=2)
+            # 1. Exact declaration order preserved
+            self.assertEqual([r.id for r in results], [c.id for c in checks])
+            self.assertTrue(all(r.status == "PASS" for r in results))
+
+            lines = events_file.read_text(encoding="utf-8").splitlines()
+            # 2. gradle-wrapper-validation and harness-selftests finished before android-lint started
+            self.assertLess(lines.index("END:gradle-wrapper-validation"), lines.index("START:android-lint"))
+            self.assertLess(lines.index("END:harness-selftests"), lines.index("START:android-lint"))
+            # 3. android-build finished before apk-validation started
+            self.assertLess(lines.index("END:android-build"), lines.index("START:apk-validation"))
+            # 4. Gradle checks serialized strictly in order
+            self.assertLess(lines.index("END:android-lint"), lines.index("START:android-unit-tests"))
+            self.assertLess(lines.index("END:android-unit-tests"), lines.index("START:android-build"))
+            self.assertLess(lines.index("END:android-build"), lines.index("START:pilot-android-lint"))
+            # 5. Non-Gradle checks run concurrently: spec-hygiene overlaps harness-selftests,
+            #    and apk-validation runs concurrently with pilot-android-lint
+            self.assertLess(lines.index("START:harness-selftests"), lines.index("END:spec-hygiene"))
+            self.assertLess(lines.index("START:apk-validation"), lines.index("END:pilot-android-lint"))
+
 
 if __name__ == "__main__":
     unittest.main()

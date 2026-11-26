@@ -216,7 +216,7 @@ def execute_gradle_task(
     executes the Gradle command preserving its exit code, and returns (exit_code, output, start_time).
     """
     if clean_before and results_dir.is_dir():
-        for old_xml in results_dir.glob("TEST-*.xml"):
+        for old_xml in results_dir.glob("*.xml"):
             try:
                 old_xml.unlink()
             except OSError as e:
@@ -262,7 +262,7 @@ def run_adapter(
 
     if not no_exec:
         if not cmd:
-            cmd = ["./gradlew", "testDebugUnitTest", "--no-daemon", "--rerun-tasks"]
+            cmd = ["./gradlew", "testDebugUnitTest", "--no-daemon", "--rerun"]
         gradle_exit_code, output, exec_start_time = execute_gradle_task(cmd, results_dir)
         sys.stdout.buffer.write(output)
         sys.stdout.buffer.flush()
@@ -313,6 +313,7 @@ def main():
     parser.add_argument("--gradle-bin", type=str, default="./gradlew", help="Path to Gradle wrapper executable")
     parser.add_argument("--allow-skipped", action="store_true", help="Permit skipped tests")
     parser.add_argument("--no-exec", action="store_true", help="Parse results directory directly without executing command")
+    parser.add_argument("--tests", action="append", default=None, help="Optional Gradle --tests filter pattern (for fast local TDD only)")
     parser.add_argument("cmd_args", nargs="*", help="Optional command arguments to execute instead of default task")
 
     args = parser.parse_args()
@@ -324,11 +325,15 @@ def main():
         sys.exit(exit_code)
 
     if args.cmd_args:
-        cmd = args.cmd_args
+        cmd = list(args.cmd_args)
     elif args.task:
-        cmd = [args.gradle_bin, args.task, "--no-daemon", "--rerun-tasks"]
+        cmd = [args.gradle_bin, args.task, "--no-daemon", "--rerun"]
     else:
-        cmd = [args.gradle_bin, "testDebugUnitTest", "--no-daemon", "--rerun-tasks"]
+        cmd = [args.gradle_bin, "testDebugUnitTest", "--no-daemon", "--rerun"]
+
+    if args.tests:
+        for pattern in args.tests:
+            cmd.extend(["--tests", pattern])
 
     exit_code = run_adapter(results_dir, cmd=cmd, allow_skipped=args.allow_skipped)
     sys.exit(exit_code)

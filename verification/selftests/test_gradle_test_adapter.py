@@ -2,6 +2,7 @@
 Selftests for Gradle Structured Test Execution Adapter (gradle_test_adapter.py).
 Standard library only. Zero third-party dependencies.
 """
+import contextlib
 import io
 import json
 import os
@@ -307,6 +308,135 @@ java.lang.NullPointerException: container was null
                     summary_found = True
                     break
             self.assertTrue(summary_found, "SUMMARY_PREFIX line not found in CLI output")
+
+    @staticmethod
+    def _run_adapter_captured(*args, **kwargs) -> tuple[int, str, str]:
+        raw_out = io.BytesIO()
+        out_buf = io.TextIOWrapper(raw_out, encoding="utf-8")
+        err_buf = io.StringIO()
+        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+            code = run_adapter(*args, **kwargs)
+            out_buf.flush()
+        return code, raw_out.getvalue().decode("utf-8", errors="replace"), err_buf.getvalue()
+
+    def test_missing_xml_after_successful_gradle_exit_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            results_dir = Path(td)
+            code, _, err = self._run_adapter_captured(results_dir, cmd=[sys.executable, "-c", "import sys; sys.exit(0)"])
+            self.assertEqual(code, 1)
+            self.assertIn("No JUnit XML test result files discovered", err)
+
+    def test_skipped_test_blocked_by_adapter_even_if_gradle_exits_zero(self):
+        with tempfile.TemporaryDirectory() as td:
+            results_dir = Path(td)
+            xml_content = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<testsuite name="com.weback.Skipped" tests="2" skipped="1" failures="0" errors="0">\n'
+                '  <testcase name="testOk" classname="com.weback.Skipped"/>\n'
+                '  <testcase name="testSkip" classname="com.weback.Skipped"><skipped message="ignored"/></testcase>\n'
+                '</testsuite>\n'
+            )
+            cmd = [
+                sys.executable, "-c",
+                f"from pathlib import Path; (Path({repr(str(results_dir))}) / 'TEST-skip.xml').write_text({repr(xml_content)}, encoding='utf-8')"
+            ]
+            code, _, err = self._run_adapter_captured(results_dir, cmd=cmd, allow_skipped=False)
+            self.assertEqual(code, 1)
+            self.assertIn("Adapter Gate Blocked", err)
+
+    def test_failing_test_blocked_by_adapter_even_if_gradle_exits_zero(self):
+        with tempfile.TemporaryDirectory() as td:
+            results_dir = Path(td)
+            xml_content = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<testsuite name="com.weback.Fail" tests="1" skipped="0" failures="1" errors="0">\n'
+                '  <testcase name="testBad" classname="com.weback.Fail"><failure message="boom">trace</failure></testcase>\n'
+                '</testsuite>\n'
+            )
+            cmd = [
+                sys.executable, "-c",
+                f"from pathlib import Path; (Path({repr(str(results_dir))}) / 'TEST-fail.xml').write_text({repr(xml_content)}, encoding='utf-8')"
+            ]
+            code, _, err = self._run_adapter_captured(results_dir, cmd=cmd)
+            self.assertEqual(code, 1)
+            self.assertIn("Adapter Gate Blocked", err)
+
+    def test_consecutive_runs_prove_non_cached_fresh_execution_and_clean_all_xmls(self):
+        with tempfile.TemporaryDirectory() as td:
+            results_dir = Path(td)
+            # Plant a non-TEST- xml file to verify clean_before removes all *.xml
+            (results_dir / "stale-non-prefix.xml").write_text(
+                '<testsuite name="Stale" tests="1" failures="0" errors="0" skipped="0">'
+                '<testcase name="testOld" classname="com.weback.Old"/></testsuite>',
+                encoding="utf-8",
+            )
+            pass_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<testsuite name="com.weback.Pass" tests="1" skipped="0" failures="0" errors="0">\n'
+                '  <testcase name="testOne" classname="com.weback.Pass"/>\n'
+                '</testsuite>\n'
+            )
+            run1_cmd = [
+                sys.executable, "-c",
+                f"from pathlib import Path; (Path({repr(str(results_dir))}) / 'TEST-pass.xml').write_text({repr(pass_xml)}, encoding='utf-8')"
+            ]
+            code1, _, _ = self._run_adapter_captured(results_dir, cmd=run1_cmd)
+            self.assertEqual(code1, 0)
+            self.assertFalse((results_dir / "stale-non-prefix.xml").exists())
+
+            # Run 2 simulates a cached/UP-TO-DATE Gradle exit 0 without emitting fresh XML:
+            # Adapter must delete Run 1's XML before invocation and fail closed.
+            code2, _, err2 = self._run_adapter_captured(results_dir, cmd=[sys.executable, "-c", "import sys; sys.exit(0)"])
+            self.assertEqual(code2, 1)
+            self.assertIn("No JUnit XML test result files discovered", err2)
+            self.assertFalse((results_dir / "TEST-pass.xml").exists())
+
+    def test_cli_tests_flag_forwarded_to_gradle_command(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            results_dir = tmp_path / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
+            argv_log = tmp_path / "argv.json"
+            mock_gradle = tmp_path / "mock_gradle.py"
+            xml_content = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<testsuite name="com.weback.Filtered" tests="1" skipped="0" failures="0" errors="0">\n'
+                '  <testcase name="testTarget" classname="com.weback.Filtered"/>\n'
+                '</testsuite>\n'
+            )
+            mock_gradle.write_text(
+                "import json, sys\n"
+                "from pathlib import Path\n"
+                f"Path({repr(str(argv_log))}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+                f"(Path({repr(str(results_dir))}) / 'TEST-filtered.xml').write_text({repr(xml_content)}, encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "verification.checks.gradle_test_adapter",
+                    "--results-dir",
+                    str(results_dir),
+                    "--gradle-bin",
+                    sys.executable,
+                    "--task",
+                    str(mock_gradle),
+                    "--tests",
+                    "com.weback.Filtered",
+                ],
+                cwd=str(repo_root),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            recorded = json.loads(argv_log.read_text(encoding="utf-8"))
+            self.assertIn("--rerun", recorded)
+            self.assertNotIn("--rerun-tasks", recorded)
+            self.assertIn("--tests", recorded)
+            idx = recorded.index("--tests")
+            self.assertEqual(recorded[idx + 1], "com.weback.Filtered")
 
 if __name__ == "__main__":
     unittest.main()

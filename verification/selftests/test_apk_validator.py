@@ -9,12 +9,15 @@ import tempfile
 import unittest
 import zipfile
 
+from unittest.mock import patch
+
 from verification.checks.apk_validator import (
     PROHIBITED_BINARY_PATTERNS,
     compute_sha256,
     validate_apk,
     validate_apk_archive,
     validate_apk_path_for_policy,
+    validate_apk_with_tools,
     validate_manifest_xml_structural,
     validate_dex_classes_in_apk,
     parse_dex_classes
@@ -626,6 +629,146 @@ class TestApkValidator(unittest.TestCase):
         ok_pg, errs_pg = validate_manifest_xml_structural(xml_perm_group, connectivity_policy="pilot")
         self.assertFalse(ok_pg)
         self.assertTrue(any("permission-group" in e for e in errs_pg))
+
+    def test_manifest_negative_missing_required_metadata_attributes(self):
+        # Missing versionName must fail closed
+        no_ver_xml = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+            'package="com.weback.robot">\n'
+            '  <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="35" />\n'
+            '  <application android:usesCleartextTraffic="false" android:allowBackup="false" '
+            'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+            '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+            '      <intent-filter>\n'
+            '        <action android:name="android.intent.action.MAIN" />\n'
+            '        <category android:name="android.intent.category.LAUNCHER" />\n'
+            '      </intent-filter>\n'
+            '    </activity>\n'
+            '  </application>\n'
+            '</manifest>'
+        )
+        ok, errs = validate_manifest_xml_structural(no_ver_xml)
+        self.assertFalse(ok)
+        self.assertTrue(any("versionName mismatch" in e for e in errs), errs)
+
+        # Missing <uses-sdk> must fail closed
+        no_sdk_xml = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+            'package="com.weback.robot" android:versionName="0.1.0-alpha">\n'
+            '  <application android:usesCleartextTraffic="false" android:allowBackup="false" '
+            'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+            '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+            '      <intent-filter>\n'
+            '        <action android:name="android.intent.action.MAIN" />\n'
+            '        <category android:name="android.intent.category.LAUNCHER" />\n'
+            '      </intent-filter>\n'
+            '    </activity>\n'
+            '  </application>\n'
+            '</manifest>'
+        )
+        ok_sdk, errs_sdk = validate_manifest_xml_structural(no_sdk_xml)
+        self.assertFalse(ok_sdk)
+        self.assertTrue(any("Missing <uses-sdk>" in e for e in errs_sdk), errs_sdk)
+
+        # Missing minSdkVersion / targetSdkVersion inside <uses-sdk> must fail closed
+        empty_sdk_xml = no_sdk_xml.replace(
+            "<application",
+            "<uses-sdk />\n  <application",
+        )
+        ok_esdk, errs_esdk = validate_manifest_xml_structural(empty_sdk_xml)
+        self.assertFalse(ok_esdk)
+        self.assertTrue(any("minSdk mismatch" in e for e in errs_esdk), errs_esdk)
+        self.assertTrue(any("targetSdk mismatch" in e for e in errs_esdk), errs_esdk)
+
+        # Missing package attribute must fail closed
+        no_pkg_xml = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+            'android:versionName="0.1.0-alpha">\n'
+            '  <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="35" />\n'
+            '  <application android:usesCleartextTraffic="false" android:allowBackup="false" '
+            'android:networkSecurityConfig="@ref/0x7f0b0000">\n'
+            '    <activity android:name="com.weback.robot.MainActivity" android:exported="true">\n'
+            '      <intent-filter>\n'
+            '        <action android:name="android.intent.action.MAIN" />\n'
+            '        <category android:name="android.intent.category.LAUNCHER" />\n'
+            '      </intent-filter>\n'
+            '    </activity>\n'
+            '  </application>\n'
+            '</manifest>'
+        )
+        ok_pkg, errs_pkg = validate_manifest_xml_structural(no_pkg_xml)
+        self.assertFalse(ok_pkg)
+        self.assertTrue(any("Manifest package mismatch" in e for e in errs_pkg), errs_pkg)
+
+    def test_validate_apk_with_tools_single_apkanalyzer_call_and_parity(self):
+        valid_offline_xml = self._build_manifest_xml(
+            package_id="com.weback.robot",
+            custom_permission="com.weback.robot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=["com.weback.robot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"],
+            provider_authority="com.weback.robot.androidx-startup",
+        )
+        valid_pilot_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.pilot",
+            custom_permission="com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=[
+                "android.permission.INTERNET",
+                "com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            ],
+            provider_authority="com.weback.robot.pilot.androidx-startup",
+        )
+
+        def run_with_mocked_tools(manifest_stdout: str, policy: str = "offline", apksigner_rc: int = 0):
+            calls = []
+
+            def fake_find_tool(name: str):
+                return Path(f"/mock/sdk/{name}")
+
+            def fake_run(argv, capture_output=True, text=True, check=False):
+                calls.append(list(argv))
+                if argv[0].endswith("apkanalyzer"):
+                    return subprocess.CompletedProcess(argv, 0, stdout=manifest_stdout, stderr="")
+                return subprocess.CompletedProcess(argv, apksigner_rc, stdout="", stderr="sig bad" if apksigner_rc else "")
+
+            with patch("verification.checks.apk_validator.find_sdk_tool", side_effect=fake_find_tool), \
+                 patch("verification.checks.apk_validator.subprocess.run", side_effect=fake_run):
+                ok, errs = validate_apk_with_tools(Path("app-test.apk"), connectivity_policy=policy)
+            return ok, errs, calls
+
+        # Valid offline: exactly 1 apkanalyzer manifest print + 1 apksigner verify
+        ok, errs, calls = run_with_mocked_tools(valid_offline_xml, policy="offline")
+        self.assertTrue(ok, errs)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][:3], ["/mock/sdk/apkanalyzer", "manifest", "print"])
+        self.assertEqual(calls[1][:2], ["/mock/sdk/apksigner", "verify"])
+
+        # Valid pilot
+        ok_p, errs_p, calls_p = run_with_mocked_tools(valid_pilot_xml, policy="pilot")
+        self.assertTrue(ok_p, errs_p)
+        self.assertEqual(len(calls_p), 2)
+
+        # Negative parity cases caught via single manifest print
+        bad_min_sdk = valid_offline_xml.replace('minSdkVersion="31"', 'minSdkVersion="29"')
+        ok_ms, errs_ms, _ = run_with_mocked_tools(bad_min_sdk, policy="offline")
+        self.assertFalse(ok_ms)
+        self.assertTrue(any("minSdk mismatch" in e for e in errs_ms))
+
+        bad_target_sdk = valid_offline_xml.replace('targetSdkVersion="35"', 'targetSdkVersion="34"')
+        ok_ts, errs_ts, _ = run_with_mocked_tools(bad_target_sdk, policy="offline")
+        self.assertFalse(ok_ts)
+        self.assertTrue(any("targetSdk mismatch" in e for e in errs_ts))
+
+        bad_ver = valid_offline_xml.replace('versionName="0.1.0-alpha"', 'versionName="9.9.9"')
+        ok_v, errs_v, _ = run_with_mocked_tools(bad_ver, policy="offline")
+        self.assertFalse(ok_v)
+        self.assertTrue(any("versionName mismatch" in e for e in errs_v))
+
+        # Signature failure still caught
+        ok_sig, errs_sig, _ = run_with_mocked_tools(valid_offline_xml, policy="offline", apksigner_rc=1)
+        self.assertFalse(ok_sig)
+        self.assertTrue(any("apksigner verification failed" in e for e in errs_sig))
 
 if __name__ == "__main__":
     unittest.main()
