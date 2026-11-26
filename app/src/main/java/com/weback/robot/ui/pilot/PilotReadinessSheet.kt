@@ -123,7 +123,8 @@ fun PilotReadinessSheet(
     onSelectDevice: (String) -> Unit,
     onEmergencyDisconnect: () -> Unit,
     onDismissSheet: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onStartMockPilot: (() -> Unit)? = null
 ) {
     var regionInput by remember { mutableStateOf("") }
     var accountInput by remember { mutableStateOf("") }
@@ -178,11 +179,14 @@ fun PilotReadinessSheet(
                 text = "Read-Only Pilot Readiness",
                 style = MaterialTheme.typography.titleLarge
             )
-            TextButton(onClick = {
-                passwordBuffer.wipe()
-                bufferVersion++
-                onDismissSheet()
-            }) {
+            TextButton(
+                onClick = {
+                    passwordBuffer.wipe()
+                    bufferVersion++
+                    onDismissSheet()
+                },
+                modifier = Modifier.testTag("btn_pilot_close_sheet")
+            ) {
                 Text("Close")
             }
         }
@@ -206,6 +210,19 @@ fun PilotReadinessSheet(
                     text = "Offline simulator preserved; physical robot commands blocked in pilot mode.",
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
+        }
+
+        if (onStartMockPilot != null &&
+            (state.modeState is PilotModeState.OfflineDefault || state.modeState is PilotModeState.Aborted)
+        ) {
+            OutlinedButton(
+                onClick = onStartMockPilot,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("btn_start_mock_pilot")
+            ) {
+                Text("Start Offline Mock Pilot (Synthetic Fixture)")
             }
         }
 
@@ -369,7 +386,10 @@ fun PilotReadinessSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Read-Only Device Inventory", fontWeight = FontWeight.Medium)
-                    TextButton(onClick = onRefreshInventory) {
+                    TextButton(
+                        onClick = onRefreshInventory,
+                        modifier = Modifier.testTag("btn_pilot_refresh_inventory")
+                    ) {
                         Text("Refresh")
                     }
                 }
@@ -401,7 +421,10 @@ fun PilotReadinessSheet(
                                     )
                                 }
                                 if (item.capability.compatibility.isMvpControlSupported) {
-                                    OutlinedButton(onClick = { onSelectDevice(item.thingName) }) {
+                                    OutlinedButton(
+                                        onClick = { onSelectDevice(item.thingName) },
+                                        modifier = Modifier.testTag("btn_observe_${item.thingName}")
+                                    ) {
                                         Text("Observe")
                                     }
                                 }

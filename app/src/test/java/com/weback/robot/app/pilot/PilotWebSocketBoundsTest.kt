@@ -127,7 +127,12 @@ class PilotWebSocketBoundsTest {
             val ctx = PilotAuthorizationContext(
                 authorizationId = "FCT004-PILOT-20261125-02",
                 candidateIdentity = runtimeId,
-                accountScope = PilotAccountScope(PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT, "+1", "pilot***@example.invalid"),
+                accountScope = PilotAccountScope(
+                    PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT,
+                    "+1",
+                    "pilot***@example.invalid",
+                    "pilot@example.invalid"
+                ),
                 targetDevice = PilotTargetDevice("LaserSlam", "laser_01", "LASER_01"),
                 permittedOperations = setOf(PilotOperation.LOGIN, PilotOperation.USER_THING_LIST_GET, PilotOperation.WS_TELEMETRY_OBSERVE),
                 endpointConfig = PilotEndpointConfig(originHttp, pinnedApiOrigin = "https://127.0.0.1:${server.port}", pinnedWssOrigin = "wss://127.0.0.1:${server.port}"),

@@ -12,7 +12,12 @@ import com.weback.robot.domain.model.ConnectivityError
 import com.weback.robot.domain.model.DeviceInventoryItem
 import com.weback.robot.domain.model.RobotState
 import com.weback.robot.domain.model.SessionCredentials
+import com.weback.robot.domain.pilot.AdmissionResult
+import com.weback.robot.domain.pilot.GateCheckResult
 import com.weback.robot.domain.pilot.ObservedOriginSummary
+import com.weback.robot.domain.pilot.PilotAdmissionTicket
+import com.weback.robot.domain.pilot.PilotAuthorizationGate
+import com.weback.robot.domain.pilot.PilotOperation
 import com.weback.robot.protocol.auth.AuthEnvelopeConfig
 import com.weback.robot.protocol.auth.AuthGateway
 import com.weback.robot.protocol.auth.RegionEndpointRouter
@@ -20,6 +25,7 @@ import com.weback.robot.protocol.auth.RegionResolution
 import com.weback.robot.protocol.inventory.DeviceInventoryGateway
 import com.weback.robot.protocol.inventory.InventoryFetchResult
 import com.weback.robot.protocol.inventory.OkHttpDeviceInventoryGateway
+import com.weback.robot.protocol.ws.OfflineFixtureRealtimeTransport
 import com.weback.robot.protocol.ws.OkHttpWebSocketTransport
 import com.weback.robot.protocol.ws.RealtimeSessionTransport
 import com.weback.robot.security.AuthorizedPilotEndpointTrustPolicy
@@ -33,6 +39,9 @@ import com.weback.robot.security.OkHttpSecurityGuard
 import com.weback.robot.security.PasswordDigestStrategy
 import com.weback.robot.security.Utf8TlsDefault
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -55,6 +64,17 @@ import java.util.Arrays
 import javax.net.ssl.SSLHandshakeException
 
 /**
+ * Coroutine context element carrying a pre-admitted [PilotAdmissionTicket] from
+ * [com.weback.robot.app.pilot.PilotSessionController] through `SessionCoordinator` /
+ * `DeviceInventoryRepository` into the transport layer without double-consuming request budgets (`FIX-401`).
+ */
+class PilotAdmissionContextElement(
+    val ticket: PilotAdmissionTicket
+) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<PilotAdmissionContextElement>
+}
+
+/**
  * Capability-restricted read-only telemetry interface exposed to [PilotSessionController]
  * and UI layers. Structurally omits any outbound application-message sending methods (`SEC-402`).
  */
@@ -65,7 +85,7 @@ interface PilotReadOnlyTelemetryTransport : AutoCloseable {
     fun connect(session: SessionCredentials, epoch: Long)
     fun selectDevice(item: DeviceInventoryItem?, epoch: Long)
     fun invalidateForEpoch(expectedEpoch: Long, reason: ConnectivityError)
-    fun forceDisconnect(reason: ConnectivityError)
+    fun forceDisconnect(reason: ConnectivityError, expectedEpoch: Long? = null)
     fun currentGeneration(): Long
     override fun close()
 }
@@ -125,7 +145,8 @@ class PilotCapabilityRestrictedAuthGateway(
     private val envelopeConfig: AuthEnvelopeConfig = AuthEnvelopeConfig(),
     private val digestStrategy: PasswordDigestStrategy = Utf8TlsDefault,
     baseClient: OkHttpClient = OkHttpSecurityGuard.buildHardenedClient(trustPolicy),
-    private val pilotEndpointTrustPolicy: AuthorizedPilotEndpointTrustPolicy? = trustPolicy as? AuthorizedPilotEndpointTrustPolicy
+    private val pilotEndpointTrustPolicy: AuthorizedPilotEndpointTrustPolicy? = trustPolicy as? AuthorizedPilotEndpointTrustPolicy,
+    private val admissionGate: PilotAuthorizationGate? = null
 ) : AuthGateway {
 
     private val client: OkHttpClient = baseClient.newBuilder()
@@ -244,6 +265,42 @@ class PilotCapabilityRestrictedAuthGateway(
             return PilotAuthProbeOutcome.Failed(authDecision.reason, "Auth endpoint rejected by pilot trust policy")
         }
 
+        val admissionTicket = if (admissionGate != null) {
+            val preAdmitted = coroutineContext[PilotAdmissionContextElement]?.ticket
+            val nowMs = authClock.elapsedRealtimeMs()
+            val endpointMatcher: (com.weback.robot.domain.pilot.PilotAuthorizationContext, String) -> Boolean =
+                { ctx, url ->
+                    pilotEndpointTrustPolicy?.isUrlAuthorizedForOperation(ctx, PilotOperation.LOGIN, url)
+                        ?: true
+                }
+            if (preAdmitted != null && preAdmitted.operation == PilotOperation.LOGIN) {
+                when (val check = admissionGate.verifyTicket(preAdmitted, nowMs, endpointUrl, endpointMatcher)) {
+                    is GateCheckResult.Allowed -> preAdmitted
+                    is GateCheckResult.Denied -> {
+                        Arrays.fill(secretChars, '\u0000')
+                        return PilotAuthProbeOutcome.Failed(AuthFailureReason.ConfigurationError, check.safeMessage)
+                    }
+                }
+            } else {
+                when (
+                    val acquired = admissionGate.acquireAdmission(
+                        operation = PilotOperation.LOGIN,
+                        nowElapsedMs = nowMs,
+                        requestUrl = endpointUrl,
+                        endpointValidator = endpointMatcher
+                    )
+                ) {
+                    is AdmissionResult.Admitted -> acquired.ticket
+                    is AdmissionResult.Denied -> {
+                        Arrays.fill(secretChars, '\u0000')
+                        return PilotAuthProbeOutcome.Failed(AuthFailureReason.ConfigurationError, acquired.safeMessage)
+                    }
+                }
+            }
+        } else {
+            null
+        }
+
         val requestJson = try {
             val encodedSecret = digestStrategy.encodeForTlsPayload(secretChars)
             val envelope = LoginRequestEnvelope(
@@ -269,15 +326,33 @@ class PilotCapabilityRestrictedAuthGateway(
             return PilotAuthProbeOutcome.Failed(AuthFailureReason.ConfigurationError, "Blocked non-login payload")
         }
 
+        val perCallClient = if (admissionTicket != null) {
+            val effectiveTimeoutMs = minOf(
+                client.callTimeoutMillis.takeIf { it > 0 }?.toLong() ?: 15_000L,
+                admissionTicket.httpCallTimeoutMs
+            ).coerceIn(1L, 15_000L)
+            client.newBuilder()
+                .callTimeout(effectiveTimeoutMs, TimeUnit.MILLISECONDS)
+                .connectTimeout(minOf(client.connectTimeoutMillis.toLong().coerceAtLeast(1L), effectiveTimeoutMs), TimeUnit.MILLISECONDS)
+                .readTimeout(minOf(client.readTimeoutMillis.toLong().coerceAtLeast(1L), effectiveTimeoutMs), TimeUnit.MILLISECONDS)
+                .writeTimeout(minOf(client.writeTimeoutMillis.toLong().coerceAtLeast(1L), effectiveTimeoutMs), TimeUnit.MILLISECONDS)
+                .build()
+        } else {
+            client
+        }
+
         val startedMs = authClock.elapsedRealtimeMs()
         return withContext(dispatchers.io) {
             try {
-                val request = Request.Builder()
+                val requestBuilder = Request.Builder()
                     .url(endpointUrl)
                     .post(requestJson.toRequestBody("application/json; charset=utf-8".toMediaType()))
-                    .build()
+                if (admissionTicket != null) {
+                    requestBuilder.tag(PilotAdmissionTicket::class.java, admissionTicket)
+                }
+                val request = requestBuilder.build()
 
-                client.newCall(request).execute().use { response ->
+                perCallClient.newCall(request).execute().use { response ->
                     val latency = (authClock.elapsedRealtimeMs() - startedMs).coerceAtLeast(0L)
                     logger.log(
                         DiagnosticEvent(
@@ -421,10 +496,13 @@ class PilotCapabilityRestrictedAuthGateway(
 }
 
 /**
- * Capability-restricted inventory gateway permitting ONLY `"user_thing_list_get"` (`SEC-402`).
+ * Capability-restricted inventory gateway permitting ONLY `"user_thing_list_get"` (`SEC-402`, `FIX-401`).
  */
 class PilotCapabilityRestrictedInventoryGateway(
-    private val delegate: OkHttpDeviceInventoryGateway
+    private val delegate: OkHttpDeviceInventoryGateway,
+    private val admissionGate: PilotAuthorizationGate? = null,
+    private val authClock: AuthMonotonicClock = AndroidAuthMonotonicClock,
+    private val pilotEndpointTrustPolicy: AuthorizedPilotEndpointTrustPolicy? = null
 ) : DeviceInventoryGateway {
 
     override suspend fun fetchThings(session: SessionCredentials): InventoryFetchResult {
@@ -432,14 +510,67 @@ class PilotCapabilityRestrictedInventoryGateway(
         if (!PilotHttpOperationGuard.validateOperationPayload("user_thing_list_get", canonicalPayload)) {
             return InventoryFetchResult.Failure(ConnectivityError.AuthorizationDenied)
         }
-        return delegate.fetchThings(session)
+        val ticket = admitInventoryCall(session.apiUrl)
+            ?: if (admissionGate != null) {
+                return InventoryFetchResult.Failure(ConnectivityError.AuthorizationDenied)
+            } else {
+                null
+            }
+        return if (ticket != null) {
+            withContext(PilotAdmissionContextElement(ticket)) {
+                delegate.fetchThings(session)
+            }
+        } else {
+            delegate.fetchThings(session)
+        }
     }
 
     suspend fun executeRawPayload(session: SessionCredentials, rawJson: String): InventoryFetchResult {
         if (!PilotHttpOperationGuard.validateOperationPayload("user_thing_list_get", rawJson)) {
             return InventoryFetchResult.Failure(ConnectivityError.AuthorizationDenied)
         }
-        return delegate.fetchThings(session)
+        val ticket = admitInventoryCall(session.apiUrl)
+            ?: if (admissionGate != null) {
+                return InventoryFetchResult.Failure(ConnectivityError.AuthorizationDenied)
+            } else {
+                null
+            }
+        return if (ticket != null) {
+            withContext(PilotAdmissionContextElement(ticket)) {
+                delegate.fetchThings(session)
+            }
+        } else {
+            delegate.fetchThings(session)
+        }
+    }
+
+    private suspend fun admitInventoryCall(apiUrl: String): PilotAdmissionTicket? {
+        val gate = admissionGate ?: return null
+        val preAdmitted = coroutineContext[PilotAdmissionContextElement]?.ticket
+        val nowMs = authClock.elapsedRealtimeMs()
+        val validator: (com.weback.robot.domain.pilot.PilotAuthorizationContext, String) -> Boolean =
+            { ctx, url ->
+                pilotEndpointTrustPolicy?.isUrlAuthorizedForOperation(ctx, PilotOperation.USER_THING_LIST_GET, url)
+                    ?: true
+            }
+        return if (preAdmitted != null && preAdmitted.operation == PilotOperation.USER_THING_LIST_GET) {
+            when (gate.verifyTicket(preAdmitted, nowMs, apiUrl, validator)) {
+                is GateCheckResult.Allowed -> preAdmitted
+                is GateCheckResult.Denied -> null
+            }
+        } else {
+            when (
+                val acquired = gate.acquireAdmission(
+                    operation = PilotOperation.USER_THING_LIST_GET,
+                    nowElapsedMs = nowMs,
+                    requestUrl = apiUrl,
+                    endpointValidator = validator
+                )
+            ) {
+                is AdmissionResult.Admitted -> acquired.ticket
+                is AdmissionResult.Denied -> null
+            }
+        }
     }
 }
 
@@ -468,8 +599,54 @@ class PilotReadOnlyWebSocketTransport(
         delegate.invalidateForEpoch(expectedEpoch, reason)
     }
 
-    override fun forceDisconnect(reason: ConnectivityError) {
-        delegate.forceInvalidate(reason)
+    override fun forceDisconnect(reason: ConnectivityError, expectedEpoch: Long?) {
+        delegate.forceInvalidate(reason, expectedEpoch)
+    }
+
+    override fun currentGeneration(): Long = delegate.currentGeneration()
+
+    override fun sendOutbound(payload: String, epoch: Long): Boolean {
+        onUnexpectedOutboundAttempt("TEXT_FRAME_BLOCKED")
+        return false
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    fun sendBinaryOutbound(bytes: ByteArray, epoch: Long): Boolean {
+        onUnexpectedOutboundAttempt("BINARY_FRAME_BLOCKED")
+        return false
+    }
+
+    override fun close() {
+        delegate.close()
+    }
+}
+
+/**
+ * In-process read-only fixture telemetry transport used ONLY by the offline mock pilot workflow
+ * (`FIX-404`), never performing live network I/O and blocking all outbound command sends.
+ */
+class PilotReadOnlyFixtureTransport(
+    private val delegate: OfflineFixtureRealtimeTransport,
+    private val onUnexpectedOutboundAttempt: (String) -> Unit = {}
+) : PilotReadOnlyTelemetryTransport, RealtimeSessionTransport {
+
+    override val connectionState: StateFlow<ConnectionState> = delegate.connectionState
+    override val robotState: StateFlow<RobotState> = delegate.robotState
+
+    override fun connect(session: SessionCredentials, epoch: Long) {
+        delegate.connect(session, epoch)
+    }
+
+    override fun selectDevice(item: DeviceInventoryItem?, epoch: Long) {
+        delegate.selectDevice(item, epoch)
+    }
+
+    override fun invalidateForEpoch(expectedEpoch: Long, reason: ConnectivityError) {
+        delegate.invalidateForEpoch(expectedEpoch, reason)
+    }
+
+    override fun forceDisconnect(reason: ConnectivityError, expectedEpoch: Long?) {
+        delegate.forceInvalidate(reason, expectedEpoch)
     }
 
     override fun currentGeneration(): Long = delegate.currentGeneration()

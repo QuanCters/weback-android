@@ -435,16 +435,31 @@ class SessionCoordinator(
         }
     }
 
-    suspend fun signOut(): LogoutResult {
-        val (prevEpoch, logoutEpoch, listeners, invListeners) = synchronized(commitLock) {
-            val prev = activeEpoch
-            val newEpoch = ++activeEpoch
-            _sessionState.value = SessionState.SignedOut
-            inFlightSignInDeferred = null
-            inFlightSignInKey = null
-            inFlightRefreshDeferred = null
-            SignOutInfo(prev, newEpoch, epochListeners.toList(), invalidationListeners.toList())
-        }
+    suspend fun signOut(): LogoutResult = signOutInternal(expectedEpoch = null)!!
+
+    /**
+     * Signs out ONLY if [activeEpoch] still equals [expectedEpoch], preventing stale pilot
+     * callbacks from signing out a newer session (`FIX-405`). Returns `null` when epoch moved on.
+     */
+    suspend fun signOutIfEpoch(expectedEpoch: Long): LogoutResult? =
+        signOutInternal(expectedEpoch = expectedEpoch)
+
+    private suspend fun signOutInternal(expectedEpoch: Long?): LogoutResult? {
+        val info = synchronized(commitLock) {
+            if (expectedEpoch != null && activeEpoch != expectedEpoch) {
+                null
+            } else {
+                val prev = activeEpoch
+                val newEpoch = ++activeEpoch
+                _sessionState.value = SessionState.SignedOut
+                inFlightSignInDeferred = null
+                inFlightSignInKey = null
+                inFlightRefreshDeferred = null
+                SignOutInfo(prev, newEpoch, epochListeners.toList(), invalidationListeners.toList())
+            }
+        } ?: return null
+
+        val (prevEpoch, logoutEpoch, listeners, invListeners) = info
         notifyEpochListeners(logoutEpoch, listeners)
         notifyInvalidationListeners(prevEpoch, AuthFailureReason.TokenExpiredOrRevoked, invListeners)
 

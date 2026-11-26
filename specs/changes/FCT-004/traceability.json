@@ -3,7 +3,7 @@
   "change_id": "FCT-004",
   "milestone": "FCT-004A",
   "title": "Controlled Connectivity Pilot (Bounded Offline Pilot Implementation)",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "risk_ceiling": "T4",
   "planned_mapping_coverage": 100.0,
   "verified_execution_coverage": 95.24,
@@ -15,16 +15,16 @@
     "verified_coverage_percent": 95.24,
     "executed_coverage_percent": 95.24,
     "total_executed_or_verified_percent": 95.24,
-    "planned_scenario_count": 18,
-    "discovered_executable_test_count": 122,
-    "executed_test_count": 122,
+    "planned_scenario_count": 20,
+    "discovered_executable_test_count": 127,
+    "executed_test_count": 127,
     "ac_mapping_coverage_percent": 100.0,
     "verified_ac_execution_coverage_status": "OFFLINE_VERIFIED_LIVE_PILOT_NOT_RUN"
   },
   "summary": {
     "total_requirements": 8,
     "total_acceptance_criteria": 21,
-    "total_acceptance_tests": 18,
+    "total_acceptance_tests": 20,
     "total_tasks": 6
   },
   "acceptance_criteria": [
@@ -42,12 +42,12 @@
     {
       "ac_id": "AC-401.2",
       "requirement_id": "REQ-PILOT-401",
-      "description": "Authorized pilot sessions require an immutable PilotAuthorizationContext binding authorizationId, candidate/APK identity, test account scope, target robot identity, permitted operations, approved endpoints, readOnlyMode=true, request budgets, and monotonic deadline; expired, mismatched, or incomplete contexts are rejected fail-closed.",
-      "validation_test_id": "TEST-PILOT-401",
-      "test_oracle": "TEST-PILOT-401: Missing, expired, incomplete, or mismatched PilotAuthorizationContext rejected fail-closed before any network call.",
+      "description": "Authorized pilot sessions require an immutable PilotAuthorizationContext binding single-use authorizationId, PilotEnvironment, candidate/APK identity, test account scope with exact authorizedAccountIdentifier, target robot identity, permitted operations, approved endpoints, readOnlyMode=true, request budgets, and monotonic deadline; expired, mismatched, replayed, or incomplete contexts are rejected fail-closed.",
+      "validation_test_id": "TEST-PILOT-419",
+      "test_oracle": "TEST-PILOT-401, TEST-PILOT-419: Missing, expired, incomplete, mismatched, or replayed PilotAuthorizationContext rejected fail-closed; wrong or redacted accounts produce zero network calls.",
       "implementation_task": "Task 1",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/domain/pilot/PilotAuthorizationGateTest.kt::testRejectsExpiredMismatchedAndIncompleteContexts, testEnforcesMonotonicDeadlineAndRevocation (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/pilot/PilotAuthorizationGateTest.kt; app/src/test/java/com/weback/robot/app/pilot/Fct004AcceptanceRemediationTest.kt::fix402_exactAuthorizedAccountBindingRejectsWrongAccountAndRedactedAliasWithZeroRequests, fix403_blocksAuthorizationReplayAndEnforcesStricterReconnectAndHttpTimeoutBudgets (PASS)",
       "status": "VERIFIED"
     },
     {
@@ -174,12 +174,12 @@
     {
       "ac_id": "AC-406.1",
       "requirement_id": "REQ-PILOT-406",
-      "description": "PilotSessionController and SessionCoordinator enforce sessionEpoch isolation, 1 login attempt, 0 password retries, 1 inventory request, retryOnConnectionFailure=false, and 15s HTTP callTimeout.",
+      "description": "PilotSessionController, SessionCoordinator, and transport gateways enforce sessionEpoch + PilotAdmissionTicket ownership without duplicate budget consumption across layers, 1 login attempt, 0 password retries, 1 inventory request, retryOnConnectionFailure=false, and stricter per-run HTTP callTimeout (<= 15s).",
       "validation_test_id": "TEST-PILOT-417",
-      "test_oracle": "TEST-PILOT-408, TEST-PILOT-417: MockWebServer epoch & budget tests prove 1 login, 0 auto retries, 1 inventory cap, and 15s HTTP callTimeout.",
+      "test_oracle": "TEST-PILOT-408, TEST-PILOT-417, TEST-PILOT-419: MockWebServer epoch, admission ticket, & budget tests prove 1 login, 0 auto retries, 1 inventory cap, and stricter per-run HTTP callTimeout.",
       "implementation_task": "Task 3",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/PilotBudgetEnforcementTest.kt; app/src/test/java/com/weback/robot/security/PilotTlsHygieneTest.kt (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/PilotBudgetEnforcementTest.kt; app/src/test/java/com/weback/robot/security/PilotTlsHygieneTest.kt; app/src/test/java/com/weback/robot/app/pilot/Fct004AcceptanceRemediationTest.kt (PASS)",
       "status": "VERIFIED"
     },
     {
@@ -196,12 +196,12 @@
     {
       "ac_id": "AC-406.3",
       "requirement_id": "REQ-PILOT-406",
-      "description": "Pilot UI displays clear offline/mock labeling, authorization summary, endpoint review, read-only device inventory, selected robot status, connection state, and monotonic observation timer without raw tokens.",
-      "validation_test_id": "TEST-PILOT-409",
-      "test_oracle": "TEST-PILOT-409: Robolectric Compose card test verifies full PilotReadinessSheet display with zero secret exposure.",
+      "description": "MainActivity + PilotReadinessSheet expose explicit offline mock pilot activation isolated from live cloud gateways, displaying clear offline/mock labeling, authorization summary, endpoint review, read-only device inventory, selected robot status, connection state, live monotonic observation timer, and Emergency Disconnect return to offline simulator without raw tokens.",
+      "validation_test_id": "TEST-PILOT-420",
+      "test_oracle": "TEST-PILOT-409, TEST-PILOT-420: Robolectric Compose card and wired MainActivity workflow tests verify full offline mock pilot lifecycle, zero live gateway activation, and clean return to FCT-002 offline simulator.",
       "implementation_task": "Task 4",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/ui/pilot/PilotDeviceIdentityCardTest.kt::testDisplaysAuthSummaryEndpointReviewInventoryStatusTimerAndEmergencyDisconnect (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/ui/pilot/PilotDeviceIdentityCardTest.kt; app/src/test/java/com/weback/robot/ui/pilot/MainActivityMockPilotFlowTest.kt::testCompleteWiredOfflineMockPilotWorkflowAndReturnToSimulator (PASS)",
       "status": "VERIFIED"
     },
     {
@@ -229,23 +229,23 @@
     {
       "ac_id": "AC-408.1",
       "requirement_id": "REQ-PILOT-408",
-      "description": "Non-blocking 9-step Emergency Disconnect immediately revokes network/auth admission without waiting for disk I/O, cancels active HTTP/jobs/WS, clears inventory & TokenStore, restores OFFLINE simulator, blocks late callbacks, and reports incomplete storage cleanup honestly.",
+      "description": "Generation-fenced 9-step Emergency Disconnect immediately revokes network/auth admission without waiting for disk I/O, cancels active & late-registered HTTP/jobs/WS, clears matching-epoch session & inventory, blocks reactivation during in-flight/incomplete storage clear, restores OFFLINE simulator, blocks late callbacks from affecting newer runs, and reports incomplete storage cleanup honestly.",
       "validation_test_id": "TEST-PILOT-412",
-      "test_oracle": "TEST-PILOT-412, TEST-PILOT-418, TEST-PILOT-414: Kill switch & cancellation tests verify immediate non-blocking revocation across all active phases, late-callback immunity, and honest partial-cleanup reporting.",
+      "test_oracle": "TEST-PILOT-412, TEST-PILOT-418, TEST-PILOT-419, TEST-PILOT-414: Kill switch, cancellation, and generation-fenced remediation tests verify immediate revocation, in-flight cleanup activation lock, late-callback immunity, and honest partial-cleanup reporting.",
       "implementation_task": "Task 3, Task 6",
       "check_id": "android-smoke-test",
-      "evidence_ref": "Offline unit/MockWebServer tests PilotKillSwitchTest & PilotEmergencyCancellationTest PASS; physical-device TEST-PILOT-414 remains NOT_RUN pending FCT-004B + external auth",
+      "evidence_ref": "Offline unit/MockWebServer tests PilotKillSwitchTest, PilotEmergencyCancellationTest & Fct004AcceptanceRemediationTest PASS; physical-device TEST-PILOT-414 remains NOT_RUN pending FCT-004B + external auth",
       "status": "NOT_RUN"
     },
     {
       "ac_id": "AC-408.2",
       "requirement_id": "REQ-PILOT-408",
-      "description": "Capability-restricted pilot transport boundary permits only login & user_thing_list_get HTTP ops, blocks all outbound WS application text/binary messages while preserving RFC 6455 control frames, isolates offline simulator commands, and treats unexpected physical command attempts as pilot-abort events.",
+      "description": "Capability-restricted pilot transport and OkHttp/WS admission boundary permits only admitted login & user_thing_list_get HTTP ops, blocks all outbound WS application text/binary messages while preserving RFC 6455 control frames, isolates offline simulator commands, and treats unexpected physical command attempts as pilot-abort events.",
       "validation_test_id": "TEST-PILOT-416",
-      "test_oracle": "TEST-PILOT-411, TEST-PILOT-416: Direct adapter, malformed payload, unknown op, and MockWebServer frame capture tests prove zero unauthorized outbound traffic reaches network.",
+      "test_oracle": "TEST-PILOT-411, TEST-PILOT-416, TEST-PILOT-419: Direct adapter, raw OkHttpClient, malformed payload, unknown op, and MockWebServer capture tests prove zero unadmitted or unauthorized outbound traffic reaches network.",
       "implementation_task": "Task 1, Task 3",
       "check_id": "android-unit-tests",
-      "evidence_ref": "app/src/test/java/com/weback/robot/domain/pilot/ReadOnlyPilotGuardTest.kt; app/src/test/java/com/weback/robot/protocol/pilot/PilotStructuralBoundaryTest.kt (PASS)",
+      "evidence_ref": "app/src/test/java/com/weback/robot/domain/pilot/ReadOnlyPilotGuardTest.kt; app/src/test/java/com/weback/robot/protocol/pilot/PilotStructuralBoundaryTest.kt; app/src/test/java/com/weback/robot/app/pilot/Fct004AcceptanceRemediationTest.kt::fix401_networkAdmissionBoundaryDeniesUnadmittedDirectAndStaleCallsBeforeMockWebServer (PASS)",
       "status": "VERIFIED"
     },
     {

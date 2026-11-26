@@ -121,7 +121,12 @@ class PilotInventoryCapabilityTest {
             val unpinnedCtx = PilotAuthorizationContext(
                 authorizationId = "FCT004-PILOT-20261125-01",
                 candidateIdentity = runtimeId,
-                accountScope = PilotAccountScope(PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT, "+1", "pilot***@example.invalid"),
+                accountScope = PilotAccountScope(
+                    PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT,
+                    "+1",
+                    "pilot***@example.invalid",
+                    "pilot@example.invalid"
+                ),
                 targetDevice = PilotTargetDevice("LaserSlam", "laser_target_01", "LASER_TARGET"),
                 permittedOperations = setOf(PilotOperation.LOGIN, PilotOperation.USER_THING_LIST_GET, PilotOperation.WS_TELEMETRY_OBSERVE),
                 endpointConfig = PilotEndpointConfig(approvedAuthOrigin = originHttp, pinnedApiOrigin = null, pinnedWssOrigin = null),
@@ -150,6 +155,7 @@ class PilotInventoryCapabilityTest {
             // 2. Now re-activate with pinned origin matching MockWebServer and verify LaserSlam target check
             controller.emergencyDisconnectAndWipe(PilotAbortReason.UserEmergencyDisconnect)
             val pinnedCtx = unpinnedCtx.copy(
+                authorizationId = "FCT004-PILOT-20261125-01B",
                 endpointConfig = PilotEndpointConfig(
                     approvedAuthOrigin = originHttp,
                     pinnedApiOrigin = "https://127.0.0.1:${server.port}",

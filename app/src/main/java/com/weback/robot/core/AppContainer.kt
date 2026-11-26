@@ -8,9 +8,18 @@ import com.weback.robot.domain.model.AuthFailureReason
 import com.weback.robot.domain.model.ConnectivityError
 import com.weback.robot.domain.model.PersistedSessionRecord
 import com.weback.robot.domain.pilot.ExpectedCandidateIdentity
+import com.weback.robot.domain.pilot.GateActivationResult
 import com.weback.robot.domain.pilot.PilotAbortReason
+import com.weback.robot.domain.pilot.PilotAccountScope
+import com.weback.robot.domain.pilot.PilotAccountScopeType
+import com.weback.robot.domain.pilot.PilotAuthorizationContext
 import com.weback.robot.domain.pilot.PilotAuthorizationGate
 import com.weback.robot.domain.pilot.PilotEndpointConfig
+import com.weback.robot.domain.pilot.PilotEnvironment
+import com.weback.robot.domain.pilot.PilotExternalApproval
+import com.weback.robot.domain.pilot.PilotOperation
+import com.weback.robot.domain.pilot.PilotRequestBudgets
+import com.weback.robot.domain.pilot.PilotTargetDevice
 import com.weback.robot.protocol.RobotTransport
 import com.weback.robot.protocol.SimulatorRobotTransport
 import com.weback.robot.protocol.auth.AuthEnvelopeConfig
@@ -23,6 +32,7 @@ import com.weback.robot.protocol.inventory.OfflineFixtureInventoryGateway
 import com.weback.robot.protocol.inventory.OkHttpDeviceInventoryGateway
 import com.weback.robot.protocol.pilot.PilotCapabilityRestrictedAuthGateway
 import com.weback.robot.protocol.pilot.PilotCapabilityRestrictedInventoryGateway
+import com.weback.robot.protocol.pilot.PilotReadOnlyFixtureTransport
 import com.weback.robot.protocol.ws.ConnectionConfig
 import com.weback.robot.protocol.ws.OfflineFixtureRealtimeTransport
 import com.weback.robot.protocol.ws.OkHttpWebSocketTransport
@@ -60,6 +70,9 @@ interface AppContainer : AutoCloseable {
     val realtimeTransport: RealtimeSessionTransport
     val pilotAuthorizationGate: PilotAuthorizationGate
     val pilotSessionController: PilotSessionController
+    val offlineMockAuthorizationGate: PilotAuthorizationGate
+    val offlineMockPilotController: PilotSessionController
+    fun startOfflineMockPilot(): GateActivationResult
     override fun close() {}
 }
 
@@ -175,7 +188,8 @@ class DefaultAppContainer(
     private val pilotHttpClient by lazy {
         PilotClientFactory.buildPilotOkHttpClient(
             trustPolicy = pilotEndpointTrustPolicy,
-            activeCallRegistry = pilotActiveCallRegistry
+            activeCallRegistry = pilotActiveCallRegistry,
+            admissionGate = pilotAuthorizationGate
         )
     }
 
@@ -188,7 +202,8 @@ class DefaultAppContainer(
             dispatchers = dispatcherProvider,
             envelopeConfig = AuthEnvelopeConfig(),
             baseClient = pilotHttpClient,
-            pilotEndpointTrustPolicy = pilotEndpointTrustPolicy
+            pilotEndpointTrustPolicy = pilotEndpointTrustPolicy,
+            admissionGate = pilotAuthorizationGate
         )
     }
 
@@ -200,7 +215,10 @@ class DefaultAppContainer(
                 dispatchers = dispatcherProvider,
                 logger = diagnosticLogger,
                 client = pilotHttpClient
-            )
+            ),
+            admissionGate = pilotAuthorizationGate,
+            authClock = authClock,
+            pilotEndpointTrustPolicy = pilotEndpointTrustPolicy
         )
     }
 
@@ -240,30 +258,32 @@ class DefaultAppContainer(
             connectionConfig = ConnectionConfig(reconnectDelayMs = 4_000L, maxReconnectAttempts = 3),
             logger = diagnosticLogger,
             client = pilotHttpClient,
-            onSessionInvalidated = { _, reason ->
+            onSessionInvalidated = { oldEpoch, reason ->
                 val abortReason = when (reason) {
                     AuthFailureReason.UntrustedEndpoint -> PilotAbortReason.UntrustedOriginRejected
                     AuthFailureReason.ChallengeRequired -> PilotAbortReason.ChallengeRequired
                     else -> PilotAbortReason.AuthRejected
                 }
                 pilotScope.launch {
-                    pilotSessionController.emergencyDisconnectAndWipe(abortReason)
+                    pilotSessionController.emergencyDisconnectForSessionEpoch(abortReason, oldEpoch)
                 }
             },
             resetReconnectAttemptOnOpen = false
         )
     }
 
+    // Live pilot remains structurally non-activatable offline (never populated with fake zero-filled candidate hashes)
+    private val nonActivatableLiveIdentity = ExpectedCandidateIdentity(
+        candidateCommitSha = "UNSET-OFFLINE-BUILD-REQUIRES-FCT004B-SIGN",
+        applicationId = "com.weback.robot",
+        versionName = "0.1.0-alpha",
+        apkSha256 = "UNSET-OFFLINE-BUILD-REQUIRES-FCT004B-SIGNATURE"
+    )
+
     override val pilotSessionController: PilotSessionController by lazy {
         PilotSessionController(
             gate = pilotAuthorizationGate,
-            // Non-activatable offline placeholder until FCT-004B injects externally signed build identity
-            expectedRuntimeIdentity = ExpectedCandidateIdentity(
-                candidateCommitSha = "b0ce6ff1b3f65da67673d1e0cf7959b4266250ca",
-                applicationId = "com.weback.robot",
-                versionName = "0.1.0-alpha",
-                apkSha256 = "0".repeat(64)
-            ),
+            expectedRuntimeIdentity = nonActivatableLiveIdentity,
             trustPolicy = pilotEndpointTrustPolicy,
             sessionCoordinator = pilotSessionCoordinator,
             inventoryRepository = pilotInventoryRepository,
@@ -279,10 +299,164 @@ class DefaultAppContainer(
         )
     }
 
+    // Separate in-process offline mock workflow (`FIX-404`) incapable of authorizing live cloud access
+    private val mockIdentity = ExpectedCandidateIdentity(
+        candidateCommitSha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        applicationId = "com.weback.robot.mock",
+        versionName = "0.1.0-alpha-mock",
+        apkSha256 = "a".repeat(64)
+    )
+    private var mockActivationSeq = 0L
+
+    override val offlineMockAuthorizationGate: PilotAuthorizationGate by lazy {
+        PilotAuthorizationGate(
+            allowedAuthOrigins = setOf("https://loopback.offline.invalid:443"),
+            allowedEnvironment = PilotEnvironment.OFFLINE_MOCK_FIXTURE
+        )
+    }
+
+    private val offlineMockTrustPolicy: AuthorizedPilotEndpointTrustPolicy by lazy {
+        AuthorizedPilotEndpointTrustPolicy(
+            endpointConfig = PilotEndpointConfig(
+                approvedAuthOrigin = "https://loopback.offline.invalid:443",
+                approvedAuthPath = "/prod/oauth",
+                pinnedApiOrigin = "https://loopback.offline.invalid:443",
+                pinnedWssOrigin = "wss://loopback.offline.invalid:443",
+                requireProvenanceVerification = true
+            ),
+            allowedAuthOrigins = setOf("https://loopback.offline.invalid:443"),
+            allowLoopbackForHermeticTests = false
+        )
+    }
+
+    private val offlineMockFixtureTransport: OfflineFixtureRealtimeTransport by lazy {
+        OfflineFixtureRealtimeTransport()
+    }
+
+    private val offlineMockSessionCoordinator: SessionCoordinator by lazy {
+        SessionCoordinator(
+            authGateway = OfflineFixtureAuthGateway(authClock = authClock),
+            tokenStore = InMemoryMockTokenStore(),
+            timeProvider = timeProvider,
+            refreshStrategy = DisabledPasswordlessRefreshStrategy,
+            logger = diagnosticLogger
+        ).also { coordinator ->
+            coordinator.registerOnSessionInvalidated { oldEpoch, reason ->
+                val connErr = when (reason) {
+                    AuthFailureReason.UntrustedEndpoint -> ConnectivityError.UntrustedEndpoint
+                    AuthFailureReason.RedirectRejected -> ConnectivityError.RedirectRejected
+                    AuthFailureReason.StorageFailure -> ConnectivityError.StorageFailure
+                    AuthFailureReason.TokenExpiredOrRevoked -> ConnectivityError.TokenExpired
+                    else -> ConnectivityError.Unauthenticated
+                }
+                offlineMockFixtureTransport.invalidateForEpoch(expectedEpoch = oldEpoch, reason = connErr)
+            }
+        }
+    }
+
+    private val offlineMockInventoryRepository: DeviceInventoryRepository by lazy {
+        DeviceInventoryRepository(
+            sessionCoordinator = offlineMockSessionCoordinator,
+            inventoryGateway = OfflineFixtureInventoryGateway()
+        )
+    }
+
+    override val offlineMockPilotController: PilotSessionController by lazy {
+        PilotSessionController(
+            gate = offlineMockAuthorizationGate,
+            expectedRuntimeIdentity = mockIdentity,
+            trustPolicy = offlineMockTrustPolicy,
+            sessionCoordinator = offlineMockSessionCoordinator,
+            inventoryRepository = offlineMockInventoryRepository,
+            pilotAuthGateway = null,
+            pilotWsDelegate = null,
+            simulatorTransport = robotTransport,
+            authClock = authClock,
+            dispatchers = dispatcherProvider,
+            logger = diagnosticLogger,
+            activeCallRegistry = null,
+            scope = pilotScope,
+            ownsScope = false,
+            telemetryTransportOverride = PilotReadOnlyFixtureTransport(
+                delegate = offlineMockFixtureTransport,
+                onUnexpectedOutboundAttempt = { detail ->
+                    diagnosticLogger.log(
+                        com.weback.robot.security.DiagnosticEvent(
+                            category = "MOCK_PILOT_OUTBOUND_BLOCKED",
+                            errorCategory = detail
+                        )
+                    )
+                }
+            ),
+            modeLabel = "OFFLINE_MOCK_FIXTURE_ONLY_NO_NETWORK",
+            enableUiCountdownTicker = true
+        )
+    }
+
+    override fun startOfflineMockPilot(): GateActivationResult {
+        val nowMs = authClock.elapsedRealtimeMs()
+        val seq = ++mockActivationSeq
+        val ctx = PilotAuthorizationContext(
+            authorizationId = "MOCK-OFFLINE-PILOT-$seq",
+            candidateIdentity = mockIdentity,
+            accountScope = PilotAccountScope(
+                scopeType = PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT,
+                regionCallingCode = "+1",
+                authorizedAccountAlias = "m***@offline.invalid",
+                authorizedAccountIdentifier = "mock-pilot@offline.invalid"
+            ),
+            targetDevice = PilotTargetDevice(
+                expectedSubTypeFamily = "LaserSlam",
+                expectedTargetThingName = "offline_laser_01",
+                redactedTag = "MOCK_LASER_01"
+            ),
+            permittedOperations = setOf(
+                PilotOperation.LOGIN,
+                PilotOperation.USER_THING_LIST_GET,
+                PilotOperation.WS_TELEMETRY_OBSERVE
+            ),
+            endpointConfig = PilotEndpointConfig(
+                approvedAuthOrigin = "https://loopback.offline.invalid:443",
+                approvedAuthPath = "/prod/oauth",
+                pinnedApiOrigin = "https://loopback.offline.invalid:443",
+                pinnedWssOrigin = "wss://loopback.offline.invalid:443",
+                requireProvenanceVerification = true
+            ),
+            readOnlyMode = true,
+            physicalRobotCommandsPermitted = false,
+            budgets = PilotRequestBudgets(),
+            authorizedAtElapsedMs = nowMs,
+            observationDeadlineElapsedMs = nowMs + PilotRequestBudgets.MAX_OBSERVATION_WINDOW_MS,
+            externalApproval = PilotExternalApproval(
+                approvedByProductOwner = "SYNTHETIC_MOCK_WORKFLOW_ONLY",
+                approvedByLeadMaintainer = "SYNTHETIC_MOCK_WORKFLOW_ONLY",
+                externalRecordRef = "MOCK-FIXTURE-$seq"
+            ),
+            uiConsentCheckedOnly = false,
+            environment = PilotEnvironment.OFFLINE_MOCK_FIXTURE
+        )
+        return offlineMockPilotController.activatePilot(ctx)
+    }
+
     override fun close() {
         (robotTransport as? AutoCloseable)?.close()
         realtimeTransport.close()
+        offlineMockPilotController.close()
         pilotSessionController.close()
+    }
+}
+
+private class InMemoryMockTokenStore : TokenStore {
+    private var saved: PersistedSessionRecord? = null
+    override suspend fun save(record: PersistedSessionRecord): TokenSaveResult {
+        saved = record
+        return TokenSaveResult.Success
+    }
+    override suspend fun load(): TokenLoadResult =
+        saved?.let { TokenLoadResult.Loaded(it) } ?: TokenLoadResult.Empty
+    override suspend fun clear(): TokenClearResult {
+        saved = null
+        return TokenClearResult.Success
     }
 }
 

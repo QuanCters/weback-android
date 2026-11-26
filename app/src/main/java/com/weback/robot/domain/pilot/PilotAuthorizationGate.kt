@@ -18,23 +18,68 @@ sealed interface GateCheckResult {
 }
 
 /**
- * Pure Kotlin pilot authorization gate (`SEC-401`, `SEC-404`).
+ * Per-call admission ticket binding an outbound pilot network request or WebSocket handshake
+ * to the exact active authorization run, generation, operation, deadline, and timeout budgets
+ * (`FIX-401`, `FIX-403`).
+ */
+data class PilotAdmissionTicket(
+    val authorizationId: String,
+    val pilotGeneration: Long,
+    val operation: PilotOperation,
+    val deadlineElapsedMs: Long,
+    val environment: PilotEnvironment,
+    val httpCallTimeoutMs: Long,
+    val maxWsReconnectAttempts: Int,
+    val issuedElapsedMs: Long,
+    val remainingWindowAtIssueMs: Long,
+    val issuedSystemNanoTime: Long
+)
+
+sealed interface AdmissionResult {
+    data class Admitted(val ticket: PilotAdmissionTicket) : AdmissionResult
+    data class Denied(val reason: PilotAbortReason, val safeMessage: String) : AdmissionResult
+}
+
+/**
+ * Pure Kotlin pilot authorization gate (`SEC-401`, `SEC-404`, `FIX-401`..`FIX-405`).
  * - Defaults strictly to disabled (`isAuthorized == false`).
  * - Never persists or restores authorization across process restart.
- * - Rejects incomplete, mismatched, expired, or UI-checkbox-only authorization contexts.
+ * - Rejects incomplete, mismatched, expired, replayed, wrong-environment, or UI-checkbox-only contexts.
+ * - Blocks new activation while prior run is active or cleanup is in-flight/incomplete.
  */
 class PilotAuthorizationGate(
-    private val allowedAuthOrigins: Set<String> = CANONICAL_AUTH_ORIGINS
+    private val allowedAuthOrigins: Set<String> = CANONICAL_AUTH_ORIGINS,
+    val allowedEnvironment: PilotEnvironment = PilotEnvironment.LIVE_PILOT
 ) {
     private val lock = Any()
     private var activeContext: PilotAuthorizationContext? = null
     private var lastAbortReason: PilotAbortReason? = null
+    private var pilotGeneration: Long = 0L
+    private val consumedAuthorizationIds: MutableSet<String> = mutableSetOf()
+    private var cleanupInFlight: Boolean = false
+    private var incompleteCleanupPending: Boolean = false
+    private var cleanupTokenSeq: Long = 0L
+    private val inFlightCleanupTokens: MutableSet<Long> = mutableSetOf()
+    private var loginRequestsAdmitted: Int = 0
+    private var inventoryRequestsAdmitted: Int = 0
+    private var wsInitialConnectionsAdmitted: Int = 0
+    private var wsReconnectsAdmitted: Int = 0
 
     val isAuthorized: Boolean
         get() = synchronized(lock) { activeContext != null }
 
     val currentContext: PilotAuthorizationContext?
         get() = synchronized(lock) { activeContext }
+
+    fun currentGeneration(): Long = synchronized(lock) { pilotGeneration }
+
+    fun hasInFlightOrIncompleteCleanup(): Boolean = synchronized(lock) {
+        cleanupInFlight || incompleteCleanupPending
+    }
+
+    fun hasIncompleteCleanup(): Boolean = synchronized(lock) {
+        incompleteCleanupPending
+    }
 
     fun activate(
         context: PilotAuthorizationContext,
@@ -52,48 +97,279 @@ class PilotAuthorizationGate(
             return GateActivationResult.Rejected(validationError.first, validationError.second)
         }
         synchronized(lock) {
+            if (activeContext != null) {
+                return GateActivationResult.Rejected(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "An active pilot session must finish cleanup before new activation"
+                )
+            }
+            if (cleanupInFlight || incompleteCleanupPending) {
+                return GateActivationResult.Rejected(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Prior pilot cleanup is still in progress or incomplete"
+                )
+            }
+            val normalizedAuthId = context.authorizationId.trim()
+            if (normalizedAuthId in consumedAuthorizationIds) {
+                return GateActivationResult.Rejected(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Authorization ID already consumed and cannot be replayed"
+                )
+            }
+            consumedAuthorizationIds.add(normalizedAuthId)
             activeContext = context
             lastAbortReason = null
+            pilotGeneration++
+            loginRequestsAdmitted = 0
+            inventoryRequestsAdmitted = 0
+            wsInitialConnectionsAdmitted = 0
+            wsReconnectsAdmitted = 0
         }
         return GateActivationResult.Activated(context)
+    }
+
+    fun verifyAccountCredentials(regionCallingCode: String, account: String): Pair<Boolean, String> {
+        synchronized(lock) {
+            val ctx = activeContext
+                ?: return false to "Pilot authorization is disabled"
+            if (PilotAccountScope.normalizeCallingCode(regionCallingCode) !=
+                PilotAccountScope.normalizeCallingCode(ctx.accountScope.regionCallingCode)
+            ) {
+                return false to "Region calling code mismatches authorized account scope"
+            }
+            if (PilotAccountScope.normalizeAccount(account) !=
+                PilotAccountScope.normalizeAccount(ctx.accountScope.authorizedAccountIdentifier)
+            ) {
+                return false to "Account identifier mismatches authorized test account"
+            }
+            return true to ""
+        }
     }
 
     fun authorizeOperation(
         operation: PilotOperation,
         nowElapsedMs: Long
     ): GateCheckResult {
-        val ctx = synchronized(lock) { activeContext }
-            ?: return GateCheckResult.Denied(
-                lastAbortReason ?: PilotAbortReason.AuthorizationExpiredOrInvalid,
-                "Pilot authorization is disabled"
-            )
+        synchronized(lock) {
+            val ctx = activeContext
+                ?: return GateCheckResult.Denied(
+                    lastAbortReason ?: PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Pilot authorization is disabled"
+                )
 
-        if (nowElapsedMs < ctx.authorizedAtElapsedMs || nowElapsedMs >= ctx.observationDeadlineElapsedMs) {
-            revoke(PilotAbortReason.ObservationWindowExpired)
-            return GateCheckResult.Denied(
-                PilotAbortReason.ObservationWindowExpired,
-                "Pilot observation window expired"
+            if (nowElapsedMs < ctx.authorizedAtElapsedMs || nowElapsedMs >= ctx.observationDeadlineElapsedMs) {
+                revokeLocked(PilotAbortReason.ObservationWindowExpired)
+                return GateCheckResult.Denied(
+                    PilotAbortReason.ObservationWindowExpired,
+                    "Pilot observation window expired"
+                )
+            }
+
+            if (operation !in ctx.permittedOperations) {
+                return GateCheckResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Operation ${operation.wireOpt} not permitted"
+                )
+            }
+
+            return GateCheckResult.Allowed(
+                context = ctx,
+                remainingWindowMs = ctx.observationDeadlineElapsedMs - nowElapsedMs
             )
         }
+    }
 
-        if (operation !in ctx.permittedOperations) {
-            return GateCheckResult.Denied(
-                PilotAbortReason.AuthorizationExpiredOrInvalid,
-                "Operation ${operation.wireOpt} not permitted"
+    fun acquireAdmission(
+        operation: PilotOperation,
+        nowElapsedMs: Long,
+        requestUrl: String? = null,
+        isReconnect: Boolean = false,
+        expectedGeneration: Long? = null,
+        endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)? = null
+    ): AdmissionResult {
+        synchronized(lock) {
+            val ctx = activeContext
+                ?: return AdmissionResult.Denied(
+                    lastAbortReason ?: PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Pilot authorization is disabled"
+                )
+            if (expectedGeneration != null && expectedGeneration != pilotGeneration) {
+                return AdmissionResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Pilot generation is stale"
+                )
+            }
+            if (ctx.environment != allowedEnvironment) {
+                return AdmissionResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Pilot environment mismatch"
+                )
+            }
+            if (nowElapsedMs < ctx.authorizedAtElapsedMs || nowElapsedMs >= ctx.observationDeadlineElapsedMs) {
+                revokeLocked(PilotAbortReason.ObservationWindowExpired)
+                return AdmissionResult.Denied(
+                    PilotAbortReason.ObservationWindowExpired,
+                    "Pilot observation window expired"
+                )
+            }
+            if (operation !in ctx.permittedOperations) {
+                return AdmissionResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Operation ${operation.wireOpt} not permitted"
+                )
+            }
+            if (requestUrl != null && endpointValidator != null && !endpointValidator(ctx, requestUrl)) {
+                return AdmissionResult.Denied(
+                    PilotAbortReason.UntrustedOriginRejected,
+                    "Request endpoint rejected by pilot trust policy"
+                )
+            }
+
+            when (operation) {
+                PilotOperation.LOGIN -> {
+                    if (loginRequestsAdmitted >= ctx.budgets.maxLoginAttempts) {
+                        return AdmissionResult.Denied(
+                            PilotAbortReason.BudgetExhausted,
+                            "Login budget exhausted (max ${ctx.budgets.maxLoginAttempts})"
+                        )
+                    }
+                    loginRequestsAdmitted++
+                }
+                PilotOperation.USER_THING_LIST_GET -> {
+                    if (inventoryRequestsAdmitted >= ctx.budgets.maxInventoryRequests) {
+                        return AdmissionResult.Denied(
+                            PilotAbortReason.BudgetExhausted,
+                            "Inventory request budget exhausted (max ${ctx.budgets.maxInventoryRequests})"
+                        )
+                    }
+                    inventoryRequestsAdmitted++
+                }
+                PilotOperation.WS_TELEMETRY_OBSERVE -> {
+                    if (!isReconnect) {
+                        if (wsInitialConnectionsAdmitted >= ctx.budgets.maxInitialWsConnections) {
+                            return AdmissionResult.Denied(
+                                PilotAbortReason.BudgetExhausted,
+                                "Initial WebSocket connection budget exhausted"
+                            )
+                        }
+                        wsInitialConnectionsAdmitted++
+                    } else {
+                        if (wsReconnectsAdmitted >= ctx.budgets.maxWsReconnectAttempts) {
+                            return AdmissionResult.Denied(
+                                PilotAbortReason.BudgetExhausted,
+                                "Cumulative WebSocket reconnect budget exhausted (max ${ctx.budgets.maxWsReconnectAttempts})"
+                            )
+                        }
+                        wsReconnectsAdmitted++
+                    }
+                }
+            }
+
+            return AdmissionResult.Admitted(
+                PilotAdmissionTicket(
+                    authorizationId = ctx.authorizationId,
+                    pilotGeneration = pilotGeneration,
+                    operation = operation,
+                    deadlineElapsedMs = ctx.observationDeadlineElapsedMs,
+                    environment = ctx.environment,
+                    httpCallTimeoutMs = ctx.budgets.httpCallTimeoutMs,
+                    maxWsReconnectAttempts = ctx.budgets.maxWsReconnectAttempts,
+                    issuedElapsedMs = nowElapsedMs,
+                    remainingWindowAtIssueMs = (ctx.observationDeadlineElapsedMs - nowElapsedMs).coerceAtLeast(0L),
+                    issuedSystemNanoTime = System.nanoTime()
+                )
             )
         }
+    }
 
-        return GateCheckResult.Allowed(
-            context = ctx,
-            remainingWindowMs = ctx.observationDeadlineElapsedMs - nowElapsedMs
-        )
+    fun verifyTicket(
+        ticket: PilotAdmissionTicket,
+        nowElapsedMs: Long? = null,
+        requestUrl: String? = null,
+        endpointValidator: ((PilotAuthorizationContext, String) -> Boolean)? = null
+    ): GateCheckResult {
+        synchronized(lock) {
+            val ctx = activeContext
+                ?: return GateCheckResult.Denied(
+                    lastAbortReason ?: PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Pilot authorization is disabled"
+                )
+            if (ticket.environment != allowedEnvironment ||
+                ctx.environment != allowedEnvironment ||
+                ticket.authorizationId != ctx.authorizationId ||
+                ticket.pilotGeneration != pilotGeneration
+            ) {
+                return GateCheckResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Pilot admission ticket is stale or mismatched"
+                )
+            }
+            if (ticket.operation !in ctx.permittedOperations) {
+                return GateCheckResult.Denied(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "Operation ${ticket.operation.wireOpt} not permitted"
+                )
+            }
+            val elapsedSinceIssueMs = ((System.nanoTime() - ticket.issuedSystemNanoTime) / 1_000_000L).coerceAtLeast(0L)
+            val realTimeExpired = elapsedSinceIssueMs >= ticket.remainingWindowAtIssueMs
+            val clockExpired = nowElapsedMs != null &&
+                (nowElapsedMs < ctx.authorizedAtElapsedMs || nowElapsedMs >= ctx.observationDeadlineElapsedMs)
+            if (realTimeExpired || clockExpired) {
+                revokeLocked(PilotAbortReason.ObservationWindowExpired)
+                return GateCheckResult.Denied(
+                    PilotAbortReason.ObservationWindowExpired,
+                    "Pilot observation window expired"
+                )
+            }
+            if (requestUrl != null && endpointValidator != null && !endpointValidator(ctx, requestUrl)) {
+                return GateCheckResult.Denied(
+                    PilotAbortReason.UntrustedOriginRejected,
+                    "Request endpoint rejected by pilot trust policy"
+                )
+            }
+            val remaining = if (nowElapsedMs != null) {
+                (ctx.observationDeadlineElapsedMs - nowElapsedMs).coerceAtLeast(0L)
+            } else {
+                (ticket.remainingWindowAtIssueMs - elapsedSinceIssueMs).coerceAtLeast(0L)
+            }
+            return GateCheckResult.Allowed(ctx, remaining)
+        }
     }
 
     fun revoke(reason: PilotAbortReason = PilotAbortReason.UserEmergencyDisconnect) {
         synchronized(lock) {
-            activeContext = null
-            lastAbortReason = reason
+            revokeLocked(reason)
         }
+    }
+
+    fun beginCleanup(reason: PilotAbortReason = PilotAbortReason.UserEmergencyDisconnect): Long {
+        synchronized(lock) {
+            revokeLocked(reason)
+            val token = ++cleanupTokenSeq
+            inFlightCleanupTokens.add(token)
+            cleanupInFlight = true
+            return token
+        }
+    }
+
+    fun completeCleanup(cleanupToken: Long, storageCleared: Boolean?) {
+        synchronized(lock) {
+            inFlightCleanupTokens.remove(cleanupToken)
+            cleanupInFlight = inFlightCleanupTokens.isNotEmpty()
+            when (storageCleared) {
+                true -> incompleteCleanupPending = false
+                false -> incompleteCleanupPending = true
+                null -> Unit
+            }
+        }
+    }
+
+    private fun revokeLocked(reason: PilotAbortReason) {
+        if (activeContext != null) {
+            activeContext = null
+            pilotGeneration++
+        }
+        lastAbortReason = reason
     }
 
     private fun validateContext(
@@ -115,6 +391,10 @@ class PilotAuthorizationGate(
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "External dual human approval record is required"
         }
+        if (context.environment != allowedEnvironment) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Pilot authorization environment (${context.environment}) is not permitted on ${allowedEnvironment} gate"
+        }
         if (context.authorizationId.isBlank()) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to "Authorization ID must not be blank"
         }
@@ -126,11 +406,12 @@ class PilotAuthorizationGate(
                 "Candidate commit SHA or APK identity mismatch"
         }
         if (context.accountScope.scopeType != PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT ||
-            !CALLING_CODE_REGEX.matches(context.accountScope.regionCallingCode.trim()) ||
-            context.accountScope.authorizedAccountAlias.isBlank()
+            !CALLING_CODE_REGEX.matches(PilotAccountScope.normalizeCallingCode(context.accountScope.regionCallingCode)) ||
+            context.accountScope.authorizedAccountAlias.isBlank() ||
+            PilotAccountScope.normalizeAccount(context.accountScope.authorizedAccountIdentifier).isBlank()
         ) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
-                "Dedicated isolated test account scope is required"
+                "Dedicated isolated test account scope and exact identifier are required"
         }
         if (context.targetDevice.expectedSubTypeFamily != REQUIRED_SUB_TYPE_FAMILY ||
             context.targetDevice.expectedTargetThingName.isBlank() ||

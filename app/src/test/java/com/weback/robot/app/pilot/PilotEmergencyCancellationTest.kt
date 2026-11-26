@@ -128,7 +128,12 @@ class PilotEmergencyCancellationTest {
             val ctx = PilotAuthorizationContext(
                 authorizationId = "FCT004-PILOT-20261125-05",
                 candidateIdentity = runtimeId,
-                accountScope = PilotAccountScope(PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT, "+1", "pilot***@example.invalid"),
+                accountScope = PilotAccountScope(
+                    PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT,
+                    "+1",
+                    "pilot***@example.invalid",
+                    "pilot@example.invalid"
+                ),
                 targetDevice = PilotTargetDevice("LaserSlam", "laser_01", "LASER_01"),
                 permittedOperations = setOf(PilotOperation.LOGIN, PilotOperation.USER_THING_LIST_GET, PilotOperation.WS_TELEMETRY_OBSERVE),
                 endpointConfig = PilotEndpointConfig(originHttp, pinnedApiOrigin = "https://127.0.0.1:${server.port}", pinnedWssOrigin = "wss://127.0.0.1:${server.port}"),
@@ -161,7 +166,10 @@ class PilotEmergencyCancellationTest {
 
             // 2. Cancel during AwaitingOriginConfirmation quarantine
             controller.activatePilot(
-                ctx.copy(endpointConfig = PilotEndpointConfig(originHttp, pinnedApiOrigin = null, pinnedWssOrigin = null))
+                ctx.copy(
+                    authorizationId = "FCT004-PILOT-20261125-05B",
+                    endpointConfig = PilotEndpointConfig(originHttp, pinnedApiOrigin = null, pinnedWssOrigin = null)
+                )
             )
             server.enqueue(
                 MockResponse().setResponseCode(200)
@@ -174,7 +182,7 @@ class PilotEmergencyCancellationTest {
             assertFalse(gate.isAuthorized)
 
             // 3. Cancel during WS reconnect delay -> late timer advance must NOT reconnect!
-            controller.activatePilot(ctx)
+            controller.activatePilot(ctx.copy(authorizationId = "FCT004-PILOT-20261125-05C"))
             server.enqueue(MockResponse().setResponseCode(200).setBody("""{"code":1,"data":{"api_url":"$originHttp/api","wss_url":"ws://127.0.0.1:${server.port}/ws","region_name":"us","jwt_token":"jwt-ws4","expired_time":3600}}"""))
             controller.submitCredentials(AuthCredentials("+1", "pilot@example.invalid", "pw".toCharArray()))
             server.enqueue(MockResponse().setResponseCode(200).setBody("""{"code":1,"data":{"thing_list":[{"thing_name":"laser_01","sub_type":"xs-x8-eu","thing_nickname":"LivingLaser","is_admin":true}]}}"""))

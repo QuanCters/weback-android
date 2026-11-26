@@ -4,13 +4,22 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.weback.robot.domain.pilot.PilotAbortReason
 import com.weback.robot.domain.pilot.PilotModeState
@@ -34,80 +43,84 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             val app = application as WeBackApplication
-            val pilotController = app.container.pilotSessionController
+            val mockPilotController = app.container.offlineMockPilotController
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val pilotMode by pilotController.pilotModeState.collectAsStateWithLifecycle()
-            val remainingMs by pilotController.remainingObservationMs.collectAsStateWithLifecycle()
-            val connectionState by pilotController.connectionState.collectAsStateWithLifecycle()
-            val inventoryState by pilotController.inventoryState.collectAsStateWithLifecycle()
-            val selectedDevice by pilotController.selectedDevice.collectAsStateWithLifecycle()
-            val lastAbort by pilotController.lastAbortReason.collectAsStateWithLifecycle()
-            val lastDisconnect by pilotController.lastDisconnectResult.collectAsStateWithLifecycle()
+            val pilotMode by mockPilotController.pilotModeState.collectAsStateWithLifecycle()
+            val remainingMs by mockPilotController.remainingObservationMs.collectAsStateWithLifecycle()
+            val connectionState by mockPilotController.connectionState.collectAsStateWithLifecycle()
+            val inventoryState by mockPilotController.inventoryState.collectAsStateWithLifecycle()
+            val selectedDevice by mockPilotController.selectedDevice.collectAsStateWithLifecycle()
+            val lastAbort by mockPilotController.lastAbortReason.collectAsStateWithLifecycle()
+            val lastDisconnect by mockPilotController.lastDisconnectResult.collectAsStateWithLifecycle()
 
             var showPilotSheet by remember { mutableStateOf(false) }
             val passwordBuffer = remember { EphemeralPasswordBuffer() }
             val coroutineScope = rememberCoroutineScope()
 
             WeBackTheme {
-                DashboardScreen(
-                    uiState = uiState,
-                    onIntent = viewModel::onIntent,
-                    onOpenPilotSheet = { showPilotSheet = true }
-                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    DashboardScreen(
+                        uiState = uiState,
+                        onIntent = viewModel::onIntent,
+                        onOpenPilotSheet = { showPilotSheet = true }
+                    )
 
-                if (showPilotSheet) {
-                    ModalBottomSheet(onDismissRequest = { showPilotSheet = false }) {
-                        PilotReadinessSheet(
-                            state = PilotSheetUiState(
-                                modeState = pilotMode,
-                                authorizationId = app.container.pilotAuthorizationGate.currentContext?.authorizationId
-                                    ?: "DISABLED (OFFLINE)",
-                                modeLabel = "OFFLINE / MOCK PILOT BOUNDARY — NO INTERNET PERMISSION",
-                                approvedAuthOrigin = app.container.pilotAuthorizationGate.currentContext
-                                    ?.endpointConfig?.approvedAuthOrigin ?: "DISABLED",
-                                pinnedApiOrigin = app.container.pilotAuthorizationGate.currentContext
-                                    ?.endpointConfig?.pinnedApiOrigin,
-                                pinnedWssOrigin = app.container.pilotAuthorizationGate.currentContext
-                                    ?.endpointConfig?.pinnedWssOrigin,
-                                quarantinedSummary = (pilotMode as? PilotModeState.AwaitingOriginConfirmation)?.observedOrigins,
-                                remainingObservationMs = remainingMs,
-                                connectionState = connectionState,
-                                inventoryState = inventoryState,
-                                selectedDevice = selectedDevice,
-                                lastAbortReason = lastAbort,
-                                lastDisconnectResult = lastDisconnect
-                            ),
-                            passwordBuffer = passwordBuffer,
-                            onSubmitCredentials = { creds ->
-                                coroutineScope.launch {
-                                    pilotController.submitCredentials(creds)
-                                }
-                            },
-                            onCancelCredentialEntry = {
-                                coroutineScope.launch {
-                                    pilotController.emergencyDisconnectAndWipe(PilotAbortReason.UserEmergencyDisconnect)
-                                }
-                            },
-                            onRefreshInventory = {
-                                coroutineScope.launch {
-                                    pilotController.refreshReadOnlyInventory()
-                                }
-                            },
-                            onSelectDevice = { thingName ->
-                                pilotController.selectAndObserveDevice(thingName)
-                            },
-                            onEmergencyDisconnect = {
-                                coroutineScope.launch {
-                                    pilotController.emergencyDisconnectAndWipe(PilotAbortReason.UserEmergencyDisconnect)
-                                }
-                            },
-                            onDismissSheet = { showPilotSheet = false }
-                        )
+                    if (showPilotSheet) {
+                        Surface(modifier = Modifier.fillMaxSize()) {
+                                PilotReadinessSheet(
+                                    state = PilotSheetUiState(
+                                        modeState = pilotMode,
+                                        authorizationId = app.container.offlineMockAuthorizationGate.currentContext?.authorizationId
+                                            ?: "DISABLED (OFFLINE)",
+                                        modeLabel = "OFFLINE / MOCK PILOT WORKFLOW — SYNTHETIC FIXTURES ONLY (NO NETWORK)",
+                                        approvedAuthOrigin = app.container.offlineMockAuthorizationGate.currentContext
+                                            ?.endpointConfig?.approvedAuthOrigin ?: "DISABLED",
+                                        pinnedApiOrigin = app.container.offlineMockAuthorizationGate.currentContext
+                                            ?.endpointConfig?.pinnedApiOrigin,
+                                        pinnedWssOrigin = app.container.offlineMockAuthorizationGate.currentContext
+                                            ?.endpointConfig?.pinnedWssOrigin,
+                                        quarantinedSummary = (pilotMode as? PilotModeState.AwaitingOriginConfirmation)?.observedOrigins,
+                                        remainingObservationMs = remainingMs,
+                                        connectionState = connectionState,
+                                        inventoryState = inventoryState,
+                                        selectedDevice = selectedDevice,
+                                        lastAbortReason = lastAbort,
+                                        lastDisconnectResult = lastDisconnect
+                                    ),
+                                    passwordBuffer = passwordBuffer,
+                                    onSubmitCredentials = { creds ->
+                                        coroutineScope.launch {
+                                            mockPilotController.submitCredentials(creds)
+                                        }
+                                    },
+                                    onCancelCredentialEntry = {
+                                        coroutineScope.launch {
+                                            mockPilotController.emergencyDisconnectAndWipe(PilotAbortReason.UserEmergencyDisconnect)
+                                        }
+                                    },
+                                    onRefreshInventory = {
+                                        coroutineScope.launch {
+                                            mockPilotController.refreshReadOnlyInventory()
+                                        }
+                                    },
+                                    onSelectDevice = { thingName ->
+                                        mockPilotController.selectAndObserveDevice(thingName)
+                                    },
+                                    onEmergencyDisconnect = {
+                                        coroutineScope.launch {
+                                            mockPilotController.emergencyDisconnectAndWipe(PilotAbortReason.UserEmergencyDisconnect)
+                                        }
+                                    },
+                                    onDismissSheet = { showPilotSheet = false },
+                                    onStartMockPilot = {
+                                        app.container.startOfflineMockPilot()
+                                    }
+                                )
+                        }
                     }
                 }
             }

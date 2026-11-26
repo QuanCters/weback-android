@@ -1,8 +1,12 @@
 package com.weback.robot.security
 
 import com.weback.robot.domain.model.AuthFailureReason
+import com.weback.robot.domain.pilot.GateCheckResult
+import com.weback.robot.domain.pilot.PilotAdmissionTicket
+import com.weback.robot.domain.pilot.PilotAuthorizationContext
 import com.weback.robot.domain.pilot.PilotAuthorizationGate
 import com.weback.robot.domain.pilot.PilotEndpointConfig
+import com.weback.robot.domain.pilot.PilotOperation
 import okhttp3.Call
 import okhttp3.Dns
 import okhttp3.EventListener
@@ -11,8 +15,8 @@ import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
+import java.net.URI
 import java.net.UnknownHostException
-import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 /**
@@ -366,32 +370,169 @@ class AuthorizedPilotEndpointTrustPolicy(
         if (host.contains(':')) return true
         return host.all { it.isDigit() || it == '.' }
     }
+
+    /**
+     * Verifies whether [rawUrl] is authorized for [operation] under [context] at the actual
+     * network execution boundary (`FIX-401`).
+     */
+    fun isUrlAuthorizedForOperation(
+        context: PilotAuthorizationContext,
+        operation: PilotOperation,
+        rawUrl: String
+    ): Boolean {
+        val uri = runCatching { URI(rawUrl.trim()) }.getOrNull() ?: return false
+        val scheme = uri.scheme?.lowercase() ?: return false
+        val host = uri.host?.lowercase()?.removePrefix("[")?.removeSuffix("]") ?: return false
+        if (host.isBlank() || !uri.userInfo.isNullOrEmpty() || !uri.rawQuery.isNullOrEmpty() || !uri.rawFragment.isNullOrEmpty()) {
+            return false
+        }
+        val port = normalizePort(scheme, uri.port) ?: return false
+        val isLoopback = allowLoopbackForHermeticTests && TestLoopbackTrustPolicy.isLoopbackHost(host)
+        if (!isLoopback) {
+            if (port != 443) return false
+            if (looksLikeIpLiteral(host)) {
+                val addr = runCatching { InetAddress.getByName(host) }.getOrNull() ?: return false
+                if (!IpAddressPolicy.isGloballyRoutableUnicast(addr)) return false
+            }
+        }
+        val path = uri.rawPath.orEmpty()
+        return when (operation) {
+            PilotOperation.LOGIN -> {
+                val allowedScheme = scheme == "https" || (isLoopback && scheme == "http")
+                if (!allowedScheme || path != context.endpointConfig.approvedAuthPath) return false
+                originMatches(scheme, host, port, context.endpointConfig.approvedAuthOrigin, isLoopback)
+            }
+            PilotOperation.USER_THING_LIST_GET -> {
+                val allowedScheme = scheme == "https" || (isLoopback && scheme == "http")
+                if (!allowedScheme) return false
+                if (context.endpointConfig.pinnedApiOrigin != null) {
+                    originMatches(scheme, host, port, context.endpointConfig.pinnedApiOrigin, isLoopback)
+                } else {
+                    val confirmed = synchronized(lock) { confirmedApiOrigin } ?: return false
+                    confirmed.host == host && confirmed.port == port && (isLoopback || confirmed.scheme == scheme)
+                }
+            }
+            PilotOperation.WS_TELEMETRY_OBSERVE -> {
+                // OkHttp normalizes wss:// Request URLs to https:// on HttpUrl; allow https ONLY when paired
+                // with a wss:// approved/confirmed origin (rejecting cleartext http:// or ws:// unless loopback).
+                val allowedScheme = scheme == "wss" || scheme == "https" ||
+                    (isLoopback && (scheme == "ws" || scheme == "http"))
+                if (!allowedScheme) return false
+                if (context.endpointConfig.pinnedWssOrigin != null) {
+                    originMatches(
+                        actualScheme = scheme,
+                        actualHost = host,
+                        actualPort = port,
+                        expectedOrigin = context.endpointConfig.pinnedWssOrigin,
+                        isLoopback = isLoopback,
+                        allowHttpsForWss = true
+                    )
+                } else {
+                    val confirmed = synchronized(lock) { confirmedWssOrigin } ?: return false
+                    confirmed.host == host && confirmed.port == port &&
+                        (isLoopback || confirmed.scheme == scheme || (confirmed.scheme == "wss" && scheme == "https"))
+                }
+            }
+        }
+    }
+
+    private fun originMatches(
+        actualScheme: String,
+        actualHost: String,
+        actualPort: Int,
+        expectedOrigin: String,
+        isLoopback: Boolean,
+        allowHttpsForWss: Boolean = false
+    ): Boolean {
+        val exp = runCatching { URI(expectedOrigin.trim()) }.getOrNull() ?: return false
+        val expScheme = exp.scheme?.lowercase() ?: return false
+        val expHost = exp.host?.lowercase()?.removePrefix("[")?.removeSuffix("]") ?: return false
+        val expPort = normalizePort(expScheme, exp.port) ?: return false
+        if (actualHost != expHost || actualPort != expPort) return false
+        if (isLoopback) return true
+        return actualScheme == expScheme || (allowHttpsForWss && expScheme == "wss" && actualScheme == "https")
+    }
+
+    private fun normalizePort(scheme: String, port: Int): Int? = when {
+        port in 1..65535 -> port
+        scheme == "https" || scheme == "wss" -> 443
+        scheme == "http" || scheme == "ws" -> 80
+        else -> null
+    }
 }
 
+/**
+ * Generation-ordered in-flight pilot call registry (`FIX-401`).
+ * Ensures calls for a revoked generation are cancelled and any call attempting registration
+ * after revocation cannot escape cancellation.
+ */
 class PilotActiveCallRegistry {
-    private val activeCalls: MutableSet<Call> = Collections.synchronizedSet(mutableSetOf())
+    private val lock = Any()
+    private var revokedUpToGeneration: Long = 0L
+    private val activeCalls: MutableMap<Call, Long> = mutableMapOf()
+
+    fun registerForGeneration(call: Call, expectedGeneration: Long): Boolean {
+        val shouldCancelImmediately = synchronized(lock) {
+            if (expectedGeneration <= revokedUpToGeneration) {
+                true
+            } else {
+                activeCalls[call] = expectedGeneration
+                false
+            }
+        }
+        if (shouldCancelImmediately) {
+            runCatching { call.cancel() }
+            return false
+        }
+        return true
+    }
 
     fun register(call: Call) {
-        activeCalls.add(call)
+        synchronized(lock) {
+            activeCalls.putIfAbsent(call, revokedUpToGeneration + 1L)
+        }
     }
 
     fun unregister(call: Call) {
-        activeCalls.remove(call)
+        synchronized(lock) {
+            activeCalls.remove(call)
+        }
+    }
+
+    fun revokeAndCancelAll(generationToRevoke: Long) {
+        val snapshot = synchronized(lock) {
+            if (generationToRevoke > revokedUpToGeneration) {
+                revokedUpToGeneration = generationToRevoke
+            }
+            val matching = activeCalls.entries
+                .filter { it.value <= revokedUpToGeneration }
+                .map { it.key }
+            matching.forEach { activeCalls.remove(it) }
+            matching
+        }
+        snapshot.forEach { call -> runCatching { call.cancel() } }
     }
 
     fun cancelAll() {
-        val snapshot = synchronized(activeCalls) { activeCalls.toList() }
+        val snapshot = synchronized(lock) {
+            val highestActive = activeCalls.values.maxOrNull() ?: 0L
+            revokedUpToGeneration = maxOf(revokedUpToGeneration + 1L, highestActive)
+            val list = activeCalls.keys.toList()
+            activeCalls.clear()
+            list
+        }
         snapshot.forEach { call -> runCatching { call.cancel() } }
     }
 }
 
 /**
- * Builds hardened pilot [OkHttpClient] instances (`SEC-403`, `SEC-404`):
+ * Builds hardened pilot [OkHttpClient] instances (`SEC-403`, `SEC-404`, `FIX-401`):
  * - Standard platform TLS & hostname checks (zero custom SSL overrides)
  * - `followRedirects = false`, `followSslRedirects = false`, `retryOnConnectionFailure = false`
  * - `Proxy.NO_PROXY`
  * - `callTimeout <= 15_000ms`
  * - Resolved DNS AND connected socket destination IP validation
+ * - Optional OkHttp-layer network admission & generation-ordered registration boundary
  */
 object PilotClientFactory {
 
@@ -399,7 +540,8 @@ object PilotClientFactory {
         trustPolicy: AuthorizedPilotEndpointTrustPolicy,
         baseDns: Dns = Dns.SYSTEM,
         callTimeoutMs: Long = 15_000L,
-        activeCallRegistry: PilotActiveCallRegistry? = null
+        activeCallRegistry: PilotActiveCallRegistry? = null,
+        admissionGate: PilotAuthorizationGate? = null
     ): OkHttpClient {
         val boundedCallTimeout = callTimeoutMs.coerceIn(1L, 15_000L)
         val guardedDns = object : Dns {
@@ -415,7 +557,9 @@ object PilotClientFactory {
         val eventListenerFactory = EventListener.Factory {
             object : EventListener() {
                 override fun callStart(call: Call) {
-                    activeCallRegistry?.register(call)
+                    if (admissionGate == null) {
+                        activeCallRegistry?.register(call)
+                    }
                 }
 
                 override fun connectStart(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy) {
@@ -436,7 +580,7 @@ object PilotClientFactory {
             }
         }
 
-        return OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .followRedirects(false)
             .followSslRedirects(false)
             .retryOnConnectionFailure(false)
@@ -447,6 +591,38 @@ object PilotClientFactory {
             .connectTimeout(minOf(5_000L, boundedCallTimeout), TimeUnit.MILLISECONDS)
             .readTimeout(minOf(10_000L, boundedCallTimeout), TimeUnit.MILLISECONDS)
             .writeTimeout(minOf(10_000L, boundedCallTimeout), TimeUnit.MILLISECONDS)
-            .build()
+
+        if (admissionGate != null) {
+            builder.addInterceptor { chain ->
+                val req = chain.request()
+                val ticket = req.tag(PilotAdmissionTicket::class.java)
+                    ?: throw IOException("Pilot network admission denied: missing admission ticket")
+                val check = admissionGate.verifyTicket(
+                    ticket = ticket,
+                    nowElapsedMs = null,
+                    requestUrl = req.url.toString(),
+                    endpointValidator = { ctx, url ->
+                        trustPolicy.isUrlAuthorizedForOperation(ctx, ticket.operation, url)
+                    }
+                )
+                if (check is GateCheckResult.Denied) {
+                    throw IOException("Pilot network admission denied: ${check.safeMessage}")
+                }
+                val perCallTimeout = minOf(boundedCallTimeout, ticket.httpCallTimeoutMs).coerceIn(1L, 15_000L)
+                chain.call().timeout().timeout(perCallTimeout, TimeUnit.MILLISECONDS)
+                if (activeCallRegistry != null &&
+                    !activeCallRegistry.registerForGeneration(chain.call(), ticket.pilotGeneration)
+                ) {
+                    throw IOException("Pilot generation revoked prior to network dispatch")
+                }
+                try {
+                    chain.proceed(req)
+                } finally {
+                    activeCallRegistry?.unregister(chain.call())
+                }
+            }
+        }
+
+        return builder.build()
     }
 }

@@ -17,10 +17,12 @@ import com.weback.robot.domain.model.LogoutResult
 import com.weback.robot.domain.model.RobotCommand
 import com.weback.robot.domain.model.RobotState
 import com.weback.robot.domain.model.SessionState
+import com.weback.robot.domain.pilot.AdmissionResult
 import com.weback.robot.domain.pilot.ExpectedCandidateIdentity
 import com.weback.robot.domain.pilot.GateActivationResult
 import com.weback.robot.domain.pilot.GateCheckResult
 import com.weback.robot.domain.pilot.PilotAbortReason
+import com.weback.robot.domain.pilot.PilotAdmissionTicket
 import com.weback.robot.domain.pilot.PilotAuthorizationContext
 import com.weback.robot.domain.pilot.PilotAuthorizationGate
 import com.weback.robot.domain.pilot.PilotEmergencyDisconnectResult
@@ -29,6 +31,7 @@ import com.weback.robot.domain.pilot.PilotOperation
 import com.weback.robot.domain.pilot.ReadOnlyPilotGuard
 import com.weback.robot.domain.pilot.ReadOnlyTelemetrySnapshot
 import com.weback.robot.protocol.RobotTransport
+import com.weback.robot.protocol.pilot.PilotAdmissionContextElement
 import com.weback.robot.protocol.pilot.PilotCapabilityRestrictedAuthGateway
 import com.weback.robot.protocol.pilot.PilotReadOnlyTelemetryTransport
 import com.weback.robot.protocol.pilot.PilotReadOnlyWebSocketTransport
@@ -50,12 +53,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * Coordinates opt-in bounded pilot lifecycle (`SEC-401`..`SEC-406`):
+ * Coordinates opt-in bounded pilot lifecycle (`SEC-401`..`SEC-406`, `FIX-401`..`FIX-405`):
  * - Holds ONLY [PilotReadOnlyTelemetryTransport] (never exposes outbound WS command sending).
- * - Enforces one-shot login/inventory budgets, cumulative WS reconnect caps, and monotonic deadline.
- * - Executes 9-step non-blocking Emergency Disconnect & Wipe revoking network before disk I/O.
+ * - Acquires admission tickets before login, inventory, and WS connect/reconnects without double-counting.
+ * - Enforces exact account binding, non-reusable authorizations, and generation-fenced cleanup.
  */
 class PilotSessionController(
     private val gate: PilotAuthorizationGate,
@@ -63,8 +67,8 @@ class PilotSessionController(
     private val trustPolicy: AuthorizedPilotEndpointTrustPolicy,
     private val sessionCoordinator: SessionCoordinator,
     private val inventoryRepository: DeviceInventoryRepository,
-    private val pilotAuthGateway: PilotCapabilityRestrictedAuthGateway,
-    pilotWsDelegate: OkHttpWebSocketTransport,
+    private val pilotAuthGateway: PilotCapabilityRestrictedAuthGateway?,
+    private val pilotWsDelegate: OkHttpWebSocketTransport?,
     private val simulatorTransport: RobotTransport,
     private val authClock: AuthMonotonicClock,
     private val dispatchers: DispatcherProvider = DefaultDispatcherProvider(),
@@ -72,7 +76,10 @@ class PilotSessionController(
     private val activeCallRegistry: PilotActiveCallRegistry? = null,
     private val exporter: PilotSanitizedExporter = PilotSanitizedExporter(),
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatchers.default),
-    private val ownsScope: Boolean = false
+    private val ownsScope: Boolean = false,
+    private val telemetryTransportOverride: PilotReadOnlyTelemetryTransport? = null,
+    private val modeLabel: String = "OFFLINE_SIMULATOR_AND_HERMETIC_PILOT_ONLY",
+    private val enableUiCountdownTicker: Boolean = false
 ) : AutoCloseable {
     private val stateLock = Any()
 
@@ -81,11 +88,14 @@ class PilotSessionController(
     private var inventoryRequestsUsed: Int = 0
     private var initialWsConnectionsUsed: Int = 0
     private var deadlineJob: Job? = null
+    private var countdownJob: Job? = null
+    private var pendingInitialWsTicket: PilotAdmissionTicket? = null
     private var observedApiOrigin: String? = null
     private var observedWssOrigin: String? = null
     private var lastAuthorizationId: String? = null
     private var lastSensitiveThingName: String? = null
     private var lastSensitiveAlias: String? = null
+    private var lastSensitiveAccountIdentifier: String? = null
 
     private val _pilotModeState = MutableStateFlow<PilotModeState>(PilotModeState.OfflineDefault)
     val pilotModeState: StateFlow<PilotModeState> = _pilotModeState.asStateFlow()
@@ -99,19 +109,24 @@ class PilotSessionController(
     private val _remainingObservationMs = MutableStateFlow(0L)
     val remainingObservationMs: StateFlow<Long> = _remainingObservationMs.asStateFlow()
 
-    val pilotTelemetryTransport: PilotReadOnlyTelemetryTransport = PilotReadOnlyWebSocketTransport(
-        delegate = pilotWsDelegate,
-        onUnexpectedOutboundAttempt = { detail ->
-            logger.log(DiagnosticEvent(category = "PILOT_OUTBOUND_BLOCKED", errorCategory = detail))
-            revokeSynchronouslyAndLaunchCleanup(PilotAbortReason.UnexpectedOutboundCommandAttempt)
-        }
-    )
+    val pilotTelemetryTransport: PilotReadOnlyTelemetryTransport =
+        telemetryTransportOverride ?: PilotReadOnlyWebSocketTransport(
+            delegate = requireNotNull(pilotWsDelegate) {
+                "pilotWsDelegate is required unless telemetryTransportOverride is provided"
+            },
+            onUnexpectedOutboundAttempt = { detail ->
+                val gen = gate.currentGeneration()
+                logger.log(DiagnosticEvent(category = "PILOT_OUTBOUND_BLOCKED", errorCategory = detail))
+                revokeSynchronouslyAndLaunchCleanup(PilotAbortReason.UnexpectedOutboundCommandAttempt, gen)
+            }
+        )
 
     val readOnlyPilotGuard: ReadOnlyPilotGuard = ReadOnlyPilotGuard(
         isPilotReadOnlyActive = { gate.isAuthorized },
         onUnexpectedCommandAttempt = { cmd, reason ->
+            val gen = gate.currentGeneration()
             logger.log(DiagnosticEvent(category = "PILOT_COMMAND_ABORT", opt = cmd.name, errorCategory = reason.safeCode))
-            revokeSynchronouslyAndLaunchCleanup(reason)
+            revokeSynchronouslyAndLaunchCleanup(reason, gen)
         }
     )
 
@@ -123,6 +138,50 @@ class PilotSessionController(
     val simulatorRobotState: StateFlow<RobotState> = simulatorTransport.robotState
 
     init {
+        pilotWsDelegate?.attachPilotAdmissionPolicy(
+            maxReconnectsProvider = { gate.currentContext?.budgets?.maxWsReconnectAttempts }
+        ) { url, isReconnect ->
+            val endpointMatcher: (PilotAuthorizationContext, String) -> Boolean = { ctx, targetUrl ->
+                trustPolicy.isUrlAuthorizedForOperation(ctx, PilotOperation.WS_TELEMETRY_OBSERVE, targetUrl)
+            }
+            if (!isReconnect) {
+                val preAdmitted = synchronized(stateLock) {
+                    pendingInitialWsTicket.also { pendingInitialWsTicket = null }
+                }
+                if (preAdmitted != null) {
+                    when (gate.verifyTicket(preAdmitted, authClock.elapsedRealtimeMs(), url, endpointMatcher)) {
+                        is GateCheckResult.Allowed -> preAdmitted
+                        is GateCheckResult.Denied -> null
+                    }
+                } else {
+                    when (
+                        val admitted = gate.acquireAdmission(
+                            operation = PilotOperation.WS_TELEMETRY_OBSERVE,
+                            nowElapsedMs = authClock.elapsedRealtimeMs(),
+                            requestUrl = url,
+                            isReconnect = false,
+                            endpointValidator = endpointMatcher
+                        )
+                    ) {
+                        is AdmissionResult.Admitted -> admitted.ticket
+                        is AdmissionResult.Denied -> null
+                    }
+                }
+            } else {
+                when (
+                    val admitted = gate.acquireAdmission(
+                        operation = PilotOperation.WS_TELEMETRY_OBSERVE,
+                        nowElapsedMs = authClock.elapsedRealtimeMs(),
+                        requestUrl = url,
+                        isReconnect = true,
+                        endpointValidator = endpointMatcher
+                    )
+                ) {
+                    is AdmissionResult.Admitted -> admitted.ticket
+                    is AdmissionResult.Denied -> null
+                }
+            }
+        }
         scope.launch(dispatchers.default) {
             pilotTelemetryTransport.robotState.collect { robotState ->
                 synchronized(stateLock) {
@@ -167,8 +226,11 @@ class PilotSessionController(
         trustPolicy.updateEndpointConfig(context.endpointConfig)
 
         val remaining = (context.observationDeadlineElapsedMs - nowMs).coerceAtLeast(0L)
+        val generation = gate.currentGeneration()
         val epoch = synchronized(stateLock) {
             deadlineJob?.cancel()
+            countdownJob?.cancel()
+            pendingInitialWsTicket = null
             pilotEpoch++
             loginAttemptsUsed = 0
             inventoryRequestsUsed = 0
@@ -178,6 +240,7 @@ class PilotSessionController(
             lastAuthorizationId = context.authorizationId
             lastSensitiveThingName = context.targetDevice.expectedTargetThingName
             lastSensitiveAlias = context.accountScope.authorizedAccountAlias
+            lastSensitiveAccountIdentifier = context.accountScope.authorizedAccountIdentifier
             _lastAbortReason.value = null
             _lastDisconnectResult.value = null
             _remainingObservationMs.value = remaining
@@ -185,81 +248,118 @@ class PilotSessionController(
             pilotEpoch
         }
 
-        scheduleObservationDeadline(epoch, remaining)
+        scheduleObservationDeadline(epoch, generation, remaining)
+        if (enableUiCountdownTicker) {
+            scheduleCountdownTicker(epoch, generation, context.observationDeadlineElapsedMs)
+        }
         return result
     }
 
     suspend fun submitCredentials(credentials: AuthCredentials): AuthResult {
         val capturedEpoch: Long
-        val ctx: PilotAuthorizationContext
-        val abortNow: PilotAbortReason?
-        val abortMessage: String
+        val capturedGeneration: Long
+        val ctx: PilotAuthorizationContext?
+        var abortNow: PilotAbortReason? = null
+        var abortMessage = ""
+        var loginTicket: PilotAdmissionTicket? = null
+
         synchronized(stateLock) {
+            capturedEpoch = pilotEpoch
+            capturedGeneration = gate.currentGeneration()
             val check = gate.authorizeOperation(PilotOperation.LOGIN, authClock.elapsedRealtimeMs())
             when {
                 check is GateCheckResult.Denied -> {
                     abortNow = check.reason
                     abortMessage = check.safeMessage
-                    ctx = gate.currentContext ?: return AuthResult.Failure(
-                        AuthFailureReason.ConfigurationError,
-                        check.safeMessage
-                    ).also {
-                        credentials.wipeSecret()
-                        abortStateLocked(check.reason, check.safeMessage)
-                    }
-                    capturedEpoch = pilotEpoch
-                }
-                credentials.regionCallingCode.trim() != (check as GateCheckResult.Allowed).context.accountScope.regionCallingCode.trim() -> {
-                    ctx = check.context
-                    abortNow = PilotAbortReason.AuthorizationExpiredOrInvalid
-                    abortMessage = "Region calling code mismatches authorized account scope"
-                    capturedEpoch = pilotEpoch
-                }
-                loginAttemptsUsed >= check.context.budgets.maxLoginAttempts -> {
-                    ctx = check.context
-                    abortNow = PilotAbortReason.BudgetExhausted
-                    abortMessage = "Login budget exhausted (max ${check.context.budgets.maxLoginAttempts})"
-                    capturedEpoch = pilotEpoch
+                    ctx = gate.currentContext
                 }
                 else -> {
-                    ctx = check.context
-                    loginAttemptsUsed++
-                    capturedEpoch = pilotEpoch
-                    abortNow = null
-                    abortMessage = ""
+                    val allowedCtx = (check as GateCheckResult.Allowed).context
+                    ctx = allowedCtx
+                    val (accountValid, accountError) = gate.verifyAccountCredentials(
+                        credentials.regionCallingCode,
+                        credentials.account
+                    )
+                    when {
+                        !accountValid -> {
+                            abortNow = PilotAbortReason.AuthorizationExpiredOrInvalid
+                            abortMessage = accountError
+                        }
+                        loginAttemptsUsed >= allowedCtx.budgets.maxLoginAttempts -> {
+                            abortNow = PilotAbortReason.BudgetExhausted
+                            abortMessage = "Login budget exhausted (max ${allowedCtx.budgets.maxLoginAttempts})"
+                        }
+                        else -> {
+                            when (
+                                val admitted = gate.acquireAdmission(
+                                    operation = PilotOperation.LOGIN,
+                                    nowElapsedMs = authClock.elapsedRealtimeMs(),
+                                    expectedGeneration = capturedGeneration
+                                )
+                            ) {
+                                is AdmissionResult.Denied -> {
+                                    abortNow = admitted.reason
+                                    abortMessage = admitted.safeMessage
+                                }
+                                is AdmissionResult.Admitted -> {
+                                    loginAttemptsUsed++
+                                    loginTicket = admitted.ticket
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
 
         if (abortNow != null) {
             credentials.wipeSecret()
-            emergencyDisconnectAndWipe(abortNow)
+            if (ctx == null) {
+                synchronized(stateLock) {
+                    if (capturedGeneration == gate.currentGeneration()) {
+                        abortStateLocked(abortNow!!, abortMessage)
+                    }
+                }
+            } else {
+                emergencyDisconnectAndWipe(abortNow!!, expectedGeneration = capturedGeneration)
+            }
             return AuthResult.Failure(AuthFailureReason.ConfigurationError, abortMessage)
         }
 
+        val activeCtx = requireNotNull(ctx)
+        val ticket = requireNotNull(loginTicket)
         val authResult = try {
-            sessionCoordinator.signIn(credentials)
+            withContext(PilotAdmissionContextElement(ticket)) {
+                sessionCoordinator.signIn(credentials)
+            }
         } finally {
             credentials.wipeSecret()
         }
 
-        // Discard late callback if Emergency Disconnect or epoch change occurred while in-flight
-        val stillCurrent = synchronized(stateLock) { capturedEpoch == pilotEpoch && gate.isAuthorized }
+        // Generation-fenced late callback check (`FIX-405`): NEVER sign out a newer pilot run
+        val stillCurrent = synchronized(stateLock) {
+            capturedEpoch == pilotEpoch &&
+                capturedGeneration == gate.currentGeneration() &&
+                gate.isAuthorized
+        }
         if (!stillCurrent) {
-            if (sessionCoordinator.sessionState.value is SessionState.Authenticated) {
-                sessionCoordinator.signOut()
+            if (authResult is AuthResult.Success) {
+                val activeCoord = sessionCoordinator.sessionState.value as? SessionState.Authenticated
+                if (activeCoord != null && activeCoord.session == authResult.session) {
+                    sessionCoordinator.signOutIfEpoch(activeCoord.epoch)
+                }
             }
             return AuthResult.Failure(AuthFailureReason.TokenExpiredOrRevoked, "Pilot revoked during login")
         }
 
-        val quarantined = pilotAuthGateway.consumeLastQuarantinedObservation()
+        val quarantined = pilotAuthGateway?.consumeLastQuarantinedObservation()
         if (quarantined != null) {
             synchronized(stateLock) {
-                if (capturedEpoch == pilotEpoch) {
+                if (capturedEpoch == pilotEpoch && capturedGeneration == gate.currentGeneration()) {
                     observedApiOrigin = quarantined.apiOrigin
                     observedWssOrigin = quarantined.wssOrigin
                     _pilotModeState.value = PilotModeState.AwaitingOriginConfirmation(
-                        authorizationId = ctx.authorizationId,
+                        authorizationId = activeCtx.authorizationId,
                         observedOrigins = quarantined
                     )
                 }
@@ -267,7 +367,7 @@ class PilotSessionController(
             return AuthResult.Failure(AuthFailureReason.UntrustedEndpoint, quarantined.quarantineReason)
         }
 
-        val isTlsFailure = pilotAuthGateway.consumeLastTlsFailureFlag()
+        val isTlsFailure = pilotAuthGateway?.consumeLastTlsFailureFlag() ?: false
         if (authResult is AuthResult.Failure) {
             val abortReason = when {
                 isTlsFailure -> PilotAbortReason.TlsHandshakeFailure
@@ -276,18 +376,18 @@ class PilotSessionController(
                 authResult.reason is AuthFailureReason.ServerRejected -> PilotAbortReason.ProtocolMismatchAbort
                 else -> PilotAbortReason.AuthRejected
             }
-            emergencyDisconnectAndWipe(abortReason)
+            emergencyDisconnectAndWipe(abortReason, expectedGeneration = capturedGeneration)
             return authResult
         }
 
         val session = (authResult as AuthResult.Success).session
         synchronized(stateLock) {
-            if (capturedEpoch == pilotEpoch) {
+            if (capturedEpoch == pilotEpoch && capturedGeneration == gate.currentGeneration()) {
                 observedApiOrigin = session.apiUrl
                 observedWssOrigin = session.wssUrl
-                val remaining = (ctx.observationDeadlineElapsedMs - authClock.elapsedRealtimeMs()).coerceAtLeast(0L)
+                val remaining = (activeCtx.observationDeadlineElapsedMs - authClock.elapsedRealtimeMs()).coerceAtLeast(0L)
                 _remainingObservationMs.value = remaining
-                _pilotModeState.value = PilotModeState.Observing(ctx.authorizationId, remaining, null)
+                _pilotModeState.value = PilotModeState.Observing(activeCtx.authorizationId, remaining, null)
             }
         }
         return authResult
@@ -314,31 +414,47 @@ class PilotSessionController(
 
     suspend fun refreshReadOnlyInventory(): Boolean {
         val capturedEpoch: Long
+        val capturedGeneration: Long
         var abortNow: PilotAbortReason? = null
+        var inventoryTicket: PilotAdmissionTicket? = null
         synchronized(stateLock) {
+            capturedEpoch = pilotEpoch
+            capturedGeneration = gate.currentGeneration()
             val check = gate.authorizeOperation(PilotOperation.USER_THING_LIST_GET, authClock.elapsedRealtimeMs())
             when {
-                check is GateCheckResult.Denied -> {
-                    abortNow = check.reason
-                    capturedEpoch = pilotEpoch
-                }
-                inventoryRequestsUsed >= (check as GateCheckResult.Allowed).context.budgets.maxInventoryRequests -> {
+                check is GateCheckResult.Denied -> abortNow = check.reason
+                inventoryRequestsUsed >= (check as GateCheckResult.Allowed).context.budgets.maxInventoryRequests ->
                     abortNow = PilotAbortReason.BudgetExhausted
-                    capturedEpoch = pilotEpoch
-                }
                 else -> {
-                    inventoryRequestsUsed++
-                    capturedEpoch = pilotEpoch
+                    when (
+                        val admitted = gate.acquireAdmission(
+                            operation = PilotOperation.USER_THING_LIST_GET,
+                            nowElapsedMs = authClock.elapsedRealtimeMs(),
+                            expectedGeneration = capturedGeneration
+                        )
+                    ) {
+                        is AdmissionResult.Denied -> abortNow = admitted.reason
+                        is AdmissionResult.Admitted -> {
+                            inventoryRequestsUsed++
+                            inventoryTicket = admitted.ticket
+                        }
+                    }
                 }
             }
         }
         if (abortNow != null) {
-            emergencyDisconnectAndWipe(abortNow!!)
+            emergencyDisconnectAndWipe(abortNow!!, expectedGeneration = capturedGeneration)
             return false
         }
 
-        val state = inventoryRepository.refreshInventory()
-        val stillCurrent = synchronized(stateLock) { capturedEpoch == pilotEpoch && gate.isAuthorized }
+        val state = withContext(PilotAdmissionContextElement(requireNotNull(inventoryTicket))) {
+            inventoryRepository.refreshInventory()
+        }
+        val stillCurrent = synchronized(stateLock) {
+            capturedEpoch == pilotEpoch &&
+                capturedGeneration == gate.currentGeneration() &&
+                gate.isAuthorized
+        }
         if (!stillCurrent) {
             return false
         }
@@ -346,9 +462,10 @@ class PilotSessionController(
     }
 
     fun selectAndObserveDevice(thingName: String): Boolean {
+        val capturedGeneration = gate.currentGeneration()
         val check = gate.authorizeOperation(PilotOperation.WS_TELEMETRY_OBSERVE, authClock.elapsedRealtimeMs())
         if (check is GateCheckResult.Denied) {
-            revokeSynchronouslyAndLaunchCleanup(check.reason)
+            revokeSynchronouslyAndLaunchCleanup(check.reason, capturedGeneration)
             return false
         }
         val ctx = (check as GateCheckResult.Allowed).context
@@ -364,37 +481,61 @@ class PilotSessionController(
         }
 
         val capturedEpoch: Long
-        var budgetExceeded = false
+        var abortBudget: PilotAbortReason? = null
         synchronized(stateLock) {
+            capturedEpoch = pilotEpoch
             if (initialWsConnectionsUsed >= ctx.budgets.maxInitialWsConnections) {
-                budgetExceeded = true
-                capturedEpoch = pilotEpoch
+                abortBudget = PilotAbortReason.BudgetExhausted
             } else {
-                initialWsConnectionsUsed++
-                capturedEpoch = pilotEpoch
+                when (
+                    val admitted = gate.acquireAdmission(
+                        operation = PilotOperation.WS_TELEMETRY_OBSERVE,
+                        nowElapsedMs = authClock.elapsedRealtimeMs(),
+                        requestUrl = sessionAuth.session.wssUrl,
+                        isReconnect = false,
+                        expectedGeneration = capturedGeneration,
+                        endpointValidator = { authCtx, targetUrl ->
+                            trustPolicy.isUrlAuthorizedForOperation(
+                                authCtx,
+                                PilotOperation.WS_TELEMETRY_OBSERVE,
+                                targetUrl
+                            )
+                        }
+                    )
+                ) {
+                    is AdmissionResult.Denied -> abortBudget = admitted.reason
+                    is AdmissionResult.Admitted -> {
+                        initialWsConnectionsUsed++
+                        pendingInitialWsTicket = admitted.ticket
+                    }
+                }
             }
         }
-        if (budgetExceeded) {
-            revokeSynchronouslyAndLaunchCleanup(PilotAbortReason.BudgetExhausted)
+        if (abortBudget != null) {
+            revokeSynchronouslyAndLaunchCleanup(abortBudget!!, capturedGeneration)
             return false
         }
 
         val selected = inventoryRepository.selectDevice(thingName, sessionAuth.epoch) ?: return false
 
-        // Re-check authorization & epoch immediately prior to connecting (`CRIT-02` race prevention)
         val authorizedToConnect = synchronized(stateLock) {
-            capturedEpoch == pilotEpoch && gate.isAuthorized
+            capturedEpoch == pilotEpoch &&
+                capturedGeneration == gate.currentGeneration() &&
+                gate.isAuthorized
         }
         if (!authorizedToConnect) {
+            synchronized(stateLock) { pendingInitialWsTicket = null }
             return false
         }
 
         pilotTelemetryTransport.selectDevice(selected, sessionAuth.epoch)
         pilotTelemetryTransport.connect(sessionAuth.session, sessionAuth.epoch)
 
-        // Post-connect race check: if emergencyDisconnectAndWipe occurred concurrently, tear down immediately
         val stillAuthorized = synchronized(stateLock) {
-            if (capturedEpoch == pilotEpoch && gate.isAuthorized) {
+            if (capturedEpoch == pilotEpoch &&
+                capturedGeneration == gate.currentGeneration() &&
+                gate.isAuthorized
+            ) {
                 val rState = pilotTelemetryTransport.robotState.value
                 val remaining = (ctx.observationDeadlineElapsedMs - authClock.elapsedRealtimeMs()).coerceAtLeast(0L)
                 val displayNickname = if (selected.nickname == selected.thingName) ctx.targetDevice.redactedTag else selected.nickname
@@ -429,38 +570,94 @@ class PilotSessionController(
     }
 
     /**
-     * 9-step non-blocking Emergency Disconnect & Wipe (`SEC-404`, `AC-408.1`):
-     * Steps 1-6 revoke network/auth/calls/jobs/WS/session/inventory immediately without awaiting disk I/O.
-     * Steps 7-9 execute durable cleanup, restore offline simulator, and report incomplete storage honestly.
+     * Generation-fenced Emergency Disconnect & Wipe (`SEC-404`, `AC-408.1`, `FIX-405`):
+     * When [expectedGeneration] is provided, ignores calls targeting stale generations so old
+     * callbacks never tear down a newer pilot run.
      */
     suspend fun emergencyDisconnectAndWipe(
-        reason: PilotAbortReason = PilotAbortReason.UserEmergencyDisconnect
+        reason: PilotAbortReason = PilotAbortReason.UserEmergencyDisconnect,
+        expectedGeneration: Long? = null
     ): PilotEmergencyDisconnectResult {
-        // Steps 1, 3, 8 (in-memory immediate revocation + job cancel + offline simulator restoration)
-        synchronized(stateLock) {
-            gate.revoke(reason)
+        val cleanupAction = synchronized(stateLock) {
+            val currentGen = gate.currentGeneration()
+            if (expectedGeneration != null && expectedGeneration != currentGen) {
+                return@synchronized null
+            }
+            if (!gate.isAuthorized && !gate.hasInFlightOrIncompleteCleanup()) {
+                _lastDisconnectResult.value?.let { previous ->
+                    return@synchronized CleanupAction.AlreadyClean(previous)
+                }
+            }
+            val cleanupToken = gate.beginCleanup(reason)
+            val sessionEpochAtRevoke = sessionCoordinator.currentEpoch()
             pilotEpoch++
             deadlineJob?.cancel()
             deadlineJob = null
+            countdownJob?.cancel()
+            countdownJob = null
+            pendingInitialWsTicket = null
             _lastAbortReason.value = reason
             _remainingObservationMs.value = 0L
             _pilotModeState.value = PilotModeState.OfflineDefault
+            CleanupAction.Run(
+                cleanupToken = cleanupToken,
+                revokedGeneration = currentGen,
+                sessionEpoch = sessionEpochAtRevoke
+            )
+        } ?: return _lastDisconnectResult.value ?: PilotEmergencyDisconnectResult(
+            networkRevokedImmediately = true,
+            storageCleared = true,
+            incompleteStorageReason = null,
+            restoredOfflineSimulator = true,
+            serverSideTokenRevocationClaimed = false
+        )
+
+        if (cleanupAction is CleanupAction.AlreadyClean) {
+            return cleanupAction.result
         }
+        val run = cleanupAction as CleanupAction.Run
+        return finishCleanupRun(reason, run.cleanupToken, run.revokedGeneration, run.sessionEpoch)
+    }
 
-        // Step 2: Cancel all active HTTP calls immediately
-        activeCallRegistry?.cancelAll()
+    /**
+     * Called when an underlying WebSocket transport invalidates a session asynchronously (`FIX-405`).
+     * Only cleans up if `sessionCoordinator.currentEpoch()` still matches [invalidatedSessionEpoch].
+     */
+    suspend fun emergencyDisconnectForSessionEpoch(
+        reason: PilotAbortReason,
+        invalidatedSessionEpoch: Long
+    ) {
+        val matchingGen = synchronized(stateLock) {
+            if (sessionCoordinator.currentEpoch() != invalidatedSessionEpoch) return
+            gate.currentGeneration()
+        }
+        emergencyDisconnectAndWipe(reason, expectedGeneration = matchingGen)
+    }
+
+    private suspend fun finishCleanupRun(
+        reason: PilotAbortReason,
+        cleanupToken: Long,
+        revokedGeneration: Long,
+        sessionEpoch: Long
+    ): PilotEmergencyDisconnectResult {
+        activeCallRegistry?.revokeAndCancelAll(revokedGeneration)
         trustPolicy.clearConfirmedDynamicOrigins()
-
-        // Step 4: Unconditionally close/cancel active or pending WebSocket regardless of epoch drift (`CRIT-02`)
         pilotTelemetryTransport.forceDisconnect(ConnectivityError.Unauthenticated)
 
-        // Steps 5, 6, 7: Invalidate SessionCoordinator (synchronously clears memory/inventory via epoch listener,
-        // then attempts NonCancellable TokenStore.clear() without ever blocking steps 1-4)
-        val logoutResult = sessionCoordinator.signOut()
-        val (cleared, incompleteReason) = when (logoutResult) {
-            LogoutResult.DurableSuccess -> true to null
-            is LogoutResult.IncompleteStorageClear -> false to logoutResult.safeCategory
+        val logoutResult = sessionCoordinator.signOutIfEpoch(sessionEpoch)
+        val clearedOrNull: Boolean? = when (logoutResult) {
+            null -> null
+            LogoutResult.DurableSuccess -> true
+            is LogoutResult.IncompleteStorageClear -> false
         }
+        gate.completeCleanup(cleanupToken, clearedOrNull)
+        val cleared = when (logoutResult) {
+            LogoutResult.DurableSuccess -> true
+            is LogoutResult.IncompleteStorageClear -> false
+            null -> !gate.hasIncompleteCleanup()
+        }
+        val incompleteReason = (logoutResult as? LogoutResult.IncompleteStorageClear)?.safeCategory
+            ?: if (!cleared) "INCOMPLETE_PRIOR_STORAGE_CLEAR" else null
 
         val result = PilotEmergencyDisconnectResult(
             networkRevokedImmediately = true,
@@ -484,10 +681,13 @@ class PilotSessionController(
         val ctx = gate.currentContext
         val authId = ctx?.authorizationId ?: lastAuthorizationId ?: "DISABLED"
         val thingNames = setOfNotNull(ctx?.targetDevice?.expectedTargetThingName ?: lastSensitiveThingName)
-        val aliases = setOfNotNull(ctx?.accountScope?.authorizedAccountAlias ?: lastSensitiveAlias)
+        val aliases = setOfNotNull(
+            ctx?.accountScope?.authorizedAccountAlias ?: lastSensitiveAlias,
+            ctx?.accountScope?.authorizedAccountIdentifier ?: lastSensitiveAccountIdentifier
+        )
         return exporter.exportReport(
             authorizationId = authId,
-            modeLabel = "OFFLINE_SIMULATOR_AND_HERMETIC_PILOT_ONLY",
+            modeLabel = modeLabel,
             rawEvents = rawEvents,
             observedApiOrigin = observedApiOrigin,
             observedWssOrigin = observedWssOrigin,
@@ -499,49 +699,104 @@ class PilotSessionController(
     }
 
     override fun close() {
-        synchronized(stateLock) {
+        val gen = synchronized(stateLock) {
+            val g = gate.currentGeneration()
             gate.revoke(PilotAbortReason.UserEmergencyDisconnect)
             pilotEpoch++
             deadlineJob?.cancel()
             deadlineJob = null
+            countdownJob?.cancel()
+            countdownJob = null
+            pendingInitialWsTicket = null
+            g
         }
-        activeCallRegistry?.cancelAll()
+        activeCallRegistry?.revokeAndCancelAll(gen)
         pilotTelemetryTransport.close()
         if (ownsScope) {
             scope.cancel()
         }
     }
 
-    private fun revokeSynchronouslyAndLaunchCleanup(reason: PilotAbortReason) {
-        synchronized(stateLock) {
-            gate.revoke(reason)
+    private fun revokeSynchronouslyAndLaunchCleanup(reason: PilotAbortReason, expectedGeneration: Long) {
+        val run = synchronized(stateLock) {
+            val currentGen = gate.currentGeneration()
+            if (currentGen != expectedGeneration) return
+            val cleanupToken = gate.beginCleanup(reason)
+            val sessionEpoch = sessionCoordinator.currentEpoch()
             pilotEpoch++
             deadlineJob?.cancel()
             deadlineJob = null
+            countdownJob?.cancel()
+            countdownJob = null
+            pendingInitialWsTicket = null
             _lastAbortReason.value = reason
             _remainingObservationMs.value = 0L
             _pilotModeState.value = PilotModeState.OfflineDefault
+            CleanupAction.Run(cleanupToken, currentGen, sessionEpoch)
         }
-        activeCallRegistry?.cancelAll()
+        activeCallRegistry?.revokeAndCancelAll(run.revokedGeneration)
         trustPolicy.clearConfirmedDynamicOrigins()
         pilotTelemetryTransport.forceDisconnect(ConnectivityError.Unauthenticated)
         scope.launch(dispatchers.default) {
-            emergencyDisconnectAndWipe(reason)
+            finishCleanupRun(reason, run.cleanupToken, run.revokedGeneration, run.sessionEpoch)
         }
     }
 
-    private fun scheduleObservationDeadline(expectedEpoch: Long, delayMs: Long) {
+    private fun scheduleObservationDeadline(expectedEpoch: Long, expectedGeneration: Long, delayMs: Long) {
         val job = scope.launch(dispatchers.default) {
             delay(delayMs.coerceAtLeast(1L))
-            val shouldExpire = synchronized(stateLock) { expectedEpoch == pilotEpoch && gate.isAuthorized }
+            val shouldExpire = synchronized(stateLock) {
+                expectedEpoch == pilotEpoch &&
+                    expectedGeneration == gate.currentGeneration() &&
+                    gate.isAuthorized
+            }
             if (shouldExpire) {
-                emergencyDisconnectAndWipe(PilotAbortReason.ObservationWindowExpired)
+                emergencyDisconnectAndWipe(
+                    PilotAbortReason.ObservationWindowExpired,
+                    expectedGeneration = expectedGeneration
+                )
             }
         }
         synchronized(stateLock) {
-            if (expectedEpoch == pilotEpoch && gate.isAuthorized) {
+            if (expectedEpoch == pilotEpoch && expectedGeneration == gate.currentGeneration() && gate.isAuthorized) {
                 deadlineJob?.cancel()
                 deadlineJob = job
+            } else {
+                job.cancel()
+            }
+        }
+    }
+
+    private fun scheduleCountdownTicker(
+        expectedEpoch: Long,
+        expectedGeneration: Long,
+        deadlineElapsedMs: Long
+    ) {
+        val job = scope.launch(dispatchers.default) {
+            while (true) {
+                delay(1_000L)
+                val keepGoing = synchronized(stateLock) {
+                    if (expectedEpoch != pilotEpoch || expectedGeneration != gate.currentGeneration() || !gate.isAuthorized) {
+                        false
+                    } else {
+                        val rem = (deadlineElapsedMs - authClock.elapsedRealtimeMs()).coerceAtLeast(0L)
+                        _remainingObservationMs.value = rem
+                        val cur = _pilotModeState.value
+                        if (cur is PilotModeState.Observing) {
+                            _pilotModeState.value = cur.copy(remainingWindowMs = rem)
+                        } else if (cur is PilotModeState.AuthorizedReady) {
+                            _pilotModeState.value = cur.copy(remainingWindowMs = rem)
+                        }
+                        rem > 0L
+                    }
+                }
+                if (!keepGoing) break
+            }
+        }
+        synchronized(stateLock) {
+            if (expectedEpoch == pilotEpoch && expectedGeneration == gate.currentGeneration() && gate.isAuthorized) {
+                countdownJob?.cancel()
+                countdownJob = job
             } else {
                 job.cancel()
             }
@@ -553,8 +808,20 @@ class PilotSessionController(
         pilotEpoch++
         deadlineJob?.cancel()
         deadlineJob = null
+        countdownJob?.cancel()
+        countdownJob = null
+        pendingInitialWsTicket = null
         _lastAbortReason.value = reason
         _remainingObservationMs.value = 0L
         _pilotModeState.value = PilotModeState.Aborted(reason, safeMessage)
+    }
+
+    private sealed interface CleanupAction {
+        data class AlreadyClean(val result: PilotEmergencyDisconnectResult) : CleanupAction
+        data class Run(
+            val cleanupToken: Long,
+            val revokedGeneration: Long,
+            val sessionEpoch: Long
+        ) : CleanupAction
     }
 }

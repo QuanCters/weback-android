@@ -76,6 +76,18 @@ class OfflineFixtureRealtimeTransport : RealtimeSessionTransport {
         }
     }
 
+    fun forceInvalidate(reason: ConnectivityError, expectedEpoch: Long? = null) {
+        synchronized(lock) {
+            if (closed) return
+            if (expectedEpoch != null && expectedEpoch != activeEpoch) return
+            activeEpoch++
+            generation++
+            selectedDevice = null
+            _robotState.value = RobotState()
+            _connectionState.value = ConnectionState.Disconnected(reason)
+        }
+    }
+
     override fun currentGeneration(): Long = synchronized(lock) { generation }
 
     override fun close() {

@@ -21,7 +21,8 @@ class PilotAuthorizationGateTest {
         accountScope: PilotAccountScope = PilotAccountScope(
             scopeType = PilotAccountScopeType.DEDICATED_ISOLATED_TEST_ACCOUNT,
             regionCallingCode = "+1",
-            authorizedAccountAlias = "pilot***@example.invalid"
+            authorizedAccountAlias = "pilot***@example.invalid",
+            authorizedAccountIdentifier = "pilot@example.invalid"
         ),
         targetDevice: PilotTargetDevice = PilotTargetDevice(
             expectedSubTypeFamily = "LaserSlam",

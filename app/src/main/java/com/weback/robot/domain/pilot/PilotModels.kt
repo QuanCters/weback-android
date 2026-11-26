@@ -17,6 +17,15 @@ enum class PilotAccountScopeType {
     PERSONAL_OR_PRODUCTION
 }
 
+/**
+ * Separates offline mock fixture workflows from live external pilot execution (`FIX-404`).
+ * Mock fixture contexts are structurally rejected by live authorization gates and gateways.
+ */
+enum class PilotEnvironment {
+    OFFLINE_MOCK_FIXTURE,
+    LIVE_PILOT
+}
+
 data class PilotExternalApproval(
     val approvedByProductOwner: String,
     val approvedByLeadMaintainer: String,
@@ -33,8 +42,18 @@ data class ExpectedCandidateIdentity(
 data class PilotAccountScope(
     val scopeType: PilotAccountScopeType,
     val regionCallingCode: String,
-    val authorizedAccountAlias: String
-)
+    val authorizedAccountAlias: String,
+    val authorizedAccountIdentifier: String = ""
+) {
+    override fun toString(): String =
+        "PilotAccountScope(scopeType=$scopeType, regionCallingCode='${normalizeCallingCode(regionCallingCode)}', " +
+            "authorizedAccountAlias='$authorizedAccountAlias', authorizedAccountIdentifier='[REDACTED]')"
+
+    companion object {
+        fun normalizeAccount(raw: String): String = raw.trim()
+        fun normalizeCallingCode(raw: String): String = raw.trim()
+    }
+}
 
 data class PilotTargetDevice(
     val expectedSubTypeFamily: String,
@@ -92,10 +111,11 @@ data class PilotAuthorizationContext(
     val authorizedAtElapsedMs: Long,
     val observationDeadlineElapsedMs: Long,
     val externalApproval: PilotExternalApproval?,
-    val uiConsentCheckedOnly: Boolean = false
+    val uiConsentCheckedOnly: Boolean = false,
+    val environment: PilotEnvironment = PilotEnvironment.LIVE_PILOT
 ) {
     override fun toString(): String =
-        "PilotAuthorizationContext(authorizationId='$authorizationId', readOnlyMode=$readOnlyMode, " +
+        "PilotAuthorizationContext(authorizationId='$authorizationId', environment=$environment, readOnlyMode=$readOnlyMode, " +
             "physicalRobotCommandsPermitted=$physicalRobotCommandsPermitted, targetTag='${targetDevice.redactedTag}', " +
             "authOrigin='${endpointConfig.approvedAuthOrigin}')"
 }
