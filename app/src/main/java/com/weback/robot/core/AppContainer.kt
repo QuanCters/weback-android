@@ -43,6 +43,7 @@ import com.weback.robot.protocol.ws.RealtimeSessionTransport
 import com.weback.robot.security.AndroidInstalledApkVerifier
 import com.weback.robot.security.AndroidKeystoreAeadCipherProvider
 import com.weback.robot.security.AuthorizedPilotEndpointTrustPolicy
+import com.weback.robot.security.ConsumeAuthorizationResult
 import com.weback.robot.security.DiagnosticLogger
 import com.weback.robot.security.EndpointTrustPolicy
 import com.weback.robot.security.ExternalPilotAuthorizationLoader
@@ -76,7 +77,8 @@ data class PilotContainerTestHooks(
     val runtimeAppIdentityOverride: RuntimeAppIdentity? = null,
     val enableUiCountdownTicker: Boolean = false,
     val installedApkVerificationOverride: InstalledApkVerification? = null,
-    val provisionedAuthStoreOverride: ProvisionedPilotAuthorizationStore? = null
+    val provisionedAuthStoreOverride: ProvisionedPilotAuthorizationStore? = null,
+    val allowUnsupportedInstalledApkForHostTests: Boolean = false
 )
 
 /**
@@ -529,6 +531,8 @@ class DefaultAppContainer(
         }
     }
 
+    private val liveActivationLock = Any()
+
     override fun loadProvisionedLiveAuthorization(): ProvisionedAuthorizationLoadResult {
         if (!isLivePilotSupported) {
             return ProvisionedAuthorizationLoadResult.Invalid("Live pilot authorization is disabled on offline build")
@@ -539,7 +543,8 @@ class DefaultAppContainer(
             expectedRuntimeIdentity = pilotTestHooks?.expectedRuntimeIdentityOverride,
             installedApkVerifier = installedApkVerifier,
             allowedAuthOrigins = pilotTestHooks?.allowedAuthOriginsOverride
-                ?: PilotAuthorizationGate.CANONICAL_AUTH_ORIGINS
+                ?: PilotAuthorizationGate.CANONICAL_AUTH_ORIGINS,
+            allowUnsupportedInstalledApk = pilotTestHooks?.allowUnsupportedInstalledApkForHostTests ?: false
         )
     }
 
@@ -550,29 +555,52 @@ class DefaultAppContainer(
                 "Live pilot authorization is disabled on offline build"
             )
         }
-        val nowMs = authClock.elapsedRealtimeMs()
-        val prep = ExternalPilotAuthorizationLoader.prepareActivation(
-            store = provisionedAuthStore,
-            expectedRecordSha256 = expectedRecordSha256,
-            runtimeAppIdentity = pilotTestHooks?.runtimeAppIdentityOverride ?: runtimeLiveIdentity,
-            expectedRuntimeIdentity = pilotTestHooks?.expectedRuntimeIdentityOverride,
-            installedApkVerifier = installedApkVerifier,
-            allowedAuthOrigins = pilotTestHooks?.allowedAuthOriginsOverride
-                ?: PilotAuthorizationGate.CANONICAL_AUTH_ORIGINS,
-            nowElapsedMs = nowMs
-        )
-        return when (prep) {
-            is ProvisionedActivationPreparation.Rejected ->
-                GateActivationResult.Rejected(prep.reason, prep.safeMessage)
-            is ProvisionedActivationPreparation.Ready -> {
-                val res = pilotSessionController.activatePilot(prep.context)
-                if (res is GateActivationResult.Activated) {
-                    provisionedAuthStore.markConsumedAndClearPending(
-                        authorizationId = prep.context.authorizationId,
-                        recordSha256 = prep.recordSha256
-                    )
+        return synchronized(liveActivationLock) {
+            val nowMs = authClock.elapsedRealtimeMs()
+            val prep = ExternalPilotAuthorizationLoader.prepareActivation(
+                store = provisionedAuthStore,
+                expectedRecordSha256 = expectedRecordSha256,
+                runtimeAppIdentity = pilotTestHooks?.runtimeAppIdentityOverride ?: runtimeLiveIdentity,
+                expectedRuntimeIdentity = pilotTestHooks?.expectedRuntimeIdentityOverride,
+                installedApkVerifier = installedApkVerifier,
+                allowedAuthOrigins = pilotTestHooks?.allowedAuthOriginsOverride
+                    ?: PilotAuthorizationGate.CANONICAL_AUTH_ORIGINS,
+                nowElapsedMs = nowMs,
+                allowUnsupportedInstalledApk = pilotTestHooks?.allowUnsupportedInstalledApkForHostTests ?: false
+            )
+            when (prep) {
+                is ProvisionedActivationPreparation.Rejected ->
+                    GateActivationResult.Rejected(prep.reason, prep.safeMessage)
+                is ProvisionedActivationPreparation.Ready -> {
+                    when (
+                        val consumeRes = provisionedAuthStore.reserveAndConsume(
+                            authorizationId = prep.context.authorizationId,
+                            recordSha256 = prep.recordSha256
+                        )
+                    ) {
+                        is ConsumeAuthorizationResult.AlreadyConsumed ->
+                            GateActivationResult.Rejected(
+                                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                                consumeRes.safeMessage
+                            )
+                        is ConsumeAuthorizationResult.Failed ->
+                            GateActivationResult.Rejected(
+                                PilotAbortReason.AuthorizationExpiredOrInvalid,
+                                consumeRes.safeMessage
+                            )
+                        is ConsumeAuthorizationResult.Consumed -> {
+                            if (!consumeRes.pendingRecordDeleted) {
+                                GateActivationResult.Rejected(
+                                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                                    consumeRes.warningMessage
+                                        ?: "Durable consumption succeeded, but pending approval record deletion failed"
+                                )
+                            } else {
+                                pilotSessionController.activatePilot(prep.context)
+                            }
+                        }
+                    }
                 }
-                res
             }
         }
     }

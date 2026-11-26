@@ -761,7 +761,7 @@ class PilotAuthorizationGate(
         if (b.maxLoginAttempts != PilotRequestBudgets.MAX_LOGIN_ATTEMPTS ||
             b.maxPasswordRetries != PilotRequestBudgets.MAX_PASSWORD_RETRIES ||
             b.maxCaptchaAutomation != PilotRequestBudgets.MAX_CAPTCHA_AUTOMATION ||
-            b.maxInventoryRequests != PilotRequestBudgets.MAX_INVENTORY_REQUESTS ||
+            b.maxInventoryRequests !in 0..PilotRequestBudgets.MAX_INVENTORY_REQUESTS ||
             b.maxInitialWsConnections !in 0..PilotRequestBudgets.MAX_INITIAL_WS_CONNECTIONS ||
             b.maxWsReconnectAttempts !in 0..PilotRequestBudgets.MAX_WS_RECONNECT_ATTEMPTS ||
             b.httpCallTimeoutMs !in 1L..PilotRequestBudgets.MAX_HTTP_CALL_TIMEOUT_MS ||
@@ -770,6 +770,13 @@ class PilotAuthorizationGate(
         ) {
             return PilotAbortReason.AuthorizationExpiredOrInvalid to
                 "Pilot request budgets exceed SEC-404 maximum caps"
+        }
+        val inventoryInScope = PilotOperation.USER_THING_LIST_GET in context.permittedOperations
+        if ((!inventoryInScope && b.maxInventoryRequests != 0) ||
+            (inventoryInScope && b.maxInventoryRequests != PilotRequestBudgets.MAX_INVENTORY_REQUESTS)
+        ) {
+            return PilotAbortReason.AuthorizationExpiredOrInvalid to
+                "Inventory request budget contradicts permitted_operations"
         }
         if (b.maxInitialWsConnections == 0 &&
             (b.maxWsReconnectAttempts != 0 || PilotOperation.WS_TELEMETRY_OBSERVE in context.permittedOperations)

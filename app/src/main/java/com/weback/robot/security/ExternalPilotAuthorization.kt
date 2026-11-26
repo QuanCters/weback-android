@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 
 /**
@@ -109,6 +110,8 @@ data class ProvisionedAuthorizationPreview(
     val pinnedApiOrigin: String?,
     val pinnedWssOrigin: String?,
     val endpointProvenanceRef: String?,
+    val permittedOperations: List<String>,
+    val maxInventoryRequests: Int,
     val maxObservationWindowMs: Long,
     val httpCallTimeoutMs: Long,
     val recordSha256Prefix: String,
@@ -133,16 +136,39 @@ sealed interface ProvisionedActivationPreparation {
     ) : ProvisionedActivationPreparation
 }
 
+sealed interface ProvisionedRawLoadResult {
+    data object Missing : ProvisionedRawLoadResult
+    data class Loaded(val recordBytes: ByteArray, val companionSha256Raw: String?) : ProvisionedRawLoadResult
+    data class Error(val safeMessage: String) : ProvisionedRawLoadResult
+}
+
+sealed interface LedgerCheckResult {
+    data object Available : LedgerCheckResult
+    data object AlreadyConsumed : LedgerCheckResult
+    data class LedgerError(val safeMessage: String) : LedgerCheckResult
+}
+
+sealed interface ConsumeAuthorizationResult {
+    data class Consumed(
+        val pendingRecordDeleted: Boolean,
+        val warningMessage: String? = null
+    ) : ConsumeAuthorizationResult
+
+    data class AlreadyConsumed(val safeMessage: String) : ConsumeAuthorizationResult
+    data class Failed(val safeMessage: String) : ConsumeAuthorizationResult
+}
+
 interface ProvisionedPilotAuthorizationStore {
-    fun loadRaw(): Pair<ByteArray, String?>?
-    fun isConsumed(authorizationId: String, recordSha256: String): Boolean
-    fun markConsumedAndClearPending(authorizationId: String, recordSha256: String)
+    fun loadRaw(): ProvisionedRawLoadResult
+    fun checkConsumptionStatus(authorizationId: String, recordSha256: String): LedgerCheckResult
+    fun reserveAndConsume(authorizationId: String, recordSha256: String): ConsumeAuthorizationResult
 }
 
 /**
  * App-private file-backed external authorization store (`noBackupFilesDir/pilot_external_auth/`).
  * Stores ONLY non-credential consumed `authorizationId|recordSha256` lines in the consumed ledger
- * so process restarts and completed pilot runs require a fresh externally approved record.
+ * so process restarts and completed pilot runs require a fresh externally approved record under
+ * the local app-private storage trust model (not claiming rollback resistance against privileged ADB/root actors).
  */
 class FileBackedProvisionedPilotAuthorizationStore(
     private val directory: File
@@ -151,43 +177,136 @@ class FileBackedProvisionedPilotAuthorizationStore(
     private val recordFile = File(directory, RECORD_FILE_NAME)
     private val digestFile = File(directory, DIGEST_FILE_NAME)
     private val consumedFile = File(directory, CONSUMED_LEDGER_FILE_NAME)
+    private val hex64Regex = Regex("^[0-9a-fA-F]{64}$")
 
-    override fun loadRaw(): Pair<ByteArray, String?>? = synchronized(lock) {
-        if (!recordFile.isFile || !recordFile.canRead()) {
-            return null
+    override fun loadRaw(): ProvisionedRawLoadResult = synchronized(lock) {
+        if (!directory.exists()) {
+            return ProvisionedRawLoadResult.Missing
         }
-        val bytes = runCatching { recordFile.readBytes() }.getOrNull() ?: return null
-        val companion = if (digestFile.isFile && digestFile.canRead()) {
-            runCatching { digestFile.readText(Charsets.UTF_8) }.getOrNull()
+        if (!directory.isDirectory || !directory.canRead() || !directory.canExecute()) {
+            return ProvisionedRawLoadResult.Error("External authorization directory is inaccessible")
+        }
+        if (!recordFile.exists()) {
+            return ProvisionedRawLoadResult.Missing
+        }
+        if (!recordFile.isFile || !recordFile.canRead()) {
+            return ProvisionedRawLoadResult.Error("Provisioned authorization record exists but is unreadable")
+        }
+        val bytes = runCatching { recordFile.readBytes() }.getOrElse {
+            return ProvisionedRawLoadResult.Error("Failed to read provisioned authorization record")
+        }
+        val companion = if (digestFile.exists()) {
+            if (!digestFile.isFile || !digestFile.canRead()) {
+                return ProvisionedRawLoadResult.Error("Companion SHA-256 file exists but is unreadable")
+            }
+            runCatching { digestFile.readText(Charsets.UTF_8) }.getOrElse {
+                return ProvisionedRawLoadResult.Error("Failed to read companion SHA-256 file")
+            }
         } else {
             null
         }
-        bytes to companion
+        ProvisionedRawLoadResult.Loaded(bytes, companion)
     }
 
-    override fun isConsumed(authorizationId: String, recordSha256: String): Boolean = synchronized(lock) {
-        if (!consumedFile.isFile || !consumedFile.canRead()) return false
+    private sealed interface ParsedLedger {
+        data class Entries(val items: List<Pair<String, String>>) : ParsedLedger
+        data class Invalid(val safeMessage: String) : ParsedLedger
+    }
+
+    private fun readAndValidateLedgerLocked(): ParsedLedger {
+        if (!directory.exists()) {
+            return ParsedLedger.Entries(emptyList())
+        }
+        if (!directory.isDirectory || !directory.canRead() || !directory.canExecute()) {
+            return ParsedLedger.Invalid("External authorization directory is inaccessible or not a directory")
+        }
+        if (!consumedFile.exists()) {
+            return ParsedLedger.Entries(emptyList())
+        }
+        if (!consumedFile.isFile || !consumedFile.canRead()) {
+            return ParsedLedger.Invalid("Consumed authorization ledger exists but is unreadable or not a file")
+        }
+        val lines = runCatching { consumedFile.readLines(Charsets.UTF_8) }.getOrElse {
+            return ParsedLedger.Invalid("Failed to read consumed authorization ledger")
+        }
+        val entries = mutableListOf<Pair<String, String>>()
+        for (rawLine in lines) {
+            if (rawLine.isBlank()) continue
+            val parts = rawLine.split('|', limit = 2)
+            if (parts.size != 2) {
+                return ParsedLedger.Invalid("Consumed authorization ledger is malformed")
+            }
+            val authId = parts[0].trim()
+            val sha = parts[1].trim().lowercase()
+            if (authId.isEmpty() || !hex64Regex.matches(sha)) {
+                return ParsedLedger.Invalid("Consumed authorization ledger contains invalid entry")
+            }
+            entries.add(authId to sha)
+        }
+        return ParsedLedger.Entries(entries)
+    }
+
+    override fun checkConsumptionStatus(authorizationId: String, recordSha256: String): LedgerCheckResult = synchronized(lock) {
         val normAuth = authorizationId.trim()
         val normSha = recordSha256.trim().lowercase()
-        val lines = runCatching { consumedFile.readLines(Charsets.UTF_8) }.getOrNull() ?: return true
-        lines.any { line ->
-            val parts = line.split('|', limit = 2)
-            parts.size == 2 && (parts[0] == normAuth || parts[1].lowercase() == normSha)
+        when (val parsed = readAndValidateLedgerLocked()) {
+            is ParsedLedger.Invalid -> LedgerCheckResult.LedgerError(parsed.safeMessage)
+            is ParsedLedger.Entries -> {
+                if (parsed.items.any { it.first == normAuth || it.second == normSha }) {
+                    LedgerCheckResult.AlreadyConsumed
+                } else {
+                    LedgerCheckResult.Available
+                }
+            }
         }
     }
 
-    override fun markConsumedAndClearPending(authorizationId: String, recordSha256: String) {
+    override fun reserveAndConsume(authorizationId: String, recordSha256: String): ConsumeAuthorizationResult =
         synchronized(lock) {
-            directory.mkdirs()
             val normAuth = authorizationId.trim()
             val normSha = recordSha256.trim().lowercase()
-            if (!isConsumed(normAuth, normSha)) {
-                consumedFile.appendText("$normAuth|$normSha\n", Charsets.UTF_8)
+            if (normAuth.isEmpty() || !hex64Regex.matches(normSha)) {
+                return ConsumeAuthorizationResult.Failed("Invalid authorization ID or digest for durable consumption")
             }
-            if (recordFile.exists()) recordFile.delete()
-            if (digestFile.exists()) digestFile.delete()
+            when (val parsed = readAndValidateLedgerLocked()) {
+                is ParsedLedger.Invalid -> return ConsumeAuthorizationResult.Failed(parsed.safeMessage)
+                is ParsedLedger.Entries -> {
+                    if (parsed.items.any { it.first == normAuth || it.second == normSha }) {
+                        return ConsumeAuthorizationResult.AlreadyConsumed(
+                            "Authorization ID or record digest already consumed; fresh external approval required"
+                        )
+                    }
+                }
+            }
+            if (!directory.exists() && !directory.mkdirs()) {
+                return ConsumeAuthorizationResult.Failed("Unable to create external authorization ledger directory")
+            }
+            if (!directory.isDirectory) {
+                return ConsumeAuthorizationResult.Failed("External authorization ledger directory path is invalid")
+            }
+            val writeOk = runCatching {
+                FileOutputStream(consumedFile, true).use { fos ->
+                    fos.write("$normAuth|$normSha\n".toByteArray(Charsets.UTF_8))
+                    fos.flush()
+                    fos.fd.sync()
+                }
+            }.isSuccess
+            if (!writeOk) {
+                return ConsumeAuthorizationResult.Failed("Failed to durably write consumption ledger")
+            }
+
+            val recordDeleted = !recordFile.exists() || runCatching { recordFile.delete() }.getOrDefault(false)
+            val digestDeleted = !digestFile.exists() || runCatching { digestFile.delete() }.getOrDefault(false)
+            val allDeleted = recordDeleted && digestDeleted && !recordFile.exists() && !digestFile.exists()
+            ConsumeAuthorizationResult.Consumed(
+                pendingRecordDeleted = allDeleted,
+                warningMessage = if (allDeleted) {
+                    null
+                } else {
+                    "Durable consumption succeeded, but pending approval record deletion failed"
+                }
+            )
         }
-    }
 
     companion object {
         const val DIRECTORY_NAME = "pilot_external_auth"
@@ -218,22 +337,34 @@ class InMemoryProvisionedPilotAuthorizationStore : ProvisionedPilotAuthorization
         }
     }
 
-    override fun loadRaw(): Pair<ByteArray, String?>? = synchronized(lock) {
-        pendingBytes?.let { it.copyOf() to pendingDigest }
+    override fun loadRaw(): ProvisionedRawLoadResult = synchronized(lock) {
+        val bytes = pendingBytes ?: return ProvisionedRawLoadResult.Missing
+        ProvisionedRawLoadResult.Loaded(bytes.copyOf(), pendingDigest)
     }
 
-    override fun isConsumed(authorizationId: String, recordSha256: String): Boolean = synchronized(lock) {
-        authorizationId.trim() in consumedIds || recordSha256.trim().lowercase() in consumedDigests
-    }
-
-    override fun markConsumedAndClearPending(authorizationId: String, recordSha256: String) {
-        synchronized(lock) {
-            consumedIds.add(authorizationId.trim())
-            consumedDigests.add(recordSha256.trim().lowercase())
-            pendingBytes = null
-            pendingDigest = null
+    override fun checkConsumptionStatus(authorizationId: String, recordSha256: String): LedgerCheckResult = synchronized(lock) {
+        if (authorizationId.trim() in consumedIds || recordSha256.trim().lowercase() in consumedDigests) {
+            LedgerCheckResult.AlreadyConsumed
+        } else {
+            LedgerCheckResult.Available
         }
     }
+
+    override fun reserveAndConsume(authorizationId: String, recordSha256: String): ConsumeAuthorizationResult =
+        synchronized(lock) {
+            val normAuth = authorizationId.trim()
+            val normSha = recordSha256.trim().lowercase()
+            if (normAuth in consumedIds || normSha in consumedDigests) {
+                return ConsumeAuthorizationResult.AlreadyConsumed(
+                    "Authorization ID or record digest already consumed; fresh external approval required"
+                )
+            }
+            consumedIds.add(normAuth)
+            consumedDigests.add(normSha)
+            pendingBytes = null
+            pendingDigest = null
+            ConsumeAuthorizationResult.Consumed(pendingRecordDeleted = true)
+        }
 }
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -353,23 +484,30 @@ object ExternalPilotAuthorizationLoader {
         runtimeAppIdentity: RuntimeAppIdentity,
         expectedRuntimeIdentity: ExpectedCandidateIdentity?,
         installedApkVerifier: InstalledApkVerifier,
-        allowedAuthOrigins: Set<String>
+        allowedAuthOrigins: Set<String>,
+        allowUnsupportedInstalledApk: Boolean = false
     ): ProvisionedAuthorizationLoadResult {
         if (!runtimeAppIdentity.pilotBuildEnabled) {
             return ProvisionedAuthorizationLoadResult.Invalid("Live pilot authorization is disabled on offline build")
         }
-        val rawPair = store.loadRaw()
-            ?: return ProvisionedAuthorizationLoadResult.Missing(
-                "No externally provisioned authorization record found. Provision authorized_pilot_record.json out-of-band before review."
-            )
+        val rawLoaded = when (val raw = store.loadRaw()) {
+            ProvisionedRawLoadResult.Missing ->
+                return ProvisionedAuthorizationLoadResult.Missing(
+                    "No externally provisioned authorization record found. Provision authorized_pilot_record.json out-of-band before review."
+                )
+            is ProvisionedRawLoadResult.Error ->
+                return ProvisionedAuthorizationLoadResult.Invalid(raw.safeMessage)
+            is ProvisionedRawLoadResult.Loaded -> raw
+        }
         val parsed = parseAndValidate(
-            rawBytes = rawPair.first,
-            companionSha256Raw = rawPair.second,
+            rawBytes = rawLoaded.recordBytes,
+            companionSha256Raw = rawLoaded.companionSha256Raw,
             store = store,
             runtimeAppIdentity = runtimeAppIdentity,
             expectedRuntimeIdentity = expectedRuntimeIdentity,
             installedApkVerifier = installedApkVerifier,
-            allowedAuthOrigins = allowedAuthOrigins
+            allowedAuthOrigins = allowedAuthOrigins,
+            allowUnsupportedInstalledApk = allowUnsupportedInstalledApk
         )
         return when (parsed) {
             is InternalParseResult.Valid -> ProvisionedAuthorizationLoadResult.Loaded(parsed.preview)
@@ -384,7 +522,8 @@ object ExternalPilotAuthorizationLoader {
         expectedRuntimeIdentity: ExpectedCandidateIdentity?,
         installedApkVerifier: InstalledApkVerifier,
         allowedAuthOrigins: Set<String>,
-        nowElapsedMs: Long
+        nowElapsedMs: Long,
+        allowUnsupportedInstalledApk: Boolean = false
     ): ProvisionedActivationPreparation {
         if (!runtimeAppIdentity.pilotBuildEnabled) {
             return ProvisionedActivationPreparation.Rejected(
@@ -399,20 +538,29 @@ object ExternalPilotAuthorizationLoader {
                 "Expected approval record SHA-256 must be a valid 64-hex digest"
             )
         }
-        val rawPair = store.loadRaw()
-            ?: return ProvisionedActivationPreparation.Rejected(
-                PilotAbortReason.AuthorizationExpiredOrInvalid,
-                "No externally provisioned authorization record found"
-            )
+        val rawLoaded = when (val raw = store.loadRaw()) {
+            ProvisionedRawLoadResult.Missing ->
+                return ProvisionedActivationPreparation.Rejected(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    "No externally provisioned authorization record found"
+                )
+            is ProvisionedRawLoadResult.Error ->
+                return ProvisionedActivationPreparation.Rejected(
+                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                    raw.safeMessage
+                )
+            is ProvisionedRawLoadResult.Loaded -> raw
+        }
         return when (
             val parsed = parseAndValidate(
-                rawBytes = rawPair.first,
-                companionSha256Raw = rawPair.second,
+                rawBytes = rawLoaded.recordBytes,
+                companionSha256Raw = rawLoaded.companionSha256Raw,
                 store = store,
                 runtimeAppIdentity = runtimeAppIdentity,
                 expectedRuntimeIdentity = expectedRuntimeIdentity,
                 installedApkVerifier = installedApkVerifier,
-                allowedAuthOrigins = allowedAuthOrigins
+                allowedAuthOrigins = allowedAuthOrigins,
+                allowUnsupportedInstalledApk = allowUnsupportedInstalledApk
             )
         ) {
             is InternalParseResult.Error -> ProvisionedActivationPreparation.Rejected(
@@ -428,6 +576,18 @@ object ExternalPilotAuthorizationLoader {
                 } else {
                     val rec = parsed.record
                     val windowMs = rec.executionBoundaries.maxObservationWindowMs
+                    val mappedOperations = rec.permittedOperationSet.permittedOperations
+                        .map { op ->
+                            when (op.trim()) {
+                                PilotOperation.LOGIN.wireOpt -> PilotOperation.LOGIN
+                                PilotOperation.USER_THING_LIST_GET.wireOpt -> PilotOperation.USER_THING_LIST_GET
+                                else -> return ProvisionedActivationPreparation.Rejected(
+                                    PilotAbortReason.AuthorizationExpiredOrInvalid,
+                                    "Unsupported permitted operation in authorization record"
+                                )
+                            }
+                        }
+                        .toSet()
                     val ctx = PilotAuthorizationContext(
                         authorizationId = rec.authorizationId.trim(),
                         candidateIdentity = ExpectedCandidateIdentity(
@@ -449,10 +609,7 @@ object ExternalPilotAuthorizationLoader {
                             expectedTargetThingName = rec.targetRobotScope.expectedTargetThingName.trim(),
                             redactedTag = rec.targetRobotScope.redactedTag.trim()
                         ),
-                        permittedOperations = setOf(
-                            PilotOperation.LOGIN,
-                            PilotOperation.USER_THING_LIST_GET
-                        ),
+                        permittedOperations = mappedOperations,
                         endpointConfig = PilotEndpointConfig(
                             approvedAuthOrigin = rec.endpointTrustScope.approvedAuthOrigin.trim(),
                             approvedAuthPath = rec.endpointTrustScope.approvedAuthPath.trim(),
@@ -465,7 +622,8 @@ object ExternalPilotAuthorizationLoader {
                         physicalRobotCommandsPermitted = false,
                         budgets = PilotRequestBudgets.strictAuthAndInventoryOnly(
                             observationWindowMs = windowMs,
-                            httpCallTimeoutMs = rec.executionBoundaries.httpCallTimeoutMs
+                            httpCallTimeoutMs = rec.executionBoundaries.httpCallTimeoutMs,
+                            maxInventoryRequests = rec.executionBoundaries.maxInventoryRequests
                         ),
                         authorizedAtElapsedMs = nowElapsedMs,
                         observationDeadlineElapsedMs = nowElapsedMs + windowMs,
@@ -503,7 +661,8 @@ object ExternalPilotAuthorizationLoader {
         runtimeAppIdentity: RuntimeAppIdentity,
         expectedRuntimeIdentity: ExpectedCandidateIdentity?,
         installedApkVerifier: InstalledApkVerifier,
-        allowedAuthOrigins: Set<String>
+        allowedAuthOrigins: Set<String>,
+        allowUnsupportedInstalledApk: Boolean
     ): InternalParseResult {
         if (rawBytes.isEmpty() || rawBytes.size > 65_536) {
             return InternalParseResult.Error("Provisioned authorization record is empty or exceeds 64 KiB limit")
@@ -532,8 +691,12 @@ object ExternalPilotAuthorizationLoader {
                 return InternalParseResult.Error("Provisioned authorization record schema invalid or has unexpected fields")
             }
 
-        if (store.isConsumed(rec.authorizationId, actualSha256)) {
-            return InternalParseResult.Error("Authorization ID or record digest already consumed; fresh external approval required")
+        when (val status = store.checkConsumptionStatus(rec.authorizationId, actualSha256)) {
+            LedgerCheckResult.Available -> Unit
+            LedgerCheckResult.AlreadyConsumed ->
+                return InternalParseResult.Error("Authorization ID or record digest already consumed; fresh external approval required")
+            is LedgerCheckResult.LedgerError ->
+                return InternalParseResult.Error(status.safeMessage)
         }
 
         val gov = rec.governanceApproval
@@ -595,6 +758,10 @@ object ExternalPilotAuthorizationLoader {
             if (actualApk == null || !constantTimeHexEquals(actualApk, art.verifiedPilotApkSha256.trim().lowercase())) {
                 return InternalParseResult.Error("Installed APK SHA-256 mismatches externally approved artifact")
             }
+        } else if (!allowUnsupportedInstalledApk) {
+            return InternalParseResult.Error(
+                "Installed APK SHA-256 verification unsupported or failed (${installedVerification.detail})"
+            )
         }
 
         if (rec.targetAccountScope.scopeType.trim() != "DEDICATED_ISOLATED_TEST_ACCOUNT") {
@@ -605,9 +772,21 @@ object ExternalPilotAuthorizationLoader {
         }
 
         val ops = rec.permittedOperationSet
-        val permittedNorm = ops.permittedOperations.map { it.trim() }.toSet()
-        val prohibitedNorm = ops.prohibitedOperations.map { it.trim() }.toSet()
-        if (permittedNorm.isEmpty() ||
+        val permittedList = ops.permittedOperations.map { it.trim() }
+        val prohibitedList = ops.prohibitedOperations.map { it.trim() }
+        val permittedNorm = permittedList.toSet()
+        val prohibitedNorm = prohibitedList.toSet()
+        if (permittedList.any { it.isEmpty() } ||
+            prohibitedList.any { it.isEmpty() } ||
+            permittedList.size != permittedNorm.size ||
+            prohibitedList.size != prohibitedNorm.size
+        ) {
+            return InternalParseResult.Error("Operation lists contain blank or duplicate entries")
+        }
+        if (permittedNorm.intersect(prohibitedNorm).isNotEmpty()) {
+            return InternalParseResult.Error("Contradictory permitted and prohibited operations rejected")
+        }
+        if ("login" !in permittedNorm ||
             !permittedNorm.all { it == "login" || it == "user_thing_list_get" } ||
             "ws_telemetry_observe" !in prohibitedNorm ||
             "send_to_device" !in prohibitedNorm
@@ -616,13 +795,15 @@ object ExternalPilotAuthorizationLoader {
         }
 
         val b = rec.executionBoundaries
+        val inventoryPermitted = "user_thing_list_get" in permittedNorm
+        val expectedMaxInventory = if (inventoryPermitted) 1 else 0
         if (!b.readOnlyMode ||
             b.physicalRobotCommandsPermitted ||
             b.liveMapStreamingPermitted ||
             b.maxLoginAttempts != 1 ||
             b.maxPasswordRetries != 0 ||
             b.maxCaptchaAutomation != 0 ||
-            b.maxInventoryRequests != 1 ||
+            b.maxInventoryRequests != expectedMaxInventory ||
             b.maxInitialWsConnections != 0 ||
             b.maxWsReconnectAttempts != 0 ||
             b.maxOutboundWsMessages != 0 ||
@@ -630,7 +811,7 @@ object ExternalPilotAuthorizationLoader {
             b.httpCallTimeoutMs !in 1L..PilotRequestBudgets.MAX_HTTP_CALL_TIMEOUT_MS ||
             b.maxObservationWindowMs !in 1L..PilotRequestBudgets.MAX_AUTH_INVENTORY_WINDOW_MS
         ) {
-            return InternalParseResult.Error("Execution boundaries violate FCT-004C safety limits")
+            return InternalParseResult.Error("Execution boundaries violate FCT-004C safety limits or operation scope")
         }
 
         val ep = rec.endpointTrustScope
@@ -675,6 +856,8 @@ object ExternalPilotAuthorizationLoader {
             pinnedApiOrigin = ep.pinnedApiOrigin?.trim()?.takeIf { it.isNotEmpty() },
             pinnedWssOrigin = ep.pinnedWssOrigin?.trim()?.takeIf { it.isNotEmpty() },
             endpointProvenanceRef = ep.endpointProvenanceRef?.trim()?.takeIf { it.isNotEmpty() },
+            permittedOperations = permittedList,
+            maxInventoryRequests = b.maxInventoryRequests,
             maxObservationWindowMs = b.maxObservationWindowMs,
             httpCallTimeoutMs = b.httpCallTimeoutMs,
             recordSha256Prefix = actualSha256.take(8),

@@ -345,7 +345,7 @@ fun PilotReadinessSheet(
                     )
                     Text(
                         text = "Scope fields are read-only from the provisioned approval file (app-private storage). " +
-                            "Max 1 LOGIN, max 1 USER_THING_LIST_GET, 0 WebSockets, <= 15m.",
+                            "Strictly bounded to externally approved operations (0 WebSockets, <= 15m).",
                         style = MaterialTheme.typography.bodySmall
                     )
                     when (val loadRes = state.provisionedAuthLoadResult) {
@@ -391,7 +391,11 @@ fun PilotReadinessSheet(
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 Text(
-                                    "Budgets: 1 LOGIN, 1 INVENTORY, 0 WS, 0 CMD, <= ${p.httpCallTimeoutMs / 1000}s HTTP, " +
+                                    "Permitted Ops: ${p.permittedOperations.joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "Budgets: 1 LOGIN, ${p.maxInventoryRequests} INVENTORY, 0 WS, 0 CMD, <= ${p.httpCallTimeoutMs / 1000}s HTTP, " +
                                         "${p.maxObservationWindowMs / 60_000L}m window",
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -661,7 +665,7 @@ fun PilotReadinessSheet(
                 ) {
                     Text("Safe Authentication Result (Pre-Approved Origins)", fontWeight = FontWeight.Medium)
                     Text(authReadyMode.sanitizedAuthSummary, style = MaterialTheme.typography.bodySmall)
-                    if (onFetchTargetInventory != null) {
+                    if (authReadyMode.inventoryPermitted && onFetchTargetInventory != null) {
                         Button(
                             onClick = onFetchTargetInventory,
                             modifier = Modifier
@@ -670,6 +674,11 @@ fun PilotReadinessSheet(
                         ) {
                             Text("Fetch Target Inventory (Single Read-Only Request)")
                         }
+                    } else if (!authReadyMode.inventoryPermitted) {
+                        Text(
+                            text = "Inventory query disabled under LOGIN-only authorization.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }

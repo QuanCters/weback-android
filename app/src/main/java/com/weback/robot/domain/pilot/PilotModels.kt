@@ -114,12 +114,13 @@ data class PilotRequestBudgets(
 
         fun strictAuthAndInventoryOnly(
             observationWindowMs: Long = MAX_AUTH_INVENTORY_WINDOW_MS,
-            httpCallTimeoutMs: Long = MAX_HTTP_CALL_TIMEOUT_MS
+            httpCallTimeoutMs: Long = MAX_HTTP_CALL_TIMEOUT_MS,
+            maxInventoryRequests: Int = MAX_INVENTORY_REQUESTS
         ): PilotRequestBudgets = PilotRequestBudgets(
             maxLoginAttempts = MAX_LOGIN_ATTEMPTS,
             maxPasswordRetries = MAX_PASSWORD_RETRIES,
             maxCaptchaAutomation = MAX_CAPTCHA_AUTOMATION,
-            maxInventoryRequests = MAX_INVENTORY_REQUESTS,
+            maxInventoryRequests = maxInventoryRequests,
             maxInitialWsConnections = 0,
             maxWsReconnectAttempts = 0,
             httpCallTimeoutMs = httpCallTimeoutMs,
@@ -253,7 +254,8 @@ sealed interface PilotModeState {
     data class AuthenticatedInventoryReady(
         val authorizationId: String,
         val remainingWindowMs: Long,
-        val sanitizedAuthSummary: String
+        val sanitizedAuthSummary: String,
+        val inventoryPermitted: Boolean = true
     ) : PilotModeState
 
     data class InventoryVerified(

@@ -15,7 +15,7 @@
           "task_id": "Task 1",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-461",
-          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CPilotAdmissionTest.kt & Fct004CExternalApprovalTrustBoundaryTest.kt (PASS)",
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CPilotAdmissionTest.kt & Fct004CExternalApprovalTrustBoundaryTest.kt & Fct004CApprovedOperationScopeTest.kt & Fct004CDurableConsumptionFaultTest.kt (PASS)",
           "status": "VERIFIED"
         },
         {
@@ -140,7 +140,7 @@
           "task_id": "Task 6",
           "verification_check_id": "pilot-android-unit-tests",
           "test_oracle": "TEST-PILOT-466",
-          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CInventoryValidationTest.kt & Fct004CLiveWorkflowActivityTest.kt (PASS)",
+          "evidence_ref": "app/src/test/java/com/weback/robot/app/pilot/Fct004CInventoryValidationTest.kt & Fct004CApprovedOperationScopeTest.kt & Fct004CLiveWorkflowActivityTest.kt (PASS)",
           "status": "VERIFIED"
         },
         {
@@ -174,7 +174,7 @@
           "task_id": "Task 7",
           "verification_check_id": "android-smoke-test",
           "test_oracle": "TEST-PILOT-468, TEST-PILOT-469",
-          "evidence_ref": "TEST-PILOT-468 JVM expiry PASSED (Fct004CExpiryAndTeardownTest.kt & Fct004CMockExpiryReadinessTest.kt); TEST-PILOT-469 physical-device monotonic expiry in specs/changes/FCT-004C/device-acceptance-plan.md remains NOT_RUN pending device authorization",
+          "evidence_ref": "TEST-PILOT-468 JVM expiry PASSED (Fct004CExpiryAndTeardownTest.kt & Fct004CMockExpiryReadinessTest.kt); TEST-PILOT-469 offline Part A + hermetic Part B instrumentation (app/src/androidTest/java/com/weback/robot/pilot/PilotDeviceAcceptanceInstrumentationTest.kt & KeystoreHardwareSecurityLevelTest.kt) in specs/changes/FCT-004C/device-acceptance-plan.md remains NOT_RUN pending device authorization",
           "status": "NOT_RUN"
         }
       ]

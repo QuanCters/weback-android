@@ -11,8 +11,8 @@
 ## 1. Supervised Trust Properties & Operational Limitations
 
 1. **Separated Provisioning Boundary:** External authorization records are provisioned out-of-band as JSON (`authorized_pilot_record.json` + companion `authorized_pilot_record.sha256`) into app-private `noBackupFilesDir/pilot_external_auth/` and reviewed read-only in the UI. The UI provides zero editable fields for approvers, artifact hashes, account identity, target `thing_name`, endpoints, or budgets.
-2. **Integrity & Single-Use Enforcement:** Loading and activating the record verifies strict JSON key uniqueness, zero unknown fields, zero embedded password/token fields, companion `.sha256` match, operator confirmation of the out-of-band 64-hex `record_sha256`, runtime `BuildConfig` identity, installed APK SHA-256 (`applicationInfo.sourceDir`) where supported by the host/device, and a persisted non-credential consumed-record ledger (`consumed_records.txt`) so process restarts and completed pilot runs require a fresh external approval record.
-3. **Honest Operational Limitations (No Claimed Asymmetric PKI):** `record_sha256` is an integrity binding against an out-of-band digest, **not** an asymmetric cryptographic signature proving PO/Lead Maintainer identity. The `pilot` buildType is debuggable (`initWith(debug)`) to allow supervised `run-as` provisioning and hardware Keystore instrumentation during bounded operator testing; anyone with ADB/shell access who also controls the operator's out-of-band digest channel could provision a custom record. Host JVM/Robolectric tests without a packaged `.apk` file cannot compute a real `sourceDir` APK digest (`supported = false`), whereas real Android device execution (`TEST-PILOT-469`) hashes the installed APK directly.
+2. **Integrity & Fail-Closed Single-Use Enforcement:** Loading and activating the record verifies strict JSON key uniqueness, zero unknown fields, zero embedded password/token fields, contradictory permitted/prohibited operation rejection, exact operation-scope and budget mapping, companion `.sha256` match, operator confirmation of the out-of-band 64-hex `record_sha256`, runtime `BuildConfig` identity, and installed APK SHA-256 (`applicationInfo.sourceDir`). Real-runtime execution fails closed if installed APK SHA-256 verification is unsupported or fails (any unsupported-APK fallback is strictly isolated to injected host-test hooks). Validated authorization identity and record digest are durably reserved and appended (`FileOutputStream(..., true)` + `fd.sync()`) to the single-use consumption ledger (`consumed_records.txt`) **before** enabling the volatile live gate, serialized under activation lock; unreadable, malformed, or unwritable ledgers fail closed and previously consumed records are never restored even if later activation fails.
+3. **Honest Operational Limitations (No Claimed Asymmetric PKI or Privileged Rollback Resistance):** `record_sha256` is an integrity binding against an out-of-band digest, **not** an asymmetric cryptographic signature proving PO/Lead Maintainer identity. The `pilot` buildType is debuggable (`initWith(debug)`) to allow supervised `run-as` provisioning and hardware Keystore instrumentation during bounded operator testing; anyone with ADB/root privileges could inspect or manipulate app-private `noBackupFilesDir` (this local storage model does **not** claim rollback resistance against privileged ADB/root actors) or forge provisioning if they also control the operator's out-of-band digest channel. Real-runtime Android installs reject unsupported APK hashing; only host-test configurations inject the isolated unsupported-APK fallback.
 
 ---
 
@@ -64,10 +64,10 @@
   },
   "permitted_operation_set": {
     "permitted_operations": [
-      "login",
-      "user_thing_list_get"
+      "login"
     ],
     "prohibited_operations": [
+      "user_thing_list_get",
       "ws_telemetry_observe",
       "send_to_device"
     ]
@@ -79,7 +79,7 @@
     "max_login_attempts": 1,
     "max_password_retries": 0,
     "max_captcha_automation": 0,
-    "max_inventory_requests": 1,
+    "max_inventory_requests": 0,
     "max_initial_ws_connections": 0,
     "max_ws_reconnect_attempts": 0,
     "max_outbound_ws_messages": 0,

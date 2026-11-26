@@ -437,10 +437,17 @@ class PilotSessionController(
                 val remaining = (activeCtx.observationDeadlineElapsedMs - authClock.elapsedRealtimeMs()).coerceAtLeast(0L)
                 _remainingObservationMs.value = remaining
                 _pilotModeState.value = if (activeCtx.isStrictAuthAndInventoryOnly()) {
+                    val inventoryAllowed = PilotOperation.USER_THING_LIST_GET in activeCtx.permittedOperations &&
+                        activeCtx.budgets.maxInventoryRequests > 0
                     PilotModeState.AuthenticatedInventoryReady(
                         authorizationId = activeCtx.authorizationId,
                         remainingWindowMs = remaining,
-                        sanitizedAuthSummary = "Authenticated (${session.accountAliasRedacted}, region=${session.regionName})"
+                        sanitizedAuthSummary = if (inventoryAllowed) {
+                            "Authenticated (${session.accountAliasRedacted}, region=${session.regionName})"
+                        } else {
+                            "Authenticated (${session.accountAliasRedacted}, region=${session.regionName}; Auth-Only Scope, Inventory Prohibited)"
+                        },
+                        inventoryPermitted = inventoryAllowed
                     )
                 } else {
                     PilotModeState.Observing(activeCtx.authorizationId, remaining, null)
