@@ -1,0 +1,385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "change_id": "LOC-001",
+  "milestone": "L01F2-REMEDIATED-SPEC-FREEZE",
+  "title": "Rapido R8S Local-First HOSLAM Read-Only Map Capability",
+  "base_sha": "184175a14e5eb6659396c95624e2d3b08d1078a1",
+  "risk_ceiling": "T4",
+  "status": "REMEDIATED_FOR_L01R3_INDEPENDENT_REVIEW",
+  "schema_limitation_note": "verification/checks/spec_validator.py supports a single verification_check_id string per AC belonging to policies/checks.json, policies/loc001_checks_proposal.json (not created in L01F2), or 'android-smoke-test'. Secondary check bindings (e.g., apk-validation on AC-505.1 and local-apk-validation/pilot-apk-validation on AC-506.2) are captured in secondary_verification_checks without fabricating active checks; provisional L01/L01F2 bindings on L04A/L04B ACs MUST be promoted atomically in L04A before status transitions to VERIFIED.",
+  "requirements": [
+    {
+      "requirement_id": "REQ-LOCAL-501",
+      "title": "Canonical Baseline Anchor, Simulator & Cloud Pilot Preservation",
+      "workstream": "T4",
+      "pack_crosswalk": ["LF-001", "LF-002", "NF-001", "NF-002", "ADR-L001", "ADR-L003", "ADR-L008", "ADR-L009"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-501.1",
+          "description": "Anchored to canonical origin/main 184175a14e5eb6659396c95624e2d3b08d1078a1 (tree 4a460199553cb237114895d105f4e20971f409d6); 51bdd70 untouched; perf branches deferred; single :app module, AppContainer DI, and DomainPurityTest preserved.",
+          "stage_owner": "L01",
+          "task_id": "Task 1",
+          "verification_check_id": "spec-hygiene",
+          "evidence_tier": "SPECIFICATION",
+          "test_oracle": "TEST-LOCAL-501",
+          "pack_test_id": "V-BASE",
+          "evidence_ref": "Stage L01/L01F/L01F2 git anchor/diff/SHA-256 verification + l01-baseline candidate PASS (11/11) + DomainPurityTest",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-501.2",
+          "description": "Existing offline simulator (com.weback.robot) and frozen cloud pilot (com.weback.robot.pilot) pass all 11 baseline checks on 184175a without weakening.",
+          "stage_owner": "L01",
+          "task_id": "Task 1",
+          "verification_check_id": "pilot-apk-validation",
+          "secondary_verification_checks": ["android-unit-tests", "pilot-android-unit-tests", "apk-validation"],
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-522",
+          "pack_test_id": "V-R01",
+          "evidence_ref": "Baseline l01-baseline 157/157 debug + 157/157 pilot + 195/195 selftests PASS on 184175a",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-501.3",
+          "description": "Local map replay and viewer components perform zero automatic fallback to SimulatorRobotTransport or cloud gateways on empty streams, EOF, or errors; verified via provider/factory spy counters.",
+          "stage_owner": "L03A",
+          "task_id": "Task 4",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-513",
+          "pack_test_id": "V-U03",
+          "evidence_ref": "Planned L03A provider/factory spy counter tests in LocalMapTruthfulnessUiTest",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-502",
+      "title": "HOSLAM TCP Frame Envelope, Modular Checksum & Stream State Machine",
+      "workstream": "T3",
+      "pack_crosswalk": ["LF-003", "P-002", "P-003", "P-004", "P-010", "NF-003", "NF-008"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-502.1",
+          "description": "HoslamStreamFramer copies caller chunk bytes safely, decodes u32 LE length with per-byte (b.toLong() and 0xFFL) in [16..2_097_152] before allocation, verifies unsigned byte-sum checksum mod 2^32, and emits ordered RawHoslamFrame sequence invariant across arbitrary splits and coalesced buffers.",
+          "stage_owner": "L02A",
+          "task_id": "Task 2",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-502, TEST-LOCAL-503",
+          "pack_test_id": "V-P01, V-P02",
+          "evidence_ref": "Planned L02A pure JVM framer/checksum/chunking tests in common app/src/test/ using imported synthetic fixtures in app/src/test/resources/hoslam/",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-502.2",
+          "description": "Envelope failures (InvalidMagic, InvalidLength, strictly FrameTooLarge for >2MiB including 0x80000010/0xFFFFFFFF, TruncatedFrame, InvalidChecksum) emit 0-based frameStartOffset under deterministic precedence, emit EndOfStream (non-error) at boundary EOF, retain prior valid frames in chunk, block post-error emission, and reset cleanly.",
+          "stage_owner": "L02A",
+          "task_id": "Task 2",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-504, TEST-LOCAL-505, TEST-LOCAL-510",
+          "pack_test_id": "V-P03, V-P04, V-P09",
+          "evidence_ref": "Planned L02A EOF, negative header/checksum, precedence, and property stress tests in common app/src/test/",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-503",
+      "title": "Raw Unsigned 8-Bit HOSLAM Raster Decoder & Stage 0 ZLIB Correction",
+      "workstream": "T3",
+      "pack_crosswalk": ["LF-003", "P-005", "P-006", "P-007", "NF-006", "NF-008", "ADR-L004"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-503.1",
+          "description": "hoslmap\\0 layout validation enforces <40 -> UnsupportedLayout, W/H outside 1..1024 or W*H>1_048_576 -> InvalidDimensions, totalLength != aligned+4 -> UnsupportedLayout, and nonzero pad -> InvalidPadding (0..3 valid).",
+          "stage_owner": "L02B",
+          "task_id": "Task 3",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-506, TEST-LOCAL-510",
+          "pack_test_id": "V-P05, V-P09",
+          "evidence_ref": "Planned L02B layout, H=0, <40, aligned+4 mismatch, and inner nonzero padding unit tests",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-503.2",
+          "description": "Raster at offset 36 decodes directly as row-major u8 grayscale (v,v,v,255) with zero ZLIB Inflater, defensive RasterSnapshot buffer copy + content equals/redacted toString, synthetic + isolated temp-workspace mutation-kill proofs, and optional private capture oracle (NOT_RUN in CI).",
+          "stage_owner": "L02B",
+          "task_id": "Task 3",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL_PLUS_PRIVATE_ORACLE_NOT_RUN",
+          "test_oracle": "TEST-LOCAL-507, TEST-LOCAL-509, TEST-LOCAL-511",
+          "pack_test_id": "V-P06, V-P08, V-P10",
+          "evidence_ref": "Planned L02B decoder + defensive copy mutation + 11-mutant isolated temp-workspace proof; TEST-LOCAL-509 private BIN remains NOT_RUN when absent",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-504",
+      "title": "Auxiliary & Trajectory Candidate Structural Validation",
+      "workstream": "T3",
+      "pack_crosswalk": ["LF-009", "P-008", "P-009"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-504.1",
+          "description": "Keeping E-002 framing separate from defensive codec constraints and unresolved U04 semantics: hoslcac\\0 enforces exact 20-byte length and hosltraj enforces opaque byte length >=16 with (L-16)%8==0 (zero IEEE-754 float parsing or coordinate arithmetic; N=0 empty frame rule is a defensive implementation choice, not firmware evidence); non-conforming lengths emit UnsupportedLayout.",
+          "stage_owner": "L02B",
+          "task_id": "Task 3",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-508",
+          "pack_test_id": "V-P07",
+          "evidence_ref": "Planned L02B opaque aux/trajectory byte-length structural validation tests",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-504.2",
+          "description": "Pure-codec aux/trajectory classification emits bounded counts only and never publishes float pairs, pose, heading, battery, calibration, or path overlay models.",
+          "stage_owner": "L02B",
+          "task_id": "Task 3",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-508",
+          "pack_test_id": "V-P07",
+          "evidence_ref": "Planned L02B non-semantic structural boundary tests",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-505",
+      "title": "Offline Replay Map Viewer, Pan/Zoom & Truthful Diagnostic UI",
+      "workstream": "T2",
+      "pack_crosswalk": ["LF-004", "LF-007", "LF-008", "NF-005"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-505.1",
+          "description": "SyntheticReplayTelemetrySource reads assets/synthetic_fixtures/valid_mixed.bin, enforces exact EOF and zero-map replay acceptance failure, drives cached MapCanvas with purely visual pan/zoom/reset, and preserves INTERNET-free offline APK.",
+          "stage_owner": "L03A",
+          "task_id": "Task 4",
+          "verification_check_id": "android-unit-tests",
+          "secondary_verification_checks": ["apk-validation"],
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-512",
+          "pack_test_id": "V-U01",
+          "evidence_ref": "Planned L03A Robolectric Compose replay + zero-map rejection tests + offline apk-validation",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-505.2",
+          "description": "UI truthfully displays source, connection/staleness state, receive age, frame counts, accessible semantic labels, survives synthetic replay recreation, and never updates pose/freshness from aux/trajectory.",
+          "stage_owner": "L03A",
+          "task_id": "Task 4",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-513",
+          "pack_test_id": "V-U02, V-U03",
+          "evidence_ref": "Planned L03A fixed-clock UI truthfulness, recreate, and accessibility tests",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-506",
+      "title": "Dedicated local Build Variant & Structural Source-Set Isolation",
+      "workstream": "T4",
+      "pack_crosswalk": ["LF-005", "NF-002", "NF-006", "ADR-L002", "ADR-L009"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-506.1",
+          "description": "Dedicated local variant (com.weback.robot.local) declares INTERNET only in src/local/AndroidManifest.xml, adds localImplementation Compose BOM + ui-test-manifest, preserves testBuildType=pilot, decouples WeBackApplication/MainActivity/AppContainer via VariantAppContainerFactory & PilotCapabilityBridge? (DefaultPilotContainer + PilotCapabilityBridgeImpl + cloud classes in src/cloudPilot/; OfflineAppContainer in local/release), retains common src/test/ across testDebug/testPilot/testLocal (no setSrcDirs override) with additive testCloudPilot/, and enforces $-aware class-family DEX exclusions across all .dex files from Day 1.",
+          "stage_owner": "L04A",
+          "task_id": "Task 5",
+          "verification_check_id": "apk-validation",
+          "provisional_l01_check_binding": true,
+          "planned_t4_policy_check_id": "local-apk-validation",
+          "secondary_verification_checks": ["local-android-unit-tests"],
+          "t4_promotion_rule": "MUST promote verification_check_id to local-apk-validation atomically in L04A before VERIFIED",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-514",
+          "pack_test_id": "V-S01",
+          "evidence_ref": "Planned L04A 3-way $-aware multi-DEX apk_validator.py + LocalAppContainerTest/LocalBuildSeparationTest/LocalSourceSecurityScanTest",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-506.2",
+          "description": "ReceiveOnlyTcpSource, LocalLanTrustPolicy, and LocalDiagnosticSanitizer reside solely in src/local/ (excluded from debug/pilot/release DEX), local invokes zero cloud gateways/tokens or simulator fallback, and migrated debug/pilot/local suites preserve all tested behavior verified via JUnit XML test identities.",
+          "stage_owner": "L04B",
+          "task_id": "Task 6",
+          "verification_check_id": "pilot-apk-validation",
+          "provisional_l01_check_binding": true,
+          "planned_t4_policy_check_id": "local-android-unit-tests",
+          "secondary_verification_checks": ["local-apk-validation", "pilot-apk-validation", "android-unit-tests", "pilot-android-unit-tests"],
+          "t4_promotion_rule": "MUST promote verification_check_id to local-android-unit-tests atomically in L04A before VERIFIED",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-514, TEST-LOCAL-515, TEST-LOCAL-522",
+          "pack_test_id": "V-S01, V-S02, V-R01",
+          "evidence_ref": "Planned L04B variant DEX/classpath isolation + JUnit XML identity regression verification",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-507",
+      "title": "Receive-Only Structural Boundary & Explicit RFC1918 IPv4:9999 Trust Policy",
+      "workstream": "T4",
+      "pack_crosswalk": ["LF-005", "LF-006", "P-001", "NF-001", "NF-002", "ADR-L005"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-507.1",
+          "description": "LocalTelemetryStreamSource and ReceiveOnlyTcpSource are structurally receive-only (0 OutputStream writes, 0 probes, 0 cloud/simulator fallback calls via spy factories); fake TCP peer receives 0 application bytes.",
+          "stage_owner": "L04B",
+          "task_id": "Task 6",
+          "verification_check_id": "android-unit-tests",
+          "provisional_l01_check_binding": true,
+          "planned_t4_policy_check_id": "local-android-unit-tests",
+          "t4_promotion_rule": "MUST promote verification_check_id to local-android-unit-tests atomically in L04A before VERIFIED",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-516",
+          "pack_test_id": "V-S03",
+          "evidence_ref": "Planned L04B loopback ServerSocket 0-byte-write & zero-fallback contract tests",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-507.2",
+          "description": "LocalLanTrustPolicy accepts strictly canonical dotted-decimal RFC1918 IPv4 (last octet 1..254) on port 9999 via InetAddress.getByAddress + Socket(Proxy.NO_PROXY), post-connect peer check, explicit session consent, and application-level enforcement disclosure.",
+          "stage_owner": "L04B",
+          "task_id": "Task 6",
+          "verification_check_id": "android-unit-tests",
+          "provisional_l01_check_binding": true,
+          "planned_t4_policy_check_id": "local-android-unit-tests",
+          "t4_promotion_rule": "MUST promote verification_check_id to local-android-unit-tests atomically in L04A before VERIFIED",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-515",
+          "pack_test_id": "V-S02",
+          "evidence_ref": "Planned L04B table-driven RFC1918 IPv4/port/proxy trust policy tests",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-508",
+      "title": "Session Lifecycle, Generation Fencing, Bounded Memory & Household Privacy",
+      "workstream": "T3",
+      "pack_crosswalk": ["LF-006", "LF-007", "NF-003", "NF-004", "NF-008"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-508.1",
+          "description": "Canonical normative FSM (Idle/Connecting/WaitingForMap/Streaming/Stale/Disconnected/Error across all active & terminal transitions, SESSION_LIMIT_REACHED at 180s not corruption, Background->Disconnected(BACKGROUNDED), Rotation->Disconnected(CONFIG_CHANGE_RECONNECT_REQUIRED), Stop/TargetChange/Exit->Idle), absolute 15s in-frame deadline, <=1_000ms close, and exact retention rules.",
+          "stage_owner": "L04B",
+          "task_id": "Task 6",
+          "verification_check_id": "android-unit-tests",
+          "provisional_l01_check_binding": true,
+          "planned_t4_policy_check_id": "local-android-unit-tests",
+          "t4_promotion_rule": "MUST promote verification_check_id to local-android-unit-tests atomically in L04A before VERIFIED",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-518, TEST-LOCAL-519, TEST-LOCAL-520",
+          "pack_test_id": "V-T01, V-T02, V-T03",
+          "evidence_ref": "Planned L04B fake-clock deadlines, Stale->Error, Background/Rotation Disconnected teardown, and burst tests",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-508.2",
+          "description": "Ephemeral memory <=1 latest + 1 in-progress frame, <=200 diagnostic ring entries (<=512 chars), shared SecretRedactor.kt untouched, construction-time LocalDiagnosticEvent + LocalDiagnosticSanitizer excluding IPs/SSIDs/raw socket messages/Throwables/JWTs/frames/pixels, and zero household captures/IPs in Git or CI.",
+          "stage_owner": "L04B",
+          "task_id": "Task 6",
+          "verification_check_id": "android-unit-tests",
+          "provisional_l01_check_binding": true,
+          "planned_t4_policy_check_id": "local-android-unit-tests",
+          "t4_promotion_rule": "MUST promote verification_check_id to local-android-unit-tests atomically in L04A before VERIFIED",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-517, TEST-LOCAL-520",
+          "pack_test_id": "V-S04, V-T03",
+          "evidence_ref": "Planned L04B negative privacy-by-construction tests & bounded memory tests without SecretRedactor modification",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-509",
+      "title": "Governed T4 Policy Transition & Verification Integrity",
+      "workstream": "T4",
+      "pack_crosswalk": ["NF-007", "ADR-L007"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-509.1",
+          "description": "Protected L04A PR executes under approved test migration inventory + verified JUnit XML identity coverage, adds local variant + $-aware multi-DEX 3-way apk_validator.py + 4 local-* checks (15 total), updates checks.baseline.json to fd870ee6..., promotes traceability.json check IDs, requires TRANSITION_AUTHORIZATION + dual PO/Lead approval, and mandates post-merge vars.APPROVED_POLICY_SHA256 sync prior to L04B.",
+          "stage_owner": "L04A",
+          "task_id": "Task 5",
+          "verification_check_id": "harness-selftests",
+          "secondary_verification_checks": ["local-android-unit-tests", "android-unit-tests", "pilot-android-unit-tests", "local-apk-validation"],
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-521",
+          "pack_test_id": "V-BASE",
+          "evidence_ref": "Planned L04A transition, $-aware multi-DEX apk_validator selftests, JUnit XML identity verification & post-merge CI variable sync",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-509.2",
+          "description": "Stage L01/L01F/L01F2 leaves protected policies/verification/.github/app/gradle/AGENTS/51bdd70 untouched and enforces 4-tier evidence separation (NOT_RUN never masked as PASS).",
+          "stage_owner": "L01",
+          "task_id": "Task 1",
+          "verification_check_id": "spec-hygiene",
+          "evidence_tier": "SPECIFICATION",
+          "test_oracle": "TEST-LOCAL-501",
+          "pack_test_id": "V-BASE",
+          "evidence_ref": "Stage L01F2 git diff/status/SHA-256 audit + spec_validator.py + harness-selftests + evidence.py",
+          "status": "PLANNED"
+        }
+      ]
+    },
+    {
+      "requirement_id": "REQ-LOCAL-510",
+      "title": "Unsupported Capabilities & Hardware-in-the-Loop Acceptance Boundaries",
+      "workstream": "T4",
+      "pack_crosswalk": ["LF-010", "LF-011", "LF-012", "LF-013", "LF-014", "LF-015", "ADR-L006"],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-510.1",
+          "description": "Local mode omits or disables and visibly labels UNSUPPORTED all unverified features (Clean/Pause/Resume/Dock, battery/suction/water/faults, pose/trajectory overlays, rooms/zones/schedules, Zigma Free/firmware).",
+          "stage_owner": "L03A",
+          "task_id": "Task 4",
+          "verification_check_id": "android-unit-tests",
+          "evidence_tier": "AUTOMATED_IMPL",
+          "test_oracle": "TEST-LOCAL-513",
+          "pack_test_id": "V-U03",
+          "evidence_ref": "Planned L03A Compose UI unsupported controls & non-telemetry verification",
+          "status": "PLANNED"
+        },
+        {
+          "ac_id": "AC-510.2",
+          "description": "Human-authorized physical HIL acceptance (HIL-01..05, manual HIL plan distinct from android_smoke_test.py) requires PO/Lead authorization, approved local APK SHA, router 0-outbound-byte capture, teardown/restart checks, and >=1 valid map (>=2 unique hashes for live-update).",
+          "stage_owner": "L05",
+          "task_id": "Task 7",
+          "verification_check_id": "android-smoke-test",
+          "provisional_l01_check_binding": true,
+          "manual_hil_gate_distinct_from_android_smoke_test": true,
+          "planned_hil_gate_id": "manual-hil-acceptance",
+          "evidence_tier": "HIL_HUMAN_GATED_NOT_RUN",
+          "test_oracle": "TEST-LOCAL-523",
+          "pack_test_id": "HIL-01..HIL-05",
+          "evidence_ref": "Manual HIL acceptance plan; NOT registered as active policy check and strictly NOT_RUN in CI",
+          "status": "NOT_RUN"
+        },
+        {
+          "ac_id": "AC-510.3",
+          "description": "Separately authorized device-scoped WAN isolation (HIL-06 for LF-014) and research backlog (U01..U12) closure require independent evidence, negative controls, and separate per-feature spec PRs prior to any LF-010..LF-015 implementation.",
+          "stage_owner": "L06",
+          "task_id": "Task 8",
+          "verification_check_id": "android-smoke-test",
+          "provisional_l01_check_binding": true,
+          "manual_hil_gate_distinct_from_android_smoke_test": true,
+          "planned_hil_gate_id": "manual-hil-wan-isolation",
+          "evidence_tier": "HIL_HUMAN_GATED_NOT_RUN",
+          "test_oracle": "TEST-LOCAL-523",
+          "pack_test_id": "HIL-06",
+          "evidence_ref": "Separate L06/L07+ authorization required; strictly NOT_RUN in CI",
+          "status": "NOT_RUN"
+        }
+      ]
+    }
+  ]
+}
