@@ -68,8 +68,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-502, TEST-LOCAL-503",
           "pack_test_id": "V-P01, V-P02",
-          "evidence_ref": "Planned L02A pure JVM framer/checksum/chunking tests in common app/src/test/ using imported synthetic fixtures in app/src/test/resources/hoslam/",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/protocol/local/codec/HoslamFramerMagicChecksumTest.kt & HoslamFramerChunkingTest.kt & RawHoslamFrameContractTest.kt using imported synthetic fixtures in app/src/test/resources/hoslam/ (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-502.2",
@@ -80,8 +80,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-504, TEST-LOCAL-505, TEST-LOCAL-510",
           "pack_test_id": "V-P03, V-P04, V-P09",
-          "evidence_ref": "Planned L02A EOF, negative header/checksum, precedence, and property stress tests in common app/src/test/",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/protocol/local/codec/HoslamFramerEofTest.kt & HoslamFramerNegativeTest.kt & HoslamPropertyStressTest.kt (framing portion only; L02B decoder stress and TEST-LOCAL-511 deferred to L02B) (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },

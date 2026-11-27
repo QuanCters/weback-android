@@ -1,0 +1,79 @@
+{
+  "provenance": "Synthetic authored pixels; no captured household data",
+  "valid_expected_counts": {
+    "map": 4,
+    "aux": 1,
+    "trajectory": 1
+  },
+  "maps": [
+    {
+      "width": 2,
+      "height": 2,
+      "pixels_hex": "007f80ff",
+      "length": 44,
+      "checksum": 1424,
+      "raster_sha256": "89273d2f70b93285bb7ddb4bcee86a5347ca7159352e3cbdd20c23e9d1e507d3"
+    },
+    {
+      "width": 3,
+      "height": 1,
+      "pixels_hex": "ff0080",
+      "length": 44,
+      "checksum": 1297,
+      "raster_sha256": "ef192b7af54e943f206ab27075ec1805384c972c9959fc5820f1fa7d5268fcef"
+    },
+    {
+      "width": 2,
+      "height": 1,
+      "pixels_hex": "807f",
+      "length": 44,
+      "checksum": 1168,
+      "raster_sha256": "e65aceb89baab6ddba7f8ff28bdaf5da68026060445be6ac268c138d9a959b3f"
+    },
+    {
+      "width": 1,
+      "height": 1,
+      "pixels_hex": "ff",
+      "length": 44,
+      "checksum": 1167,
+      "raster_sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+    }
+  ],
+  "files": {
+    "valid_mixed.bin": {
+      "bytes": 220,
+      "sha256": "631aa7fabc331da5b9245a193a4f00c0a242096e487db96dfca2707835a46fe5",
+      "valid": true
+    },
+    "bad_checksum.bin": {
+      "bytes": 44,
+      "sha256": "47c0c4c613ddf1ac444c8fee89234fcec7d6236efd95c64c60cd7e3a791f5c82",
+      "valid": false
+    },
+    "bad_padding.bin": {
+      "bytes": 44,
+      "sha256": "197a8fb2ccc787dfa6ae9018cb060ab399ecab8c277c4bc507384dd8eb6d74d7",
+      "valid": false
+    },
+    "truncated.bin": {
+      "bytes": 43,
+      "sha256": "73bfe975102a62cac5e14fb2012e0176d36de4d08560bf3923760faa8e701743",
+      "valid": false
+    },
+    "oversized_header.bin": {
+      "bytes": 12,
+      "sha256": "9a27de4e74dca8188e505429a0abaf0e67bf8e46a5c8f91ce6de88ea3c4b9890",
+      "valid": false
+    },
+    "unknown_magic.bin": {
+      "bytes": 16,
+      "sha256": "afa798ad53b0e767064ac78da97455039e5f98db0c2777eb518c7bb4e95e6431",
+      "valid": false
+    },
+    "zero_width.bin": {
+      "bytes": 40,
+      "sha256": "40996e4c94c3a2d4f25cbdb24bc0f3b677b8bd5cee666329d602b5e749dc842c",
+      "valid": false
+    }
+  }
+}
