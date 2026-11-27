@@ -100,20 +100,20 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-506, TEST-LOCAL-510",
           "pack_test_id": "V-P05, V-P09",
-          "evidence_ref": "Planned L02B layout, H=0, <40, aligned+4 mismatch, and inner nonzero padding unit tests",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/protocol/local/codec/HoslamMapLayoutValidationTest.kt & HoslamPropertyStressTest.kt (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-503.2",
-          "description": "Raster at offset 36 decodes directly as row-major u8 grayscale (v,v,v,255) with zero ZLIB Inflater, defensive RasterSnapshot buffer copy + content equals/redacted toString, synthetic + isolated temp-workspace mutation-kill proofs, and optional private capture oracle (NOT_RUN in CI).",
+          "description": "Raster at offset 36 decodes directly as row-major u8 grayscale (v,v,v,255) with zero ZLIB Inflater, defensive RasterSnapshot buffer copy + content equals/redacted toString, synthetic + governed isolated temp-workspace mutation proofs, and optional private capture oracle (NOT_RUN in CI).",
           "stage_owner": "L02B",
           "task_id": "Task 3",
           "verification_check_id": "android-unit-tests",
           "evidence_tier": "AUTOMATED_IMPL_PLUS_PRIVATE_ORACLE_NOT_RUN",
           "test_oracle": "TEST-LOCAL-507, TEST-LOCAL-509, TEST-LOCAL-511",
           "pack_test_id": "V-P06, V-P08, V-P10",
-          "evidence_ref": "Planned L02B decoder + defensive copy mutation + 11-mutant isolated temp-workspace proof; TEST-LOCAL-509 private BIN remains NOT_RUN when absent",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/protocol/local/codec/HoslamRawRasterDecoderTest.kt (PASS) + governed TEST-LOCAL-511 evaluation on b9c0bed across all 11 definitions: 10 non-equivalent L02B mutants KILLED (M01-M04, M06-M10, M11a; 0 survived), 1 verified EQUIVALENT (M05 W*H Int32 mul under 1..1024 dimension guards per validation.md §3 proof + independent review), supplemental M05-GUARD upper-bound bypass KILLED (4 AssertionErrors, separate from 11 definitions); M11b LocalMapRepository freshness-reset deferred to L03A; TEST-LOCAL-509 private BIN remains NOT_RUN when absent",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -132,8 +132,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-508",
           "pack_test_id": "V-P07",
-          "evidence_ref": "Planned L02B opaque aux/trajectory byte-length structural validation tests",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/protocol/local/codec/HoslamAuxAndTrajectoryTest.kt & HoslamPropertyStressTest.kt (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-504.2",
@@ -144,8 +144,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-508",
           "pack_test_id": "V-P07",
-          "evidence_ref": "Planned L02B non-semantic structural boundary tests",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/protocol/local/codec/HoslamAuxAndTrajectoryTest.kt reflection + source scan structural boundary tests (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },

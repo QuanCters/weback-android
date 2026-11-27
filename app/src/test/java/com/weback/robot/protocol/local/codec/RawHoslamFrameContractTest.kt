@@ -1,7 +1,9 @@
 package com.weback.robot.protocol.local.codec
 
+import com.weback.robot.domain.map.HoslamFrame
 import com.weback.robot.domain.map.HoslamFrameKind
 import com.weback.robot.domain.map.LocalCodecError
+import com.weback.robot.domain.map.RasterSnapshot
 import com.weback.robot.domain.map.RawHoslamFrame
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -97,12 +99,45 @@ class RawHoslamFrameContractTest {
             LocalCodecError.InvalidLength(44L, 12L),
             LocalCodecError.FrameTooLarge(44L, 0x80000010L),
             LocalCodecError.TruncatedFrame(44L, 19),
-            LocalCodecError.InvalidChecksum(44L)
+            LocalCodecError.InvalidChecksum(44L),
+            LocalCodecError.UnsupportedLayout(44L, HoslamFrameKind.MAP, "MAP_LENGTH_LAYOUT_MISMATCH"),
+            LocalCodecError.InvalidDimensions(44L, 0L, 1L),
+            LocalCodecError.InvalidPadding(44L)
         )
         for (err in errors) {
             val errStr = err.toString()
             assertTrue("Error toString should contain offset 44: $errStr", errStr.contains("44"))
             assertFalse("Error toString leaked payload bytes: $errStr", errStr.contains("SECRET"))
+        }
+
+        val mapSnapshot = RasterSnapshot(2, 2, sentinelText.encodeToByteArray().copyOfRange(0, 4))
+        val mapFrame = HoslamFrame.Map(44L, 44, 0L, mapSnapshot)
+        assertFalse("HoslamFrame.Map.toString leaked pixel ASCII", mapFrame.toString().contains("SECR"))
+        assertTrue(mapFrame.toString().contains(mapSnapshot.rasterSha256))
+    }
+
+    @Test
+    fun testHoslamFrameInitRejectsInvalidLengthsAndSlotCountOverflows() {
+        val validSnapshot = RasterSnapshot(1, 1, byteArrayOf(0x42))
+        val invalidFrames = listOf(
+            { HoslamFrame.Map(-1L, 44, 0L, validSnapshot) },
+            { HoslamFrame.Map(0L, 40, 0L, validSnapshot) },
+            { HoslamFrame.Aux(-1L, 20, 0L, 4) },
+            { HoslamFrame.Aux(0L, 24, 0L, 4) },
+            { HoslamFrame.Aux(0L, 20, 0L, 8) },
+            { HoslamFrame.Trajectory(-1L, 16, 0L, 0) },
+            { HoslamFrame.Trajectory(0L, 16, 0L, -1) },
+            { HoslamFrame.Trajectory(0L, 16, 0L, 0x2000_0000) }, // Int32 * 8 overflow must still fail
+            { HoslamFrame.Trajectory(0L, RawHoslamFrame.MAX_FRAME_BYTES + 8, 0L, 262_143) }
+        )
+        for (call in invalidFrames) {
+            var threw = false
+            try {
+                call()
+            } catch (_: IllegalArgumentException) {
+                threw = true
+            }
+            assertTrue("Expected IllegalArgumentException for invalid HoslamFrame construction", threw)
         }
     }
 
@@ -119,6 +154,16 @@ class RawHoslamFrameContractTest {
                 threw = true
             }
             assertTrue("Expected IndexOutOfBoundsException for body index $badIndex", threw)
+        }
+
+        for (badFrameIndex in listOf(-1, raw.size)) {
+            var threw = false
+            try {
+                frame.frameByteAt(badFrameIndex)
+            } catch (_: IndexOutOfBoundsException) {
+                threw = true
+            }
+            assertTrue("Expected IndexOutOfBoundsException for frame index $badFrameIndex", threw)
         }
     }
 }
