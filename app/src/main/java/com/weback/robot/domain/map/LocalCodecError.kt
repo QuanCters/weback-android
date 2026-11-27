@@ -1,7 +1,8 @@
 package com.weback.robot.domain.map
 
 /**
- * Typed envelope and framing failure values emitted by the HOSLAM stream framer.
+ * Typed envelope, framing, and layout validation failure values emitted by the
+ * HOSLAM stream framer and frame decoder.
  * Error values report 0-based session-relative byte offsets and carry zero raw payloads.
  */
 sealed interface LocalCodecError {
@@ -27,6 +28,22 @@ sealed interface LocalCodecError {
     ) : LocalCodecError
 
     data class InvalidChecksum(
+        override val frameStartOffset: Long
+    ) : LocalCodecError
+
+    data class UnsupportedLayout(
+        override val frameStartOffset: Long,
+        val kind: HoslamFrameKind,
+        val reasonCode: String
+    ) : LocalCodecError
+
+    data class InvalidDimensions(
+        override val frameStartOffset: Long,
+        val width: Long,
+        val height: Long
+    ) : LocalCodecError
+
+    data class InvalidPadding(
         override val frameStartOffset: Long
     ) : LocalCodecError
 }

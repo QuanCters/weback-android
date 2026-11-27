@@ -1,16 +1,19 @@
 package com.weback.robot.protocol.local.codec
 
+import com.weback.robot.domain.map.HoslamFrame
 import com.weback.robot.domain.map.HoslamFrameKind
 import com.weback.robot.domain.map.LocalCodecError
 import com.weback.robot.domain.map.RawHoslamFrame
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
 
 /**
- * TEST-LOCAL-510 (framing portion only, AC-502.2):
- * Deterministic seeded random/mutated byte-stream stress verification under bounded working buffers.
+ * TEST-LOCAL-510 (AC-502.2, AC-503.1):
+ * Deterministic seeded random/mutated byte-stream framing and decoder stress verification
+ * under bounded working buffers.
  */
 class HoslamPropertyStressTest {
 
@@ -72,6 +75,10 @@ class HoslamPropertyStressTest {
             }
 
             assertEquals("Session $session frame sequence mismatch", expectedFrames, actualFrames)
+            assertEquals("Session $session frame count mismatch", streamParts.size, actualFrames.size)
+            for (idx in streamParts.indices) {
+                assertArrayEquals("Session $session frame $idx raw bytes mismatch", streamParts[idx], actualFrames[idx].copyBytes())
+            }
             assertEquals(
                 HoslamFinishResult.EndOfStream(frameCount.toLong(), fullStream.size.toLong()),
                 framerChunked.finish()
@@ -197,7 +204,10 @@ class HoslamPropertyStressTest {
             assertEquals(0, framer.activeFrameBufferCapacity)
         }
 
-        assertTrue("Expected both clean and failed trials in stress run (failed=$failureCount, clean=$cleanCount)", failureCount > 300)
+        assertTrue(
+            "Expected both clean and failed trials in stress run (failed=$failureCount, clean=$cleanCount)",
+            failureCount > 300 && cleanCount > 0
+        )
     }
 
     @Test
@@ -221,5 +231,186 @@ class HoslamPropertyStressTest {
             assertEquals(0, framer.activeFrameBufferCapacity)
         }
         assertEquals(HoslamFinishResult.EndOfStream(4L, 4L * maxFrame.size), framer.finish())
+    }
+
+    @Test
+    fun testSeededValidMixedMapAuxTrajectoryStreamsDecodeDeterministicallyAcross150Sessions() {
+        val prng = Random(0x5EED_5103L)
+        val framer = HoslamStreamFramer()
+        val decoder = HoslamFrameDecoder()
+
+        for (session in 0 until 150) {
+            framer.reset()
+            val frameCount = prng.nextInt(1, 10)
+            val expectedFrames = mutableListOf<ByteArray>()
+            val expectedKinds = mutableListOf<HoslamFrameKind>()
+            val expectedPixels = mutableListOf<ByteArray?>()
+            val expectedSlots = mutableListOf<Int?>()
+
+            for (f in 0 until frameCount) {
+                val kind = HoslamFrameKind.entries[prng.nextInt(HoslamFrameKind.entries.size)]
+                expectedKinds.add(kind)
+                when (kind) {
+                    HoslamFrameKind.MAP -> {
+                        val w = prng.nextInt(1, 33)
+                        val h = prng.nextInt(1, 33)
+                        val pixels = ByteArray(w * h).also { prng.nextBytes(it) }
+                        val meta = ByteArray(16).also { prng.nextBytes(it) }
+                        expectedFrames.add(HoslamTestFixtures.buildMapFrameBytes(w.toLong(), h.toLong(), pixels, meta))
+                        expectedPixels.add(pixels)
+                        expectedSlots.add(null)
+                    }
+                    HoslamFrameKind.AUX -> {
+                        val auxBody = ByteArray(4).also { prng.nextBytes(it) }
+                        expectedFrames.add(HoslamTestFixtures.buildValidFrame(HoslamFrameKind.AUX, auxBody))
+                        expectedPixels.add(null)
+                        expectedSlots.add(null)
+                    }
+                    HoslamFrameKind.TRAJECTORY -> {
+                        val slots = prng.nextInt(0, 33)
+                        val trajBody = ByteArray(slots * 8).also { prng.nextBytes(it) }
+                        expectedFrames.add(HoslamTestFixtures.buildValidFrame(HoslamFrameKind.TRAJECTORY, trajBody))
+                        expectedPixels.add(null)
+                        expectedSlots.add(slots)
+                    }
+                }
+            }
+
+            val stream = expectedFrames.fold(ByteArray(0)) { acc, next -> acc + next }
+            val rawFrames = mutableListOf<RawHoslamFrame>()
+            var pos = 0
+            while (pos < stream.size) {
+                val chunkLen = prng.nextInt(1, 64)
+                val next = minOf(pos + chunkLen, stream.size)
+                val res = framer.feed(stream, offset = pos, length = next - pos)
+                assertTrue("Session $session unexpected framer failure: $res", res is HoslamFeedResult.Frames)
+                rawFrames.addAll((res as HoslamFeedResult.Frames).frames)
+                pos = next
+            }
+            assertEquals(HoslamFinishResult.EndOfStream(frameCount.toLong(), stream.size.toLong()), framer.finish())
+            assertEquals(frameCount, rawFrames.size)
+
+            for (i in rawFrames.indices) {
+                val decRes = decoder.decode(rawFrames[i], frameGeneration = i.toLong() + 1L)
+                assertTrue("Session $session frame $i decode failed: $decRes", decRes is HoslamDecodeResult.Decoded)
+                val decoded = (decRes as HoslamDecodeResult.Decoded).frame
+                assertEquals(expectedKinds[i], decoded.kind)
+                when (decoded) {
+                    is HoslamFrame.Map -> {
+                        assertArrayEquals(expectedPixels[i], decoded.snapshot.copyPixels())
+                        assertEquals(HoslamTestFixtures.sha256Hex(expectedPixels[i]!!), decoded.snapshot.rasterSha256)
+                    }
+                    is HoslamFrame.Aux -> assertEquals(4, decoded.opaquePayloadByteCount)
+                    is HoslamFrame.Trajectory -> assertEquals(expectedSlots[i], decoded.opaqueSlotCount)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testSeededMalformedMapAuxTrajLayoutsFailDeterministicallyAcross300Trials() {
+        val prng = Random(0x5EED_5104L)
+        val framer = HoslamStreamFramer()
+        val decoder = HoslamFrameDecoder()
+
+        for (trial in 0 until 300) {
+            framer.reset()
+            val prefixAux = HoslamTestFixtures.buildValidFrame(HoslamFrameKind.AUX, ByteArray(4) { 0x11 }) // 20 B
+            val expectedOffset = 20L
+
+            val (badFrameBytes, expectedError) = when (trial % 6) {
+                0 -> {
+                    // MAP total length < 40
+                    val len = prng.nextInt(16, 40)
+                    val body = ByteArray(len - 16).also { prng.nextBytes(it) }
+                    HoslamTestFixtures.buildValidFrame(HoslamFrameKind.MAP, body) to
+                        LocalCodecError.UnsupportedLayout(expectedOffset, HoslamFrameKind.MAP, "MAP_LENGTH_BELOW_40")
+                }
+                1 -> {
+                    // Malformed W or H (0, >1024, or overflow-prone high bit)
+                    val (w, h) = when (prng.nextInt(4)) {
+                        0 -> 0L to prng.nextLong(1L, 100L)
+                        1 -> prng.nextLong(1L, 100L) to 0L
+                        2 -> prng.nextLong(1025L, 5000L) to prng.nextLong(1L, 100L)
+                        else -> (0x8000_0000L + prng.nextLong(0L, 1000L)) to 16L
+                    }
+                    HoslamTestFixtures.buildMapFrameBytes(w, h, ByteArray(0), overrideTotalLength = 40L) to
+                        LocalCodecError.InvalidDimensions(expectedOffset, w, h)
+                }
+                2 -> {
+                    // Inconsistent length != aligned + 4 (min valid for 3x3 is 52)
+                    val w = prng.nextInt(3, 17).toLong()
+                    val h = prng.nextInt(3, 17).toLong()
+                    val badLen = if (prng.nextBoolean()) 40L else 44L
+                    HoslamTestFixtures.buildMapFrameBytes(w, h, ByteArray(badLen.toInt() - 40), overrideTotalLength = badLen) to
+                        LocalCodecError.UnsupportedLayout(expectedOffset, HoslamFrameKind.MAP, "MAP_LENGTH_LAYOUT_MISMATCH")
+                }
+                3 -> {
+                    // Nonzero padding mutation at random applicable padding index
+                    val wChoices = listOf(1L, 2L, 3L, 5L, 6L, 7L)
+                    val w = wChoices[prng.nextInt(wChoices.size)]
+                    val end = 36 + w.toInt()
+                    val aligned = (end + 3) and 3.inv()
+                    val padLen = aligned - end
+                    val pad = ByteArray(padLen)
+                    val mutIdx = prng.nextInt(padLen)
+                    pad[mutIdx] = prng.nextInt(1, 256).toByte()
+                    HoslamTestFixtures.buildMapFrameBytes(w, 1L, ByteArray(w.toInt()), overridePadding = pad) to
+                        LocalCodecError.InvalidPadding(expectedOffset)
+                }
+                4 -> {
+                    // Invalid AUX length != 20
+                    val bodyLen = listOf(0, 2, 8, 12)[prng.nextInt(4)]
+                    HoslamTestFixtures.buildValidFrame(HoslamFrameKind.AUX, ByteArray(bodyLen)) to
+                        LocalCodecError.UnsupportedLayout(expectedOffset, HoslamFrameKind.AUX, "AUX_LENGTH_NOT_20")
+                }
+                else -> {
+                    // Misaligned TRAJECTORY length
+                    val badRem = prng.nextInt(1, 8)
+                    val slots = prng.nextInt(0, 4)
+                    HoslamTestFixtures.buildValidFrame(HoslamFrameKind.TRAJECTORY, ByteArray(slots * 8 + badRem)) to
+                        LocalCodecError.UnsupportedLayout(expectedOffset, HoslamFrameKind.TRAJECTORY, "TRAJ_LENGTH_NOT_PAIR_ALIGNED")
+                }
+            }
+
+            val stream = prefixAux + badFrameBytes
+            val feedRes = framer.feed(stream) as HoslamFeedResult.Frames
+            assertEquals(HoslamFinishResult.EndOfStream(2L, stream.size.toLong()), framer.finish())
+            assertEquals(2, feedRes.frames.size)
+
+            val firstDecoded = decoder.decode(feedRes.frames[0])
+            assertTrue("Trial $trial prefix AUX must succeed", firstDecoded is HoslamDecodeResult.Decoded)
+            assertEquals(
+                "Trial $trial exact error mismatch",
+                HoslamDecodeResult.Failed(expectedError),
+                decoder.decode(feedRes.frames[1])
+            )
+        }
+    }
+
+    @Test
+    fun testMaximumValid1024x1024RasterDecodesWithinBoundedMemoryWithoutOom() {
+        val framer = HoslamStreamFramer()
+        val decoder = HoslamFrameDecoder()
+        val pixels = ByteArray(1024 * 1024) { idx -> ((idx * 13) and 0xFF).toByte() }
+        val expectedSha = HoslamTestFixtures.sha256Hex(pixels)
+        val maxMapBytes = HoslamTestFixtures.buildMapFrameBytes(1024L, 1024L, pixels)
+
+        repeat(4) { iter ->
+            framer.reset()
+            val feedRes = framer.feed(maxMapBytes) as HoslamFeedResult.Frames
+            assertEquals(HoslamFinishResult.EndOfStream(1L, maxMapBytes.size.toLong()), framer.finish())
+            assertEquals(0, framer.bufferedHeaderByteCount)
+            assertEquals(0, framer.activeFrameBufferCapacity)
+
+            val decRes = decoder.decode(feedRes.frames.single(), frameGeneration = iter.toLong() + 1L)
+            assertTrue("Iteration $iter expected Decoded", decRes is HoslamDecodeResult.Decoded)
+            val map = (decRes as HoslamDecodeResult.Decoded).frame as HoslamFrame.Map
+            assertEquals(1024, map.snapshot.width)
+            assertEquals(1024, map.snapshot.height)
+            assertEquals(expectedSha, map.snapshot.rasterSha256)
+            assertEquals(pixels[0].toInt() and 0xFF, map.snapshot.pixelAt(0, 0))
+            assertEquals(pixels[1024 * 1024 - 1].toInt() and 0xFF, map.snapshot.pixelAt(1023, 1023))
+        }
     }
 }
