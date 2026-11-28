@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,6 +23,8 @@ import com.weback.robot.domain.pilot.PilotAbortReason
 import com.weback.robot.domain.pilot.PilotModeState
 import com.weback.robot.security.ProvisionedAuthorizationLoadResult
 import com.weback.robot.ui.DashboardViewModel
+import com.weback.robot.ui.map.MapScreen
+import com.weback.robot.ui.map.MapViewModel
 import com.weback.robot.ui.pilot.EphemeralPasswordBuffer
 import com.weback.robot.ui.pilot.PilotReadinessSheet
 import com.weback.robot.ui.pilot.PilotSheetUiState
@@ -46,12 +49,30 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val mapViewModel: MapViewModel by viewModels {
+        val app = application as WeBackApplication
+        MapViewModel.Factory(
+            repository = app.container.localMapRepository,
+            dispatchers = app.container.dispatcherProvider
+        )
+    }
+
     override fun onResume() {
         super.onResume()
         val app = application as? WeBackApplication ?: return
         lifecycleScope.launch {
             app.container.pilotSessionController.enforceDeadlineIfExpired()
             app.container.offlineMockPilotController.enforceDeadlineIfExpired()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        val app = application as? WeBackApplication ?: return
+        if (isChangingConfigurations) {
+            app.container.localMapRepository.onConfigurationChanged()
+        } else {
+            app.container.localMapRepository.onLifecycleBackground()
         }
     }
 
@@ -63,6 +84,7 @@ class MainActivity : ComponentActivity() {
             val livePilotController = app.container.pilotSessionController
             val isLivePilotSupported = app.container.isLivePilotSupported
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val mapUiState by mapViewModel.uiState.collectAsStateWithLifecycle()
 
             val livePilotMode by livePilotController.pilotModeState.collectAsStateWithLifecycle()
             val liveOperationInFlight by livePilotController.isOperationInFlight.collectAsStateWithLifecycle()
@@ -79,6 +101,7 @@ class MainActivity : ComponentActivity() {
             val hasUnresolvedLiveSession = liveSessionActive || liveCleanupInFlightOrIncomplete
 
             var showPilotSheet by remember { mutableStateOf(hasUnresolvedLiveSession) }
+            var showLocalMapViewer by rememberSaveable { mutableStateOf(false) }
             var activeWorkflow by remember {
                 mutableStateOf(if (hasUnresolvedLiveSession) PilotUiWorkflow.LIVE else PilotUiWorkflow.MOCK)
             }
@@ -90,11 +113,13 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(hasUnresolvedLiveSession) {
                 if (hasUnresolvedLiveSession) {
                     activeWorkflow = PilotUiWorkflow.LIVE
+                    showLocalMapViewer = false
                 }
             }
             LaunchedEffect(liveSessionActive) {
                 if (liveSessionActive) {
                     showPilotSheet = true
+                    showLocalMapViewer = false
                 }
             }
 
@@ -154,24 +179,38 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            BackHandler(enabled = showLocalMapViewer && !showPilotSheet) {
+                showLocalMapViewer = false
+            }
+
             WeBackTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    DashboardScreen(
-                        uiState = uiState,
-                        onIntent = viewModel::onIntent,
-                        onOpenPilotSheet = {
-                            if (hasUnresolvedLiveSession) {
-                                activeWorkflow = PilotUiWorkflow.LIVE
-                            }
-                            showPilotSheet = true
-                        },
-                        pilotButtonLabel = if (isLivePilotSupported) {
-                            "Pilot Readiness (Offline / Live Review)"
-                        } else {
-                            "Pilot Readiness (Offline / Mock)"
-                        },
-                        unresolvedCleanupNotice = cleanupFailureNotice
-                    )
+                    if (showLocalMapViewer && !showPilotSheet) {
+                        Surface(modifier = Modifier.fillMaxSize()) {
+                            MapScreen(
+                                viewModel = mapViewModel,
+                                onNavigateBack = { showLocalMapViewer = false }
+                            )
+                        }
+                    } else {
+                        DashboardScreen(
+                            uiState = uiState,
+                            onIntent = viewModel::onIntent,
+                            onOpenPilotSheet = {
+                                if (hasUnresolvedLiveSession) {
+                                    activeWorkflow = PilotUiWorkflow.LIVE
+                                }
+                                showPilotSheet = true
+                            },
+                            pilotButtonLabel = if (isLivePilotSupported) {
+                                "Pilot Readiness (Offline / Live Review)"
+                            } else {
+                                "Pilot Readiness (Offline / Mock)"
+                            },
+                            unresolvedCleanupNotice = cleanupFailureNotice,
+                            onOpenLocalMap = { showLocalMapViewer = true }
+                        )
+                    }
 
                     if (showPilotSheet) {
                         Surface(modifier = Modifier.fillMaxSize()) {

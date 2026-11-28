@@ -48,8 +48,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-513",
           "pack_test_id": "V-U03",
-          "evidence_ref": "Planned L03A provider/factory spy counter tests in LocalMapTruthfulnessUiTest",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/map/LocalMapActivityNavigationTest.kt & LocalMapRepositoryTest.kt provider/gateway spy counters = 0 across valid replay, empty 0-map EOF, and codec errors (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -165,8 +165,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-512",
           "pack_test_id": "V-U01",
-          "evidence_ref": "Planned L03A Robolectric Compose replay + zero-map rejection tests + offline apk-validation",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/map/LocalReplayViewerTest.kt & app/src/test/java/com/weback/robot/app/local/{SyntheticReplayTelemetrySourceTest,LocalMapRepositoryTest}.kt + packaged valid_mixed.bin/manifest.json + INTERNET-free apk-validation (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-505.2",
@@ -177,8 +177,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-513",
           "pack_test_id": "V-U02, V-U03",
-          "evidence_ref": "Planned L03A fixed-clock UI truthfulness, recreate, and accessibility tests",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/map/{LocalMapTruthfulnessUiTest,LocalMapActivityNavigationTest}.kt & app/src/test/java/com/weback/robot/app/local/{LocalMapRepositoryTest,LocalDiagnosticLoggerTest}.kt + isolated temp-workspace Mutant M11b kills (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -346,8 +346,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-513",
           "pack_test_id": "V-U03",
-          "evidence_ref": "Planned L03A Compose UI unsupported controls & non-telemetry verification",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/map/LocalMapTruthfulnessUiTest.kt (unsupportedCapabilitiesDisabledAndVisiblyLabeledUnsupported) covering LF-010..LF-013 & LF-015 (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-510.2",

@@ -2,6 +2,9 @@ package com.weback.robot.core
 
 import android.content.Context
 import com.weback.robot.BuildConfig
+import com.weback.robot.app.local.LocalDiagnosticLogger
+import com.weback.robot.app.local.LocalDiagnosticSink
+import com.weback.robot.app.local.LocalMapRepository
 import com.weback.robot.app.pilot.PilotSessionController
 import com.weback.robot.app.session.DeviceInventoryRepository
 import com.weback.robot.app.session.SessionCoordinator
@@ -33,6 +36,8 @@ import com.weback.robot.protocol.auth.RegionEndpointRouter
 import com.weback.robot.protocol.inventory.DeviceInventoryGateway
 import com.weback.robot.protocol.inventory.OfflineFixtureInventoryGateway
 import com.weback.robot.protocol.inventory.OkHttpDeviceInventoryGateway
+import com.weback.robot.protocol.local.LocalTelemetryStreamSource
+import com.weback.robot.protocol.local.SyntheticReplayTelemetrySource
 import com.weback.robot.protocol.pilot.PilotCapabilityRestrictedAuthGateway
 import com.weback.robot.protocol.pilot.PilotCapabilityRestrictedInventoryGateway
 import com.weback.robot.protocol.pilot.PilotReadOnlyFixtureTransport
@@ -98,6 +103,7 @@ interface AppContainer : AutoCloseable {
     val pilotSessionController: PilotSessionController
     val offlineMockAuthorizationGate: PilotAuthorizationGate
     val offlineMockPilotController: PilotSessionController
+    val localMapRepository: LocalMapRepository
     val isLivePilotSupported: Boolean
         get() = BuildConfig.PILOT_INTERNET_CAPABLE
     fun startOfflineMockPilot(
@@ -122,7 +128,10 @@ class DefaultAppContainer(
     private val authGatewayOverride: AuthGateway? = null,
     private val inventoryGatewayOverride: DeviceInventoryGateway? = null,
     private val realtimeTransportOverride: RealtimeSessionTransport? = null,
-    private val pilotTestHooks: PilotContainerTestHooks? = null
+    private val pilotTestHooks: PilotContainerTestHooks? = null,
+    private val robotTransportOverride: RobotTransport? = null,
+    private val localStreamSourceOverride: LocalTelemetryStreamSource? = null,
+    private val localDiagnosticLoggerOverride: LocalDiagnosticSink? = null
 ) : AppContainer {
 
     private val timeProvider: BootSessionTimeProvider by lazy {
@@ -191,11 +200,30 @@ class DefaultAppContainer(
     }
 
     override val robotTransport: RobotTransport by lazy {
-        SimulatorRobotTransport(
+        robotTransportOverride ?: SimulatorRobotTransport(
             dispatcherProvider = dispatcherProvider,
             clock = clock
         )
     }
+
+    private val localTelemetrySource: LocalTelemetryStreamSource by lazy {
+        localStreamSourceOverride ?: SyntheticReplayTelemetrySource.fromAssetManager(
+            assetManager = context?.assets,
+            ioDispatcher = dispatcherProvider.io
+        )
+    }
+
+    private val localMapRepositoryDelegate = lazy {
+        LocalMapRepository(
+            streamSource = localTelemetrySource,
+            dispatcherProvider = dispatcherProvider,
+            clock = clock,
+            diagnosticLogger = localDiagnosticLoggerOverride ?: LocalDiagnosticLogger()
+        )
+    }
+
+    override val localMapRepository: LocalMapRepository
+        get() = localMapRepositoryDelegate.value
 
     override val pilotAuthorizationGate: PilotAuthorizationGate by lazy {
         PilotAuthorizationGate(
@@ -610,6 +638,9 @@ class DefaultAppContainer(
         realtimeTransport.close()
         offlineMockPilotController.close()
         pilotSessionController.close()
+        if (localMapRepositoryDelegate.isInitialized()) {
+            localMapRepositoryDelegate.value.close()
+        }
     }
 }
 
