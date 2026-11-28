@@ -200,7 +200,7 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-514",
           "pack_test_id": "V-S01",
-          "evidence_ref": "L04A composition-root split + local buildType + 3-way $-aware multi-DEX verification/checks/apk_validator.py & verification/selftests/test_apk_validator.py (202/202 selftests + 6/6 single-fault mutant kills) + 243/243 testDebugUnitTest + 243/243 testPilotUnitTest + 156/156 testLocalUnitTest + assembleRelease + assemblePilotAndroidTest + built APK DEX reconciliation (427/427 cloud descriptors matched in pilot/debug, 0 in local/release, 0 false positives on 399 shared descriptors) [local candidate verified; CI G4 TRANSITION_AUTHORIZATION pending]",
+          "evidence_ref": "L04A composition-root split + local buildType + 3-way $-aware multi-DEX verification/checks/apk_validator.py & verification/selftests/test_apk_validator.py (203/203 selftests incl. 3x3 standalone filename matrix + 9/9 single-fault mutant kills) + 243/243 testDebugUnitTest + 243/243 testPilotUnitTest + 156/156 testLocalUnitTest + assembleRelease + assemblePilotAndroidTest + built APK DEX reconciliation (427/427 cloud descriptors matched in pilot/debug, 0 in local/release, 0 false positives on 399 shared descriptors) [local candidate verified; CI G4 TRANSITION_AUTHORIZATION pending]",
           "status": "VERIFIED"
         },
         {

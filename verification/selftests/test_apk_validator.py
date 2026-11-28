@@ -707,6 +707,43 @@ class TestApkValidator(unittest.TestCase):
         self.assertFalse(ok_bk)
         self.assertTrue(any("allowBackup must be strictly 'false'" in e for e in errs_bk))
 
+    def test_three_way_standalone_filename_substitution_matrix(self):
+        expected_paths = {
+            "offline": "app/build/outputs/apk/debug/app-debug.apk",
+            "pilot": "app/build/outputs/apk/pilot/app-pilot.apk",
+            "local": "app/build/outputs/apk/local/app-local.apk",
+        }
+        standalone_apks = {
+            "offline": "/tmp/app-debug.apk",
+            "pilot": "/tmp/app-pilot.apk",
+            "local": "/tmp/app-local.apk",
+        }
+        for policy, expected_path_str in expected_paths.items():
+            for artifact_variant, apk_path_str in standalone_apks.items():
+                ok_guard, errs_guard = validate_apk_path_for_policy(Path(apk_path_str), policy)
+                if artifact_variant == policy:
+                    self.assertTrue(
+                        ok_guard,
+                        f"Expected matching standalone filename pass for policy={policy}, path={apk_path_str}: {errs_guard}",
+                    )
+                    self.assertEqual(
+                        errs_guard,
+                        [],
+                        f"Expected empty error list for matching standalone filename policy={policy}, path={apk_path_str}: {errs_guard}",
+                    )
+                else:
+                    self.assertFalse(
+                        ok_guard,
+                        f"Expected standalone filename substitution rejection for policy={policy}, path={apk_path_str}",
+                    )
+                    self.assertTrue(
+                        any(
+                            "artifact substitution rejected" in err.lower() and expected_path_str in err
+                            for err in errs_guard
+                        ),
+                        f"Unexpected substitution error for policy={policy}, path={apk_path_str}: {errs_guard}",
+                    )
+
     def test_three_way_path_substitution_and_cli_local_policy(self):
         directed_substitutions = [
             ("offline", "app/build/outputs/apk/pilot/app-pilot.apk"),
