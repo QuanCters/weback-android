@@ -327,4 +327,44 @@ class LocalMapRepositoryTest {
         }
         return HoslamTestFixtures.buildValidFrame(HoslamFrameKind.MAP, body)
     }
+
+    @Test
+    fun repositoryInvokesInjectedCodecFactoriesPerSessionWithoutTransportFallbackDependencies() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val dispatchers = TestDispatcherProvider(dispatcher)
+        var framerCreations = 0
+        var decoderCreations = 0
+        val source = SyntheticReplayTelemetrySource(
+            fixtureBytesProvider = { byteArrayOf() },
+            expectedSha256Hex = null,
+            stepDelayMs = 0L,
+            ioDispatcher = dispatcher
+        )
+        val repo = LocalMapRepository(
+            streamSource = source,
+            dispatcherProvider = dispatchers,
+            clock = MutableClock(100L),
+            framerFactory = {
+                framerCreations++
+                com.weback.robot.protocol.local.codec.HoslamStreamFramer()
+            },
+            decoderFactory = {
+                decoderCreations++
+                com.weback.robot.protocol.local.codec.HoslamFrameDecoder()
+            }
+        )
+        try {
+            assertEquals(1, framerCreations)
+            assertEquals(1, decoderCreations)
+
+            repo.startSession()
+            runCurrent()
+            assertEquals(2, framerCreations)
+            assertEquals(2, decoderCreations)
+            assertEquals(LocalMapConnectionState.DISCONNECTED, repo.state.value.connectionState)
+            assertEquals(LocalMapTerminalReason.EOF_BEFORE_FIRST_MAP, repo.state.value.terminalReason)
+        } finally {
+            repo.close()
+        }
+    }
 }
