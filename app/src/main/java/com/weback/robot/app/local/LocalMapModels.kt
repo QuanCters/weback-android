@@ -137,7 +137,8 @@ data class LocalMapRepositoryState(
     val mapViewAccepted: Boolean = false
 ) {
     val isLive: Boolean
-        get() = connectionState == LocalMapConnectionState.STREAMING &&
+        get() = sourceKind == LocalTelemetrySourceKind.LIVE_LAN_READ_ONLY &&
+            connectionState == LocalMapConnectionState.STREAMING &&
             replayState != SyntheticReplayPlaybackState.PAUSED
 
     val isStale: Boolean

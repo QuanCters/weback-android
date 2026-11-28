@@ -85,6 +85,13 @@ class LocalMapRepositoryTest {
                 state.currentSnapshot!!.rasterSha256
             )
             assertFalse("Disconnected EOF map must not be marked live", state.isLive)
+            assertFalse(
+                "Active SYNTHETIC_REPLAY state must not be marked live",
+                LocalMapRepositoryState(
+                    sourceKind = LocalTelemetrySourceKind.SYNTHETIC_REPLAY,
+                    connectionState = LocalMapConnectionState.STREAMING
+                ).isLive
+            )
             assertTrue("Disconnected EOF retained map must be marked stale", state.isStale)
         } finally {
             repo.close()

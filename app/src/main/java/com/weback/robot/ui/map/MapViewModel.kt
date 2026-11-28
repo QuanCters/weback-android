@@ -97,12 +97,13 @@ class MapViewModel(
                 LocalMapConnectionState.IDLE -> "IDLE"
                 LocalMapConnectionState.CONNECTING -> "CONNECTING"
                 LocalMapConnectionState.WAITING_FOR_MAP -> "WAITING FOR FIRST MAP"
-                LocalMapConnectionState.STREAMING -> {
-                    if (repoState.replayState == SyntheticReplayPlaybackState.PAUSED) {
+                LocalMapConnectionState.STREAMING -> when {
+                    repoState.sourceKind == LocalTelemetrySourceKind.SYNTHETIC_REPLAY &&
+                        repoState.replayState == SyntheticReplayPlaybackState.PAUSED ->
                         "PAUSED (SYNTHETIC REPLAY)"
-                    } else {
-                        "STREAMING (LIVE)"
-                    }
+                    repoState.sourceKind == LocalTelemetrySourceKind.SYNTHETIC_REPLAY ->
+                        "PLAYING (SYNTHETIC REPLAY — NOT LIVE)"
+                    else -> "STREAMING (LIVE)"
                 }
                 LocalMapConnectionState.STALE -> "STALE"
                 LocalMapConnectionState.DISCONNECTED -> when {

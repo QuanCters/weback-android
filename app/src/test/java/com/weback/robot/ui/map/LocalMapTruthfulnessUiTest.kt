@@ -11,7 +11,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.weback.robot.app.local.LocalMapConnectionState
 import com.weback.robot.app.local.LocalMapRepository
+import com.weback.robot.app.local.LocalMapRepositoryState
+import com.weback.robot.app.local.LocalMapTerminalReason
 import com.weback.robot.core.DispatcherProvider
 import com.weback.robot.core.MonotonicClock
 import com.weback.robot.domain.map.HoslamFrameKind
@@ -32,6 +35,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -96,7 +101,27 @@ class LocalMapTruthfulnessUiTest {
             source.stream.tryEmit(LocalTelemetryEvent.BytesChunk(validMap))
             scheduler.runCurrent()
             composeRule.waitForIdle()
-            composeRule.onNodeWithTag("local_map_state_label").assertTextContains("STREAMING (LIVE)")
+            composeRule.onNodeWithTag("local_map_source_badge").assertTextContains("SYNTHETIC REPLAY")
+            composeRule.onNodeWithTag("local_map_state_label")
+                .assertTextContains("PLAYING (SYNTHETIC REPLAY — NOT LIVE)")
+            composeRule.onNodeWithTag("local_map_state_label").assert(
+                SemanticsMatcher("active synthetic replay must not claim positive LIVE") {
+                    val text = it.config[SemanticsProperties.Text].joinToString(" ")
+                    text.contains("NOT LIVE") && !containsPositiveLiveClaim(text)
+                }
+            )
+            composeRule.onNodeWithTag("local_map_a11y_summary").assert(
+                SemanticsMatcher("active synthetic replay a11y summary must state NOT LIVE without positive LIVE claim") {
+                    val desc = it.config[SemanticsProperties.ContentDescription].joinToString(" ")
+                    desc.contains("SYNTHETIC REPLAY") &&
+                        desc.contains("NOT LIVE") &&
+                        !containsPositiveLiveClaim(desc)
+                }
+            )
+            assertFalse(
+                "Active synthetic replay repository state must never report isLive == true",
+                repository.state.value.isLive
+            )
             composeRule.onNodeWithTag("local_map_age_label").assertTextContains("Map Age: 0 ms", substring = true)
 
             clock.nowMs = 6_000L
@@ -240,6 +265,178 @@ class LocalMapTruthfulnessUiTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun syntheticReplaySourceAndFreshnessStayTruthfulAcrossPausedStaleEofErrorAndClockJump() {
+        val scheduler = TestCoroutineScheduler()
+        val dispatcher = StandardTestDispatcher(scheduler)
+        val dispatchers: DispatcherProvider = TestDispatcherProvider(dispatcher)
+        val clock = ControllableClock(1_000L)
+        val source = ControlledStreamSource(LocalTelemetrySourceKind.SYNTHETIC_REPLAY)
+        val repository = LocalMapRepository(source, dispatchers, clock)
+        val vmScope = CoroutineScope(SupervisorJob() + dispatcher)
+        val viewModel = MapViewModel(repository, dispatchers, vmScope)
+
+        val validMap = buildMapFrame(2, 2, 0x42)
+        val aux = HoslamTestFixtures.buildValidFrame(HoslamFrameKind.AUX, ByteArray(4) { 0x11 })
+        val traj = HoslamTestFixtures.buildValidFrame(HoslamFrameKind.TRAJECTORY, ByteArray(8) { 0x22 })
+
+        try {
+            composeRule.setContent {
+                WeBackTheme(dynamicColor = false) {
+                    MapScreen(viewModel = viewModel, onNavigateBack = {})
+                }
+            }
+
+            // 1. Active synthetic replay: PLAYING (SYNTHETIC REPLAY — NOT LIVE)
+            repository.playOrResumeReplay()
+            scheduler.runCurrent()
+            source.stream.tryEmit(LocalTelemetryEvent.Connected())
+            source.stream.tryEmit(LocalTelemetryEvent.BytesChunk(validMap))
+            scheduler.runCurrent()
+            composeRule.waitForIdle()
+
+            composeRule.onNodeWithTag("local_map_source_badge").assertTextContains("SYNTHETIC REPLAY")
+            composeRule.onNodeWithTag("local_map_state_label")
+                .assertTextContains("PLAYING (SYNTHETIC REPLAY — NOT LIVE)")
+            assertUiHasNoPositiveLiveClaim()
+            assertFalse(repository.state.value.isLive)
+
+            // 2. Paused synthetic replay: PAUSED (SYNTHETIC REPLAY), zero positive LIVE claim
+            repository.pauseReplay()
+            scheduler.runCurrent()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("local_map_state_label").assertTextContains("PAUSED (SYNTHETIC REPLAY)")
+            assertUiHasNoPositiveLiveClaim()
+            assertFalse(repository.state.value.isLive)
+
+            // Resume replay cleanly without resetting map freshness
+            repository.playOrResumeReplay()
+            scheduler.runCurrent()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("local_map_state_label")
+                .assertTextContains("PLAYING (SYNTHETIC REPLAY — NOT LIVE)")
+            assertUiHasNoPositiveLiveClaim()
+
+            // 3. Phase 3 deterministic fake-clock jump challenge WITHOUT advancing coroutine scheduler delay:
+            //    clock advances 1_000 -> 6_500 -> 12_500 -> 14_000 while delivering AUX/TRAJ & refreshing UI
+            clock.nowMs = 6_500L
+            source.stream.tryEmit(LocalTelemetryEvent.BytesChunk(aux))
+            scheduler.runCurrent()
+            composeRule.waitForIdle()
+            assertEquals(1L, repository.state.value.auxCount)
+            assertEquals(1_000L, repository.state.value.lastValidMapElapsedMs)
+            assertEquals(5_500L, repository.state.value.mapAgeMs)
+            composeRule.onNodeWithTag("local_map_age_label").assertTextContains("Map Age: 5500 ms (5s)")
+            composeRule.onNodeWithTag("local_map_state_label")
+                .assertTextContains("PLAYING (SYNTHETIC REPLAY — NOT LIVE)")
+            assertUiHasNoPositiveLiveClaim()
+
+            // Jump past 10_000 ms staleness boundary without scheduler advance -> TRAJ updates age monotonically
+            // without resetting lastValidMapElapsedMs and without claiming LIVE
+            clock.nowMs = 12_500L
+            source.stream.tryEmit(LocalTelemetryEvent.BytesChunk(traj))
+            scheduler.runCurrent()
+            composeRule.waitForIdle()
+            assertEquals(1L, repository.state.value.trajectoryCount)
+            assertEquals(1_000L, repository.state.value.lastValidMapElapsedMs)
+            assertEquals(11_500L, repository.state.value.mapAgeMs)
+            composeRule.onNodeWithTag("local_map_age_label").assertTextContains("Map Age: 11500 ms (11s)")
+            assertUiHasNoPositiveLiveClaim()
+
+            // Explicit UI presentation refresh after clock jump transitions STALE truthfully
+            viewModel.onRefreshClock()
+            scheduler.runCurrent()
+            composeRule.waitForIdle()
+            assertEquals(LocalMapConnectionState.STALE, repository.state.value.connectionState)
+            composeRule.onNodeWithTag("local_map_state_label").assertTextContains("STALE")
+            composeRule.onNodeWithTag("local_map_age_label").assertTextContains("Map Age: 11500 ms (11s)")
+            assertUiHasNoPositiveLiveClaim()
+
+            // Further clock advance + AUX keeps STALE and monotonic age
+            clock.nowMs = 14_000L
+            source.stream.tryEmit(LocalTelemetryEvent.BytesChunk(aux))
+            scheduler.runCurrent()
+            composeRule.waitForIdle()
+            assertEquals(LocalMapConnectionState.STALE, repository.state.value.connectionState)
+            assertEquals(2L, repository.state.value.auxCount)
+            assertEquals(13_000L, repository.state.value.mapAgeMs)
+            composeRule.onNodeWithTag("local_map_state_label").assertTextContains("STALE")
+            composeRule.onNodeWithTag("local_map_age_label").assertTextContains("Map Age: 13000 ms (13s)")
+            assertUiHasNoPositiveLiveClaim()
+
+            // 4. Synthetic EOF after STALE -> DISCONNECTED / STALE (no LIVE)
+            source.stream.tryEmit(LocalTelemetryEvent.EndOfStream)
+            scheduler.runCurrent()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("local_map_state_label").assertTextContains("DISCONNECTED / STALE")
+            assertUiHasNoPositiveLiveClaim()
+
+            // 5. Pure presentation mapping check: zero-map EOF & codec ERROR on SYNTHETIC_REPLAY never claim LIVE;
+            //    positive STREAMING (LIVE) is strictly reserved for LIVE_LAN_READ_ONLY in STREAMING
+            val syntheticZeroMapUi = MapViewModel.mapToUiState(
+                LocalMapRepositoryState(
+                    sourceKind = LocalTelemetrySourceKind.SYNTHETIC_REPLAY,
+                    connectionState = LocalMapConnectionState.DISCONNECTED,
+                    terminalReason = LocalMapTerminalReason.EOF_BEFORE_FIRST_MAP
+                )
+            )
+            assertFalse(containsPositiveLiveClaim(syntheticZeroMapUi.connectionStateLabel))
+            assertFalse(containsPositiveLiveClaim(syntheticZeroMapUi.accessibilitySummary))
+
+            val syntheticErrorUi = MapViewModel.mapToUiState(
+                LocalMapRepositoryState(
+                    sourceKind = LocalTelemetrySourceKind.SYNTHETIC_REPLAY,
+                    connectionState = LocalMapConnectionState.ERROR,
+                    terminalReason = LocalMapTerminalReason.CODEC_ERROR
+                )
+            )
+            assertFalse(containsPositiveLiveClaim(syntheticErrorUi.connectionStateLabel))
+            assertFalse(containsPositiveLiveClaim(syntheticErrorUi.accessibilitySummary))
+
+            val liveStreamingUi = MapViewModel.mapToUiState(
+                LocalMapRepositoryState(
+                    sourceKind = LocalTelemetrySourceKind.LIVE_LAN_READ_ONLY,
+                    connectionState = LocalMapConnectionState.STREAMING,
+                    mapCount = 1L
+                )
+            )
+            assertEquals("STREAMING (LIVE)", liveStreamingUi.connectionStateLabel)
+            assertTrue(containsPositiveLiveClaim(liveStreamingUi.connectionStateLabel))
+
+            val liveStaleUi = MapViewModel.mapToUiState(
+                LocalMapRepositoryState(
+                    sourceKind = LocalTelemetrySourceKind.LIVE_LAN_READ_ONLY,
+                    connectionState = LocalMapConnectionState.STALE,
+                    mapCount = 1L
+                )
+            )
+            assertEquals("STALE", liveStaleUi.connectionStateLabel)
+            assertFalse(containsPositiveLiveClaim(liveStaleUi.connectionStateLabel))
+        } finally {
+            repository.close()
+            vmScope.cancel()
+        }
+    }
+
+    private fun assertUiHasNoPositiveLiveClaim() {
+        composeRule.onNodeWithTag("local_map_state_label").assert(
+            SemanticsMatcher("state label must not make positive LIVE claim") {
+                val txt = it.config[SemanticsProperties.Text].joinToString(" ")
+                !containsPositiveLiveClaim(txt)
+            }
+        )
+        composeRule.onNodeWithTag("local_map_a11y_summary").assert(
+            SemanticsMatcher("accessibility summary must not make positive LIVE claim") {
+                val desc = it.config[SemanticsProperties.ContentDescription].joinToString(" ")
+                desc.contains("SYNTHETIC REPLAY") && !containsPositiveLiveClaim(desc)
+            }
+        )
+    }
+
+    private fun containsPositiveLiveClaim(text: String): Boolean =
+        text.replace("NOT LIVE", "", ignoreCase = true)
+            .contains("LIVE", ignoreCase = true)
 
     private fun buildMapFrame(width: Int, height: Int, fill: Int): ByteArray {
         val pixelCount = width * height
