@@ -2,7 +2,7 @@ package com.weback.robot
 
 import android.app.Application
 import com.weback.robot.core.AppContainer
-import com.weback.robot.core.DefaultAppContainer
+import com.weback.robot.core.VariantAppContainerFactory
 
 class WeBackApplication : Application() {
     lateinit var container: AppContainer
@@ -10,7 +10,7 @@ class WeBackApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container = DefaultAppContainer(context = applicationContext)
+        container = VariantAppContainerFactory.create(applicationContext)
     }
 
     internal fun replaceContainerForTesting(testContainer: AppContainer) {

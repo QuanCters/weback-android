@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 APK Artifact & Security Validator.
-Supports explicit --connectivity-policy {offline,pilot} (offline default), binding each mode
+Supports explicit --connectivity-policy {offline,pilot,local} (offline default), binding each mode
 to its expected APK path, application ID, permission allowlist, provider authority scope,
-cleartext/backup flags, signature verification, DEX class inventory, and vendor binary exclusion.
+cleartext/backup flags, signature verification, $-aware multi-DEX class-family inventory,
+and vendor binary exclusion.
 Standard library only. Zero third-party dependencies.
 """
 import argparse
@@ -28,14 +29,21 @@ CONNECTIVITY_POLICY_CONFIG = {
         "expected_package_id": "com.weback.robot",
         "required_external_permissions": set(),
         "allowed_external_permissions": set(),
-        "forbidden_variant_tokens": ("pilot", "app-pilot.apk"),
+        "forbidden_variant_tokens": ("pilot", "app-pilot.apk", "local", "app-local.apk"),
     },
     "pilot": {
         "expected_apk_path": Path("app/build/outputs/apk/pilot/app-pilot.apk"),
         "expected_package_id": "com.weback.robot.pilot",
         "required_external_permissions": {"android.permission.INTERNET"},
         "allowed_external_permissions": {"android.permission.INTERNET"},
-        "forbidden_variant_tokens": ("debug", "app-debug.apk"),
+        "forbidden_variant_tokens": ("debug", "app-debug.apk", "local", "app-local.apk"),
+    },
+    "local": {
+        "expected_apk_path": Path("app/build/outputs/apk/local/app-local.apk"),
+        "expected_package_id": "com.weback.robot.local",
+        "required_external_permissions": {"android.permission.INTERNET"},
+        "allowed_external_permissions": {"android.permission.INTERNET"},
+        "forbidden_variant_tokens": ("debug", "app-debug.apk", "pilot", "app-pilot.apk"),
     },
 }
 
@@ -54,6 +62,83 @@ PROHIBITED_DEX_PACKAGES = [
     "Lcom/tutk/",
     "Lcom/weback/cleaner/"
 ]
+
+# Hybrid pure-cloud package prefixes (ending in '/') + exact mixed-package/root class-family stems (L04A-S)
+CLOUD_PILOT_DEX_RULES = [
+    "Lcom/weback/robot/app/pilot/",
+    "Lcom/weback/robot/app/session/",
+    "Lcom/weback/robot/protocol/auth/",
+    "Lcom/weback/robot/protocol/inventory/",
+    "Lcom/weback/robot/protocol/pilot/",
+    "Lcom/weback/robot/protocol/ws/",
+    "Lcom/weback/robot/ui/pilot/",
+    "Lcom/weback/robot/PilotUiWorkflow",
+    "Lcom/weback/robot/core/PilotUiWorkflow",
+    "Lcom/weback/robot/core/DefaultAppContainer",
+    "Lcom/weback/robot/core/DefaultPilotContainer",
+    "Lcom/weback/robot/core/InMemoryMockTokenStore",
+    "Lcom/weback/robot/core/NonPersistentSessionStore",
+    "Lcom/weback/robot/core/PilotAppContainer",
+    "Lcom/weback/robot/core/PilotCapabilityBridgeImpl",
+    "Lcom/weback/robot/core/PilotCapabilityBridgeImplKt",
+    "Lcom/weback/robot/core/PilotContainerTestHooks",
+    "Lcom/weback/robot/security/AeadCipherProvider",
+    "Lcom/weback/robot/security/AndroidInstalledApkVerifier",
+    "Lcom/weback/robot/security/AndroidKeystoreAeadCipherProvider",
+    "Lcom/weback/robot/security/AuthorizedPilotEndpointTrustPolicy",
+    "Lcom/weback/robot/security/AuthorizedPilotEndpointTrustPolicyKt",
+    "Lcom/weback/robot/security/ConsumeAuthorizationResult",
+    "Lcom/weback/robot/security/DynamicOriginConfirmationResult",
+    "Lcom/weback/robot/security/DynamicOriginEvaluation",
+    "Lcom/weback/robot/security/EncryptedPayload",
+    "Lcom/weback/robot/security/EndpointTrustDecision",
+    "Lcom/weback/robot/security/EndpointTrustPolicy",
+    "Lcom/weback/robot/security/ExternalPilotAuthorizationKt",
+    "Lcom/weback/robot/security/ExternalPilotAuthorizationLoader",
+    "Lcom/weback/robot/security/FileBackedProvisionedPilotAuthorizationStore",
+    "Lcom/weback/robot/security/InMemoryProvisionedPilotAuthorizationStore",
+    "Lcom/weback/robot/security/InstalledApkVerification",
+    "Lcom/weback/robot/security/InstalledApkVerifier",
+    "Lcom/weback/robot/security/IpAddressPolicy",
+    "Lcom/weback/robot/security/KeyDeletionResult",
+    "Lcom/weback/robot/security/KeystoreAeadTokenStore",
+    "Lcom/weback/robot/security/LedgerCheckResult",
+    "Lcom/weback/robot/security/MissingKeystoreKeyException",
+    "Lcom/weback/robot/security/OkHttpSecurityGuard",
+    "Lcom/weback/robot/security/OriginProvenanceResult",
+    "Lcom/weback/robot/security/OriginProvenanceVerifier",
+    "Lcom/weback/robot/security/PasswordDigestStrategy",
+    "Lcom/weback/robot/security/PermanentlyInvalidatedKeyException",
+    "Lcom/weback/robot/security/PilotActiveCallRegistry",
+    "Lcom/weback/robot/security/PilotClientFactory",
+    "Lcom/weback/robot/security/PilotSanitizedExporter",
+    "Lcom/weback/robot/security/ProductionEndpointTrustPolicy",
+    "Lcom/weback/robot/security/ProvisionedActivationPreparation",
+    "Lcom/weback/robot/security/ProvisionedAuthorizationLoadResult",
+    "Lcom/weback/robot/security/ProvisionedAuthorizationPreview",
+    "Lcom/weback/robot/security/ProvisionedPilotAuthorizationStore",
+    "Lcom/weback/robot/security/ProvisionedRawLoadResult",
+    "Lcom/weback/robot/security/TestLoopbackTrustPolicy",
+    "Lcom/weback/robot/security/TokenClearResult",
+    "Lcom/weback/robot/security/TokenLoadResult",
+    "Lcom/weback/robot/security/TokenSaveResult",
+    "Lcom/weback/robot/security/TokenStore",
+    "Lcom/weback/robot/security/UriValidator",
+    "Lcom/weback/robot/security/Utf8TlsDefault",
+]
+
+# Live local LAN TCP/trust/sanitizer class families forbidden in offline and pilot builds
+LOCAL_LIVE_DEX_RULES = [
+    "Lcom/weback/robot/protocol/local/ReceiveOnlyTcpSource",
+    "Lcom/weback/robot/security/LocalDiagnosticSanitizer",
+    "Lcom/weback/robot/security/LocalLanTrustPolicy",
+]
+
+POLICY_FORBIDDEN_DEX_RULES = {
+    "offline": PROHIBITED_DEX_PACKAGES + LOCAL_LIVE_DEX_RULES,
+    "pilot": PROHIBITED_DEX_PACKAGES + LOCAL_LIVE_DEX_RULES,
+    "local": PROHIBITED_DEX_PACKAGES + CLOUD_PILOT_DEX_RULES,
+}
 
 PROHIBITED_PERMISSIONS = {
     "android.permission.INTERNET",
@@ -143,14 +228,38 @@ def parse_dex_classes(data: bytes, dex_name: str = "classes.dex") -> list[str]:
         classes.append(get_string(str_idx))
     return classes
 
-def validate_dex_classes_in_apk(apk_path: Path) -> tuple[bool, list[str]]:
+def matches_forbidden_dex_descriptor(cls_desc: str, rule: str) -> bool:
+    """
+    Matches DEX type descriptors against either a pure package prefix ('.../')
+    or a '$'-aware exact class-family stem ('...Foo;' or '...Foo$*').
+    """
+    if rule.endswith("/"):
+        return cls_desc.startswith(rule)
+    return cls_desc == f"{rule};" or cls_desc.startswith(f"{rule}$")
+
+
+def get_forbidden_dex_rules_for_policy(connectivity_policy: str) -> list[str]:
+    if connectivity_policy not in POLICY_FORBIDDEN_DEX_RULES:
+        raise ValueError(f"Unsupported connectivity policy for DEX validation: '{connectivity_policy}'")
+    return POLICY_FORBIDDEN_DEX_RULES[connectivity_policy]
+
+
+def validate_dex_classes_in_apk(
+    apk_path: Path,
+    connectivity_policy: str = "offline"
+) -> tuple[bool, list[str]]:
     """
     Inspects all DEX files in APK archive and asserts:
     1. Every DEX file is well-formed with valid header, size, offsets, and bounds.
-    2. Zero prohibited legacy vendor classes exist across all DEX files.
+    2. Zero prohibited legacy vendor or policy-forbidden class families exist across all DEX files.
     3. Required MainActivity class descriptor is present across the DEX class inventory.
     """
     errors: list[str] = []
+    try:
+        forbidden_rules = get_forbidden_dex_rules_for_policy(connectivity_policy)
+    except ValueError as ve:
+        return False, [str(ve)]
+
     try:
         with zipfile.ZipFile(apk_path, "r") as zf:
             dex_names = sorted([n for n in zf.namelist() if n.endswith(".dex")])
@@ -170,9 +279,15 @@ def validate_dex_classes_in_apk(apk_path: Path) -> tuple[bool, list[str]]:
                 errors.append("Empty or uninspectable class inventory across APK DEX files")
             else:
                 for cls in all_classes:
-                    for prohibited in PROHIBITED_DEX_PACKAGES:
-                        if cls.startswith(prohibited):
-                            errors.append(f"Prohibited legacy vendor DEX class detected: {cls}")
+                    for rule in forbidden_rules:
+                        if matches_forbidden_dex_descriptor(cls, rule):
+                            if rule in PROHIBITED_DEX_PACKAGES:
+                                errors.append(f"Prohibited legacy vendor DEX class detected: {cls}")
+                            else:
+                                errors.append(
+                                    f"Prohibited DEX class for '{connectivity_policy}' policy ({rule}): {cls}"
+                                )
+                            break
 
                 has_main = any(c == "Lcom/weback/robot/MainActivity;" for c in all_classes)
                 if not has_main:
@@ -188,7 +303,7 @@ def validate_manifest_xml_structural(
 ) -> tuple[bool, list[str]]:
     """
     Structurally validates the printed AndroidManifest.xml ElementTree against the
-    selected connectivity policy ('offline' or 'pilot').
+    selected connectivity policy ('offline', 'pilot', or 'local').
     """
     try:
         cfg = get_policy_config(connectivity_policy)
@@ -367,7 +482,7 @@ def validate_apk_path_for_policy(apk_path: Path, connectivity_policy: str) -> tu
     name_lower = apk_path.name.lower()
     errors: list[str] = []
 
-    if name_lower in ("app-debug.apk", "app-pilot.apk") and name_lower != expected_path.name:
+    if name_lower in ("app-debug.apk", "app-pilot.apk", "app-local.apk") and name_lower != expected_path.name:
         errors.append(
             f"Artifact substitution rejected: '{apk_path}' cannot be validated under "
             f"'--connectivity-policy {connectivity_policy}' (expected '{expected_path}')"
@@ -527,7 +642,7 @@ def validate_apk(
     _, arch_errs = validate_apk_archive(apk_path)
     errors.extend(arch_errs)
 
-    _, dex_errs = validate_dex_classes_in_apk(apk_path)
+    _, dex_errs = validate_dex_classes_in_apk(apk_path, connectivity_policy=connectivity_policy)
     errors.extend(dex_errs)
 
     _, tool_errs = validate_apk_with_tools(apk_path, connectivity_policy=connectivity_policy)
@@ -539,9 +654,9 @@ def main():
     parser = argparse.ArgumentParser(description="APK Artifact & Security Validator")
     parser.add_argument(
         "--connectivity-policy",
-        choices=["offline", "pilot"],
+        choices=["offline", "pilot", "local"],
         default="offline",
-        help="Target connectivity policy mode ('offline' default or 'pilot')"
+        help="Target connectivity policy mode ('offline' default, 'pilot', or 'local')"
     )
     parser.add_argument(
         "--apk",

@@ -20,7 +20,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.weback.robot.BuildConfig
 import com.weback.robot.MainActivity
 import com.weback.robot.WeBackApplication
-import com.weback.robot.core.DefaultAppContainer
+import com.weback.robot.core.DefaultPilotContainer
 import com.weback.robot.core.PilotContainerTestHooks
 import com.weback.robot.domain.pilot.ExpectedCandidateIdentity
 import com.weback.robot.domain.pilot.GateActivationResult
@@ -76,7 +76,7 @@ class PilotDeviceAcceptanceInstrumentationTest {
             val realApkSha256 = requireNotNull(apkVerification.actualApkSha256)
             assertTrue(hex64Regex.matches(realApkSha256))
 
-            val productionContainer = DefaultAppContainer(context = app)
+            val productionContainer = DefaultPilotContainer(context = app)
             try {
                 // 1. Missing record fails closed
                 assertTrue(productionContainer.loadProvisionedLiveAuthorization() is ProvisionedAuthorizationLoadResult.Missing)
@@ -141,7 +141,7 @@ class PilotDeviceAcceptanceInstrumentationTest {
             override suspend fun clear() = TokenClearResult.Success
         }
 
-        val testContainer = DefaultAppContainer(
+        val testContainer = DefaultPilotContainer(
             context = app,
             tokenStoreOverride = isolatedTokenStore,
             pilotTestHooks = PilotContainerTestHooks(
@@ -230,7 +230,7 @@ class PilotDeviceAcceptanceInstrumentationTest {
                 }
             }
         } finally {
-            app.replaceContainerForTesting(DefaultAppContainer(context = app))
+            app.replaceContainerForTesting(DefaultPilotContainer(context = app))
         }
     }
 

@@ -627,5 +627,275 @@ class TestApkValidator(unittest.TestCase):
         self.assertFalse(ok_pg)
         self.assertTrue(any("permission-group" in e for e in errs_pg))
 
+    def test_local_mode_accepts_valid_local_manifest_with_internet(self):
+        local_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.local",
+            custom_permission="com.weback.robot.local.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=[
+                "android.permission.INTERNET",
+                "com.weback.robot.local.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            ],
+            provider_authority="com.weback.robot.local.androidx-startup",
+        )
+        ok, errors = validate_manifest_xml_structural(local_xml, connectivity_policy="local")
+        self.assertTrue(ok, f"Expected valid local manifest, got errors: {errors}")
+
+    def test_local_mode_negative_missing_internet_extra_perms_and_package_violations(self):
+        local_no_net = self._build_manifest_xml(
+            package_id="com.weback.robot.local",
+            custom_permission="com.weback.robot.local.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=["com.weback.robot.local.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"],
+        )
+        ok, errors = validate_manifest_xml_structural(local_no_net, connectivity_policy="local")
+        self.assertFalse(ok)
+        self.assertTrue(any("Missing required permission 'android.permission.INTERNET'" in e for e in errors))
+
+        wrong_pkg = self._build_manifest_xml(
+            package_id="com.weback.robot.pilot",
+            custom_permission="com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            permissions=[
+                "android.permission.INTERNET",
+                "com.weback.robot.pilot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+            ],
+        )
+        ok_pkg, errs_pkg = validate_manifest_xml_structural(wrong_pkg, connectivity_policy="local")
+        self.assertFalse(ok_pkg)
+        self.assertTrue(any("expected 'com.weback.robot.local'" in e for e in errs_pkg))
+
+        for bad_perm in (
+            "android.permission.ACCESS_FINE_LOCATION",
+            "android.permission.BLUETOOTH_SCAN",
+            "android.permission.ACCESS_WIFI_STATE",
+            "android.permission.CHANGE_NETWORK_STATE",
+        ):
+            bad_xml = self._build_manifest_xml(
+                package_id="com.weback.robot.local",
+                permissions=[
+                    "android.permission.INTERNET",
+                    "com.weback.robot.local.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+                    bad_perm,
+                ],
+            )
+            ok_p, errs_p = validate_manifest_xml_structural(bad_xml, connectivity_policy="local")
+            self.assertFalse(ok_p)
+            self.assertTrue(any(bad_perm in e for e in errs_p))
+
+        colliding_provider = self._build_manifest_xml(
+            package_id="com.weback.robot.local",
+            permissions=["android.permission.INTERNET"],
+            provider_authority="com.weback.robot.pilot.androidx-startup",
+        )
+        ok_pa, errs_pa = validate_manifest_xml_structural(colliding_provider, connectivity_policy="local")
+        self.assertFalse(ok_pa)
+        self.assertTrue(any("Provider authority" in e for e in errs_pa))
+
+        cleartext_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.local",
+            permissions=["android.permission.INTERNET"],
+            cleartext="true",
+        )
+        ok_ct, errs_ct = validate_manifest_xml_structural(cleartext_xml, connectivity_policy="local")
+        self.assertFalse(ok_ct)
+        self.assertTrue(any("usesCleartextTraffic must be strictly 'false'" in e for e in errs_ct))
+
+        backup_xml = self._build_manifest_xml(
+            package_id="com.weback.robot.local",
+            permissions=["android.permission.INTERNET"],
+            allow_backup="true",
+        )
+        ok_bk, errs_bk = validate_manifest_xml_structural(backup_xml, connectivity_policy="local")
+        self.assertFalse(ok_bk)
+        self.assertTrue(any("allowBackup must be strictly 'false'" in e for e in errs_bk))
+
+    def test_three_way_standalone_filename_substitution_matrix(self):
+        expected_paths = {
+            "offline": "app/build/outputs/apk/debug/app-debug.apk",
+            "pilot": "app/build/outputs/apk/pilot/app-pilot.apk",
+            "local": "app/build/outputs/apk/local/app-local.apk",
+        }
+        standalone_apks = {
+            "offline": "/tmp/app-debug.apk",
+            "pilot": "/tmp/app-pilot.apk",
+            "local": "/tmp/app-local.apk",
+        }
+        for policy, expected_path_str in expected_paths.items():
+            for artifact_variant, apk_path_str in standalone_apks.items():
+                ok_guard, errs_guard = validate_apk_path_for_policy(Path(apk_path_str), policy)
+                if artifact_variant == policy:
+                    self.assertTrue(
+                        ok_guard,
+                        f"Expected matching standalone filename pass for policy={policy}, path={apk_path_str}: {errs_guard}",
+                    )
+                    self.assertEqual(
+                        errs_guard,
+                        [],
+                        f"Expected empty error list for matching standalone filename policy={policy}, path={apk_path_str}: {errs_guard}",
+                    )
+                else:
+                    self.assertFalse(
+                        ok_guard,
+                        f"Expected standalone filename substitution rejection for policy={policy}, path={apk_path_str}",
+                    )
+                    self.assertTrue(
+                        any(
+                            "artifact substitution rejected" in err.lower() and expected_path_str in err
+                            for err in errs_guard
+                        ),
+                        f"Unexpected substitution error for policy={policy}, path={apk_path_str}: {errs_guard}",
+                    )
+
+    def test_three_way_path_substitution_and_cli_local_policy(self):
+        directed_substitutions = [
+            ("offline", "app/build/outputs/apk/pilot/app-pilot.apk"),
+            ("offline", "app/build/outputs/apk/local/app-local.apk"),
+            ("pilot", "app/build/outputs/apk/debug/app-debug.apk"),
+            ("pilot", "app/build/outputs/apk/local/app-local.apk"),
+            ("local", "app/build/outputs/apk/debug/app-debug.apk"),
+            ("local", "app/build/outputs/apk/pilot/app-pilot.apk"),
+            ("offline", "outputs/apk/local/custom.apk"),
+            ("pilot", "outputs/apk/local/custom.apk"),
+            ("local", "outputs/apk/debug/custom.apk"),
+            ("local", "outputs/apk/pilot/custom.apk"),
+            ("offline", "tmp/app-local.apk"),
+            ("pilot", "tmp/app-local.apk"),
+            ("local", "tmp/app-debug.apk"),
+            ("local", "tmp/app-pilot.apk"),
+        ]
+        for policy, path_str in directed_substitutions:
+            ok_sub, errs_sub = validate_apk_path_for_policy(Path(path_str), policy)
+            self.assertFalse(ok_sub, f"Expected substitution rejection for policy={policy}, path={path_str}")
+            self.assertTrue(
+                any("substitution rejected" in e.lower() or "opposite variant" in e.lower() for e in errs_sub),
+                f"Unexpected error list for policy={policy}, path={path_str}: {errs_sub}",
+            )
+
+        res_cli = subprocess.run(
+            [
+                sys.executable,
+                "verification/checks/apk_validator.py",
+                "--connectivity-policy",
+                "local",
+                "--apk",
+                "app/build/outputs/apk/pilot/app-pilot.apk",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(res_cli.returncode, 1)
+        self.assertIn("Artifact substitution rejected", res_cli.stderr)
+
+    def test_local_dex_rejects_cloud_top_level_companion_nested_coroutine_and_secondary_dex(self):
+        # 1. Exact forbidden top-level classes in local (PilotSessionController, PilotUiWorkflow)
+        for forbidden_cls in (
+            "Lcom/weback/robot/app/pilot/PilotSessionController;",
+            "Lcom/weback/robot/PilotUiWorkflow;",
+            "Lcom/weback/robot/core/PilotUiWorkflow;",
+            "Lcom/weback/robot/core/DefaultPilotContainer;",
+            "Lcom/weback/robot/core/PilotCapabilityBridgeImpl;",
+        ):
+            dex_bytes = make_synthetic_dex(["Lcom/weback/robot/MainActivity;", forbidden_cls])
+            with tempfile.TemporaryDirectory() as td:
+                apk_p = Path(td) / "local_top.apk"
+                with zipfile.ZipFile(apk_p, "w") as zf:
+                    zf.writestr("classes.dex", dex_bytes)
+                ok, errors = validate_dex_classes_in_apk(apk_p, connectivity_policy="local")
+                self.assertFalse(ok, f"Expected local DEX rejection for {forbidden_cls}")
+                self.assertTrue(any(forbidden_cls in e for e in errors), errors)
+
+        # 2. Forbidden $Companion and nested sealed classes
+        for nested_cls in (
+            "Lcom/weback/robot/protocol/auth/OkHttpAuthGateway$Companion;",
+            "Lcom/weback/robot/security/TokenSaveResult$Failure;",
+            "Lcom/weback/robot/app/pilot/PilotSessionController$activatePilot$1;",
+        ):
+            dex_bytes = make_synthetic_dex(["Lcom/weback/robot/MainActivity;", nested_cls])
+            with tempfile.TemporaryDirectory() as td:
+                apk_p = Path(td) / "local_nested.apk"
+                with zipfile.ZipFile(apk_p, "w") as zf:
+                    zf.writestr("classes.dex", dex_bytes)
+                ok, errors = validate_dex_classes_in_apk(apk_p, connectivity_policy="local")
+                self.assertFalse(ok, f"Expected $-aware DEX rejection for {nested_cls}")
+                self.assertTrue(any(nested_cls in e for e in errors), errors)
+
+        # 3. Forbidden class appearing ONLY in secondary classes2.dex
+        dex1 = make_synthetic_dex(["Lcom/weback/robot/MainActivity;"])
+        dex2 = make_synthetic_dex(["Lcom/weback/robot/security/AndroidKeystoreAeadCipherProvider$Companion;"])
+        with tempfile.TemporaryDirectory() as td:
+            apk_p = Path(td) / "local_multidex.apk"
+            with zipfile.ZipFile(apk_p, "w") as zf:
+                zf.writestr("classes.dex", dex1)
+                zf.writestr("classes2.dex", dex2)
+            ok, errors = validate_dex_classes_in_apk(apk_p, connectivity_policy="local")
+            self.assertFalse(ok)
+            self.assertTrue(
+                any("AndroidKeystoreAeadCipherProvider$Companion;" in e for e in errors),
+                errors,
+            )
+
+    def test_local_dex_enforces_package_prefixes_tokenstore_and_reconciled_security_families(self):
+        for desc in (
+            "Lcom/weback/robot/protocol/auth/AuthEnvelopeConfig;",
+            "Lcom/weback/robot/protocol/inventory/InventoryFetchResult$Success;",
+            "Lcom/weback/robot/protocol/ws/ConnectionConfig$Companion;",
+            "Lcom/weback/robot/security/TokenStore;",
+            "Lcom/weback/robot/security/TokenSaveResult;",
+            "Lcom/weback/robot/security/TokenLoadResult$Loaded;",
+            "Lcom/weback/robot/security/TokenClearResult$Failure;",
+            "Lcom/weback/robot/security/InstalledApkVerifier;",
+            "Lcom/weback/robot/security/EncryptedPayload;",
+            "Lcom/weback/robot/security/KeyDeletionResult$Deleted;",
+            "Lcom/weback/robot/security/ConsumeAuthorizationResult$Consumed;",
+        ):
+            dex_bytes = make_synthetic_dex(["Lcom/weback/robot/MainActivity;", desc])
+            with tempfile.TemporaryDirectory() as td:
+                apk_p = Path(td) / "local_sec.apk"
+                with zipfile.ZipFile(apk_p, "w") as zf:
+                    zf.writestr("classes.dex", dex_bytes)
+                ok, errors = validate_dex_classes_in_apk(apk_p, connectivity_policy="local")
+                self.assertFalse(ok, f"Expected local DEX rejection for {desc}")
+                self.assertTrue(any(desc in e for e in errors), errors)
+
+    def test_local_dex_accepts_legitimate_shared_and_similarly_named_classes(self):
+        dex_bytes = make_synthetic_dex(
+            [
+                "Lcom/weback/robot/MainActivity;",
+                "Lcom/weback/robot/core/AppContainer;",
+                "Lcom/weback/robot/core/AppContainerDependency;",
+                "Lcom/weback/robot/core/PilotCapabilityBridge;",
+                "Lcom/weback/robot/core/OfflineAppContainer;",
+                "Lcom/weback/robot/core/VariantAppContainerFactory;",
+                "Lcom/weback/robot/core/BootSessionTimeProvider;",
+                "Lcom/weback/robot/security/SecretRedactor;",
+                "Lcom/weback/robot/security/DiagnosticLogger;",
+                "Lcom/weback/robot/security/InMemoryDiagnosticLogger;",
+                "Lcom/weback/robot/app/local/LocalMapRepository;",
+                "Lcom/weback/robot/protocol/local/SyntheticReplayTelemetrySource;",
+            ]
+        )
+        with tempfile.TemporaryDirectory() as td:
+            apk_p = Path(td) / "local_clean.apk"
+            with zipfile.ZipFile(apk_p, "w") as zf:
+                zf.writestr("classes.dex", dex_bytes)
+            ok, errors = validate_dex_classes_in_apk(apk_p, connectivity_policy="local")
+            self.assertTrue(ok, f"Expected clean local DEX acceptance, got errors: {errors}")
+
+    def test_offline_and_pilot_dex_reject_local_live_classes(self):
+        for live_cls in (
+            "Lcom/weback/robot/protocol/local/ReceiveOnlyTcpSource;",
+            "Lcom/weback/robot/protocol/local/ReceiveOnlyTcpSource$connect$1;",
+            "Lcom/weback/robot/security/LocalLanTrustPolicy;",
+            "Lcom/weback/robot/security/LocalLanTrustPolicy$Companion;",
+            "Lcom/weback/robot/security/LocalDiagnosticSanitizer;",
+        ):
+            dex_bytes = make_synthetic_dex(["Lcom/weback/robot/MainActivity;", live_cls])
+            with tempfile.TemporaryDirectory() as td:
+                apk_p = Path(td) / "leak_live.apk"
+                with zipfile.ZipFile(apk_p, "w") as zf:
+                    zf.writestr("classes.dex", dex_bytes)
+                for policy in ("offline", "pilot"):
+                    ok, errors = validate_dex_classes_in_apk(apk_p, connectivity_policy=policy)
+                    self.assertFalse(ok, f"Expected {policy} DEX rejection for {live_cls}")
+                    self.assertTrue(any(live_cls in e for e in errors), errors)
+
 if __name__ == "__main__":
     unittest.main()

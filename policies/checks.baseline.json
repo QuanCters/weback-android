@@ -47,7 +47,7 @@
       "required": true,
       "timeout_seconds": 300,
       "type": "command",
-      "description": "Executes Android Lint on the application module and enforces zero errors and zero security regressions"
+      "description": "Executes Android Lint on the offline debug variant and enforces zero errors and zero security regressions"
     },
     {
       "id": "android-unit-tests",
@@ -63,7 +63,7 @@
       "required": true,
       "timeout_seconds": 180,
       "type": "test_suite",
-      "description": "Executes JVM unit tests for Android application module via Gradle test adapter, enforcing XML freshness and extracting structured JUnit metrics"
+      "description": "Executes JVM unit tests for offline debug variant via Gradle test adapter, enforcing XML freshness and extracting structured JUnit metrics"
     },
     {
       "id": "android-build",
@@ -75,18 +75,73 @@
       "required": true,
       "timeout_seconds": 300,
       "type": "command",
-      "description": "Compiles and packages the debug APK (:app:assembleDebug)"
+      "description": "Compiles and packages the offline debug APK (:app:assembleDebug)"
     },
     {
       "id": "apk-validation",
       "argv": [
         "python3",
-        "verification/checks/apk_validator.py"
+        "verification/checks/apk_validator.py",
+        "--connectivity-policy",
+        "offline"
       ],
       "required": true,
       "timeout_seconds": 60,
       "type": "command",
-      "description": "Verifies debug APK existence, SHA-256, archive integrity, manifest attributes via apkanalyzer, signature via apksigner, and confirms zero proprietary vendor binaries"
+      "description": "Verifies offline debug APK existence, SHA-256, INTERNET-free manifest, com.weback.robot identity, signature, and clean-room DEX/native integrity"
+    },
+    {
+      "id": "pilot-android-lint",
+      "argv": [
+        "./gradlew",
+        "lintPilot",
+        "--no-daemon"
+      ],
+      "required": true,
+      "timeout_seconds": 300,
+      "type": "command",
+      "description": "Executes Android Lint on the isolated pilot buildType variant (:app:lintPilot)"
+    },
+    {
+      "id": "pilot-android-unit-tests",
+      "argv": [
+        "python3",
+        "-m",
+        "verification.checks.gradle_test_adapter",
+        "--task",
+        "testPilotUnitTest",
+        "--results-dir",
+        "app/build/test-results/testPilotUnitTest"
+      ],
+      "required": true,
+      "timeout_seconds": 180,
+      "type": "test_suite",
+      "description": "Executes JVM unit tests for isolated pilot buildType variant via Gradle test adapter"
+    },
+    {
+      "id": "pilot-android-build",
+      "argv": [
+        "./gradlew",
+        "assemblePilot",
+        "--no-daemon"
+      ],
+      "required": true,
+      "timeout_seconds": 300,
+      "type": "command",
+      "description": "Compiles and packages the isolated pilot APK (:app:assemblePilot)"
+    },
+    {
+      "id": "pilot-apk-validation",
+      "argv": [
+        "python3",
+        "verification/checks/apk_validator.py",
+        "--connectivity-policy",
+        "pilot"
+      ],
+      "required": true,
+      "timeout_seconds": 60,
+      "type": "command",
+      "description": "Verifies isolated pilot APK existence, SHA-256, INTERNET-only manifest, com.weback.robot.pilot identity, signature, and clean-room DEX/native integrity"
     }
   ]
 }
