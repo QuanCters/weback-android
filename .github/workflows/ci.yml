@@ -52,13 +52,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Cache Robolectric Android Runtime
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: ${{ runner.os }}-robolectric-m2-${{ hashFiles('gradle/libs.versions.toml', 'app/build.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+
       - name: Validate Gradle Wrapper Integrity
         run: |
           python3 verification/checks/gradle_wrapper_check.py
 
       - name: Pre-warm Gradle Dependencies
         run: |
-          ./gradlew testDebugUnitTest --no-daemon
+          ./gradlew :app:androidDependencies --no-daemon
 
       - name: Install verification test dependencies
         run: |
@@ -96,7 +102,7 @@ jobs:
             --run-id "${{ steps.context.outputs.run_id }}"
 
       - name: Run Diagnostic Proposed Checks
-        if: steps.context.outputs.is_transition == 'false'
+        if: steps.context.outputs.is_transition == 'false' && steps.context.outputs.has_unapproved_proposed_policy == 'true' && steps.context.outputs.policy_file != 'policies/checks.json'
         run: |
           python3 verification/run.py \
             --lane fast \
@@ -127,14 +133,14 @@ jobs:
             --parent-shas ${{ steps.context.outputs.parent_shas }}
 
       - name: Audit Diagnostic Android Evidence Report
-        if: steps.context.outputs.is_transition == 'false'
+        if: steps.context.outputs.is_transition == 'false' && steps.context.outputs.has_unapproved_proposed_policy == 'true' && steps.context.outputs.policy_file != 'policies/checks.json'
         run: |
           DIAG_REPORT="artifacts/verification/${{ steps.context.outputs.run_id }}-diagnostic/report.json"
           if [ ! -f "$DIAG_REPORT" ]; then
             echo "Error: Expected diagnostic evidence report not found at $DIAG_REPORT" >&2
             exit 1
           fi
-          echo "Auditing diagnostic FCT-001 evidence report: $DIAG_REPORT"
+          echo "Auditing diagnostic proposed policy evidence report: $DIAG_REPORT"
           python3 verification/checks/evidence.py \
             --report "$DIAG_REPORT" \
             --policy policies/checks.json

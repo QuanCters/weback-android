@@ -323,7 +323,7 @@ class Fct004AcceptanceRemediationTest {
             val replayAttempt = controller.activatePilot(replayCtx)
             assertTrue("Reusing consumed authorizationId must fail closed", replayAttempt is GateActivationResult.Rejected)
 
-            // 2. Stricter HTTP timeout (200ms) aborts a 2s delayed MockWebServer login response
+            // 2. Stricter HTTP timeout (200ms) aborts a delayed MockWebServer login response
             val shortTimeoutCtx = buildContext(
                 "FCT004-FIX403-TIMEOUT",
                 originHttp,
@@ -331,13 +331,22 @@ class Fct004AcceptanceRemediationTest {
                 budgets = PilotRequestBudgets(httpCallTimeoutMs = 200L)
             )
             assertTrue(controller.activatePilot(shortTimeoutCtx) is GateActivationResult.Activated)
-            server.enqueue(
-                MockResponse()
-                    .setResponseCode(200)
-                    .setBodyDelay(2, TimeUnit.SECONDS)
-                    .setBody("""{"code":1,"data":{"api_url":"$originHttp/api","wss_url":"ws://127.0.0.1:${server.port}/ws","region_name":"us","jwt_token":"jwt-slow","expired_time":3600}}""")
-            )
-            val timeoutRes = controller.submitCredentials(AuthCredentials("+1", "pilot@example.invalid", "pw".toCharArray()))
+            val defaultDispatcher = server.dispatcher
+            val releaseSlowLogin = java.util.concurrent.CountDownLatch(1)
+            server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    releaseSlowLogin.await(2, TimeUnit.SECONDS)
+                    return MockResponse()
+                        .setResponseCode(200)
+                        .setBody("""{"code":1,"data":{"api_url":"$originHttp/api","wss_url":"ws://127.0.0.1:${server.port}/ws","region_name":"us","jwt_token":"jwt-slow","expired_time":3600}}""")
+                }
+            }
+            val timeoutRes = try {
+                controller.submitCredentials(AuthCredentials("+1", "pilot@example.invalid", "pw".toCharArray()))
+            } finally {
+                releaseSlowLogin.countDown()
+                server.dispatcher = defaultDispatcher
+            }
             assertTrue(timeoutRes is AuthResult.Failure)
 
             // 3. Stricter WS reconnect budget (maxWsReconnectAttempts = 1) stops after 1 reconnect (2 total WS upgrades)
@@ -382,6 +391,7 @@ class Fct004AcceptanceRemediationTest {
     fun fix405_staleCleanupAndUnresolvedOldCleanupNeverCorruptOrSignOutNewerPilotRun() = runBlocking {
         val server = MockWebServer()
         server.start(InetAddress.getByName("127.0.0.1"), 0)
+        val run3Release = java.util.concurrent.CountDownLatch(1)
         try {
             val dispatchers = com.weback.robot.core.DefaultDispatcherProvider()
             val authClock = AuthMonotonicClock { 5_000L }
@@ -454,7 +464,7 @@ class Fct004AcceptanceRemediationTest {
                 override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
                     return if (reqCounter.incrementAndGet() == 1) {
                         run3Arrived.countDown()
-                        Thread.sleep(400)
+                        run3Release.await(2, TimeUnit.SECONDS)
                         MockResponse()
                             .setResponseCode(200)
                             .setBody("""{"code":1,"data":{"api_url":"$originHttp/api","wss_url":"ws://127.0.0.1:${server.port}/ws","region_name":"us","jwt_token":"jwt-stale-run3","expired_time":3600}}""")
@@ -478,7 +488,8 @@ class Fct004AcceptanceRemediationTest {
             val run4Login = controller.submitCredentials(AuthCredentials("+1", "pilot@example.invalid", "pw".toCharArray()))
             assertTrue("Expected Run4 Success but got: $run4Login", run4Login is AuthResult.Success)
 
-            // Now wait for lateRun3Login to finish -> MUST NOT sign out Run 4 or overwrite Run 4 UI state!
+            // Release Run 3 response AFTER Run 4 authenticated -> MUST NOT sign out Run 4 or overwrite Run 4 UI state!
+            run3Release.countDown()
             val lateRes = lateRun3Login.await()
             assertTrue(lateRes is AuthResult.Failure)
             assertTrue("Run 4 must remain Authenticated", coordinator.sessionState.value is SessionState.Authenticated)
@@ -531,6 +542,7 @@ class Fct004AcceptanceRemediationTest {
             overlapCtrl.close()
             controller.close()
         } finally {
+            run3Release.countDown()
             server.shutdown()
         }
     }

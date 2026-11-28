@@ -213,19 +213,21 @@ def validate_manifest_xml_structural(
             f"expected '{expected_package_id}', got '{pkg}'"
         )
 
-    # 2. Version name
+    # 2. Version name (required non-empty exact match)
     ver_name = get_android_attr(root, "versionName")
-    if ver_name and ver_name != EXPECTED_VERSION_NAME:
+    if not ver_name or ver_name != EXPECTED_VERSION_NAME:
         errors.append(f"Manifest versionName mismatch: expected '{EXPECTED_VERSION_NAME}', got '{ver_name}'")
 
-    # 3. uses-sdk
+    # 3. uses-sdk (required element with non-empty minSdkVersion and targetSdkVersion)
     uses_sdk = root.find("uses-sdk")
-    if uses_sdk is not None:
+    if uses_sdk is None:
+        errors.append("Missing <uses-sdk> element in manifest XML")
+    else:
         min_sdk = get_android_attr(uses_sdk, "minSdkVersion")
         target_sdk = get_android_attr(uses_sdk, "targetSdkVersion")
-        if min_sdk and min_sdk != EXPECTED_MIN_SDK:
+        if not min_sdk or min_sdk != EXPECTED_MIN_SDK:
             errors.append(f"Manifest minSdk mismatch: expected '{EXPECTED_MIN_SDK}', got '{min_sdk}'")
-        if target_sdk and target_sdk != EXPECTED_TARGET_SDK:
+        if not target_sdk or target_sdk != EXPECTED_TARGET_SDK:
             errors.append(f"Manifest targetSdk mismatch: expected '{EXPECTED_TARGET_SDK}', got '{target_sdk}'")
 
     # 4. application tag, security settings, launcher activity & provider authorities
@@ -434,8 +436,8 @@ def validate_apk_with_tools(
     apk_path: Path,
     connectivity_policy: str = "offline"
 ) -> tuple[bool, list[str]]:
-    cfg = get_policy_config(connectivity_policy)
-    expected_package_id = cfg["expected_package_id"]
+    # Validate policy upfront so invalid connectivity_policy fails closed consistently
+    get_policy_config(connectivity_policy)
     errors: list[str] = []
     apkanalyzer = find_sdk_tool("apkanalyzer")
     apksigner = find_sdk_tool("apksigner")
@@ -443,42 +445,8 @@ def validate_apk_with_tools(
     if not apkanalyzer:
         errors.append("apkanalyzer binary not found in PATH or ANDROID_HOME")
     else:
-        try:
-            res = subprocess.run([str(apkanalyzer), "manifest", "application-id", str(apk_path)],
-                                 capture_output=True, text=True, check=True)
-            app_id = res.stdout.strip()
-            if app_id != expected_package_id:
-                errors.append(f"Application ID mismatch: expected '{expected_package_id}', got '{app_id}'")
-        except Exception as e:
-            errors.append(f"Failed to query application-id via apkanalyzer: {e}")
-
-        try:
-            res = subprocess.run([str(apkanalyzer), "manifest", "min-sdk", str(apk_path)],
-                                 capture_output=True, text=True, check=True)
-            min_sdk = res.stdout.strip()
-            if min_sdk != EXPECTED_MIN_SDK:
-                errors.append(f"minSdk mismatch: expected '{EXPECTED_MIN_SDK}', got '{min_sdk}'")
-        except Exception as e:
-            errors.append(f"Failed to query min-sdk via apkanalyzer: {e}")
-
-        try:
-            res = subprocess.run([str(apkanalyzer), "manifest", "target-sdk", str(apk_path)],
-                                 capture_output=True, text=True, check=True)
-            target_sdk = res.stdout.strip()
-            if target_sdk != EXPECTED_TARGET_SDK:
-                errors.append(f"targetSdk mismatch: expected '{EXPECTED_TARGET_SDK}', got '{target_sdk}'")
-        except Exception as e:
-            errors.append(f"Failed to query target-sdk via apkanalyzer: {e}")
-
-        try:
-            res = subprocess.run([str(apkanalyzer), "manifest", "version-name", str(apk_path)],
-                                 capture_output=True, text=True, check=True)
-            version_name = res.stdout.strip()
-            if version_name != EXPECTED_VERSION_NAME:
-                errors.append(f"version-name mismatch: expected '{EXPECTED_VERSION_NAME}', got '{version_name}'")
-        except Exception as e:
-            errors.append(f"Failed to query version-name via apkanalyzer: {e}")
-
+        # Single apkanalyzer manifest print call validates package, versionName,
+        # minSdkVersion, targetSdkVersion, permissions, components, and security flags.
         try:
             res = subprocess.run([str(apkanalyzer), "manifest", "print", str(apk_path)],
                                  capture_output=True, text=True, check=True)

@@ -52,6 +52,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -61,6 +62,7 @@ class PilotEmergencyCancellationTest {
     fun testCancelsDuringLoginInventoryOriginQuarantineHandshakeReconnectDelayAndBlocksLateCallbacks() = runTest {
         val server = MockWebServer()
         server.start(InetAddress.getByName("127.0.0.1"), 0)
+        val releaseLogin = CountDownLatch(1)
         try {
             val dispatcher = StandardTestDispatcher(testScheduler)
             val dispatchers = TestDispatcherProvider(dispatcher)
@@ -95,8 +97,11 @@ class PilotEmergencyCancellationTest {
                 trustPolicy = pilotTrust,
                 activeCallRegistry = activeCalls
             )
+            val ioDispatchers = object : com.weback.robot.core.DispatcherProvider by dispatchers {
+                override val io = kotlinx.coroutines.Dispatchers.IO
+            }
             val pilotAuth = PilotCapabilityRestrictedAuthGateway(
-                router, loopbackPolicy, authClock, dispatchers = dispatchers, baseClient = pilotClient, pilotEndpointTrustPolicy = pilotTrust
+                router, loopbackPolicy, authClock, dispatchers = ioDispatchers, baseClient = pilotClient, pilotEndpointTrustPolicy = pilotTrust
             )
             val pilotInv = PilotCapabilityRestrictedInventoryGateway(
                 OkHttpDeviceInventoryGateway(loopbackPolicy, authClock, dispatchers, client = pilotClient)
@@ -145,21 +150,28 @@ class PilotEmergencyCancellationTest {
                 externalApproval = PilotExternalApproval("PO", "Lead", "REF-5")
             )
 
-            // 1. Cancel during delayed login HTTP call
+            // 1. Cancel during delayed login HTTP call (latch-gated dispatcher avoids 5s MockWebServer shutdown stall)
             controller.activatePilot(ctx)
-            server.enqueue(
-                MockResponse()
-                    .setResponseCode(200)
-                    .setBodyDelay(5, TimeUnit.SECONDS)
-                    .setBody("""{"code":1,"data":{"api_url":"$originHttp/api","wss_url":"ws://127.0.0.1:${server.port}/ws","region_name":"us","jwt_token":"jwt-late","expired_time":3600}}""")
-            )
-            val loginJob = async {
+            val defaultDispatcher = server.dispatcher
+            val loginArrived = CountDownLatch(1)
+            server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    loginArrived.countDown()
+                    releaseLogin.await(5, TimeUnit.SECONDS)
+                    return MockResponse()
+                        .setResponseCode(200)
+                        .setBody("""{"code":1,"data":{"api_url":"$originHttp/api","wss_url":"ws://127.0.0.1:${server.port}/ws","region_name":"us","jwt_token":"jwt-late","expired_time":3600}}""")
+                }
+            }
+            val loginJob = async(kotlinx.coroutines.Dispatchers.IO) {
                 controller.submitCredentials(AuthCredentials("+1", "pilot@example.invalid", "pw".toCharArray()))
             }
-            runCurrent()
-            Thread.sleep(50)
+            assertTrue("In-flight login must reach MockWebServer before emergency disconnect", loginArrived.await(2, TimeUnit.SECONDS))
             controller.emergencyDisconnectAndWipe(PilotAbortReason.UserEmergencyDisconnect)
-            loginJob.await()
+            val cancelledLogin = loginJob.await()
+            assertTrue("Cancelled in-flight login must fail closed", cancelledLogin is com.weback.robot.domain.model.AuthResult.Failure)
+            releaseLogin.countDown()
+            server.dispatcher = defaultDispatcher
             assertFalse(gate.isAuthorized)
             assertFalse(coordinator.sessionState.value is SessionState.Authenticated)
             assertEquals(PilotModeState.OfflineDefault, controller.pilotModeState.value)
@@ -212,6 +224,7 @@ class PilotEmergencyCancellationTest {
             assertFalse(reportAfterDisconnect.contains("pilot***@example.invalid"))
             wsDelegate.close()
         } finally {
+            releaseLogin.countDown()
             server.shutdown()
         }
     }

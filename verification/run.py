@@ -4,6 +4,7 @@ Verification Runner & Lane Orchestrator.
 Standard library only. Dispatches fast local lane or candidate verification lane.
 """
 import argparse
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import datetime
 import os
 from pathlib import Path
@@ -38,6 +39,103 @@ from verification.checks.transition import (
     get_commit_parents
 )
 
+DEFAULT_CHECK_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    # Gate android-lint on harness-selftests so subprocess-heavy Python selftests
+    # (60s timeout) never contend with Gradle/Kotlin compilation on 2-vCPU CI runners.
+    "android-lint": ("gradle-wrapper-validation", "harness-selftests"),
+    "android-unit-tests": ("gradle-wrapper-validation", "android-lint"),
+    "android-build": ("gradle-wrapper-validation", "android-unit-tests"),
+    "apk-validation": ("android-build",),
+    "pilot-android-lint": ("gradle-wrapper-validation", "android-build"),
+    "pilot-android-unit-tests": ("gradle-wrapper-validation", "pilot-android-lint"),
+    "pilot-android-build": ("gradle-wrapper-validation", "pilot-android-unit-tests"),
+    "pilot-apk-validation": ("pilot-android-build",),
+}
+
+
+def is_gradle_check(check: CheckDefinition) -> bool:
+    """Returns True if the check invokes Gradle (must be serialized to avoid OOM/build lock contention)."""
+    return any("gradlew" in arg or "gradle_test_adapter" in arg for arg in check.argv)
+
+
+def execute_checks_dag(
+    checks_to_run: list[CheckDefinition],
+    max_parallel: int = 2,
+) -> list[CheckResult]:
+    """
+    Executes checks respecting dependency ordering and serializing Gradle checks
+    (at most one Gradle JVM active at a time), returning results in checks_to_run order.
+    """
+    if max_parallel <= 1 or len(checks_to_run) <= 1:
+        results: list[CheckResult] = []
+        for check in checks_to_run:
+            print(f"  -> Executing [{check.id}]... ", end="", flush=True)
+            res = execute_check(check)
+            print(f"{res.status} ({res.duration_seconds:.2f}s, code: {res.exit_code})")
+            results.append(res)
+        return results
+
+    present_ids = {c.id for c in checks_to_run}
+    deps_by_id: dict[str, set[str]] = {
+        c.id: {d for d in DEFAULT_CHECK_DEPENDENCIES.get(c.id, ()) if d in present_ids}
+        for c in checks_to_run
+    }
+    gradle_ids = {c.id for c in checks_to_run if is_gradle_check(c)}
+
+    pending = list(checks_to_run)
+    completed_ids: set[str] = set()
+    results_by_id: dict[str, CheckResult] = {}
+    active_futures: dict[Future, CheckDefinition] = {}
+    gradle_busy = False
+
+    with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+        while pending or active_futures:
+            submitted_any = False
+            remaining: list[CheckDefinition] = []
+            for check in pending:
+                if len(active_futures) >= max_parallel:
+                    remaining.append(check)
+                    continue
+                if not deps_by_id[check.id].issubset(completed_ids):
+                    remaining.append(check)
+                    continue
+                is_gradle = check.id in gradle_ids
+                if is_gradle and gradle_busy:
+                    remaining.append(check)
+                    continue
+
+                if is_gradle:
+                    gradle_busy = True
+                fut = executor.submit(execute_check, check)
+                active_futures[fut] = check
+                submitted_any = True
+
+            pending = remaining
+
+            if not active_futures:
+                if pending:
+                    raise RuntimeError(
+                        f"Unresolvable check dependency cycle among: {[c.id for c in pending]}"
+                    )
+                break
+
+            done, _ = wait(active_futures.keys(), return_when=FIRST_COMPLETED)
+            for fut in done:
+                finished_check = active_futures.pop(fut)
+                res = fut.result()
+                results_by_id[finished_check.id] = res
+                completed_ids.add(finished_check.id)
+                if finished_check.id in gradle_ids:
+                    gradle_busy = False
+                print(
+                    f"  -> Completed [{finished_check.id}]: {res.status} "
+                    f"({res.duration_seconds:.2f}s, code: {res.exit_code})",
+                    flush=True,
+                )
+
+    return [results_by_id[c.id] for c in checks_to_run]
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="WeBack Verification Runner & Lane Dispatcher",
@@ -54,6 +152,18 @@ def main():
         type=str,
         default=None,
         help="Target a specific check ID (strictly prohibited in candidate lane)"
+    )
+    parser.add_argument(
+        "--tests",
+        action="append",
+        default=None,
+        help="Target specific unit test pattern(s) via Gradle --tests (fast lane only; strictly prohibited in candidate lane)"
+    )
+    parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=2,
+        help="Maximum concurrent checks in DAG mode (Gradle checks remain strictly serialized; use 1 for sequential)"
     )
     parser.add_argument(
         "--config",
@@ -106,9 +216,12 @@ def main():
         if default_sdk.is_dir():
             os.environ["ANDROID_HOME"] = str(default_sdk)
 
-    # AC-003.5: Targeted check execution prohibited in candidate lane
+    # AC-003.5: Targeted check or test filtering prohibited in candidate lane
     if args.lane == "candidate" and args.check:
         print("Error: Partial check execution is prohibited in candidate lane.", file=sys.stderr)
+        sys.exit(2)
+    if args.lane == "candidate" and args.tests:
+        print("Error: Targeted --tests filtering is prohibited in candidate lane.", file=sys.stderr)
         sys.exit(2)
 
     # Candidate lane output directory integrity
@@ -254,10 +367,15 @@ def main():
     pre_policy_sha256 = compute_sha256_bytes(config_file.read_bytes())
     policy_modified = check_policy_modified_from_base(repo_path, args.base_ref)
 
-    # Set working directory context for all checks
+    # Set working directory context for all checks and forward fast-lane --tests filters
     for check in checks_to_run:
         if check.cwd is None:
             check.cwd = repo_path
+        if args.lane == "fast" and args.tests and "verification.checks.gradle_test_adapter" in check.argv:
+            extra_args = []
+            for pat in args.tests:
+                extra_args.extend(["--tests", pat])
+            check.argv = list(check.argv) + extra_args
 
     # Execute checks
     if args.run_id:
@@ -274,14 +392,12 @@ def main():
         out_dir = repo_path / out_dir
     run_artifacts_dir = out_dir / run_id
 
-    print(f"Starting verification run {run_id} (lane: {args.lane}, checks: {len(checks_to_run)})...")
-    results: list[CheckResult] = []
+    if args.max_parallel < 1:
+        print("Error: --max-parallel must be >= 1.", file=sys.stderr)
+        sys.exit(2)
 
-    for check in checks_to_run:
-        print(f"  -> Executing [{check.id}]... ", end="", flush=True)
-        res = execute_check(check)
-        print(f"{res.status} ({res.duration_seconds:.2f}s, code: {res.exit_code})")
-        results.append(res)
+    print(f"Starting verification run {run_id} (lane: {args.lane}, checks: {len(checks_to_run)}, max_parallel: {args.max_parallel})...")
+    results: list[CheckResult] = execute_checks_dag(checks_to_run, max_parallel=args.max_parallel)
 
     finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
 

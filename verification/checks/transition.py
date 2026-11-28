@@ -40,6 +40,8 @@ class ResolvedContext:
     is_transition: bool
     tree_sha: str = ""
     parent_shas: tuple[str, ...] = ()
+    canonical_policy_sha256: str = ""
+    has_unapproved_proposed_policy: bool = False
 
 def compute_sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -215,6 +217,12 @@ def resolve_verification_context(
     raw_auth = env.get("TRANSITION_AUTHORIZATION", "").strip()
     active_approved_policy_sha = env.get("APPROVED_POLICY_SHA256", "").strip()
 
+    if active_approved_policy_sha and not HEX_SHA256_RE.match(active_approved_policy_sha):
+        raise TransitionError([
+            f"Invalid APPROVED_POLICY_SHA256 format: '{active_approved_policy_sha}' "
+            f"(expected 64-character hex SHA-256)"
+        ])
+
     if raw_auth:
         try:
             auth_dict = json.loads(raw_auth)
@@ -226,6 +234,16 @@ def resolve_verification_context(
             raise TransitionError(auth_errs)
 
         policy_file = auth_dict.get("policy_file", CANONICAL_POLICY_PATH)
+        if policy_file == CANONICAL_POLICY_PATH:
+            canonical_sha = auth_dict["canonical_policy_sha256"]
+        else:
+            canonical_path = repo_path / CANONICAL_POLICY_PATH
+            canonical_sha = ""
+            if canonical_path.is_file():
+                _, canonical_sha, c_errs = load_policy_checks_and_digest(canonical_path)
+                if c_errs:
+                    raise TransitionError(c_errs)
+
         return ResolvedContext(
             run_id=run_id,
             report_path=report_path,
@@ -237,7 +255,9 @@ def resolve_verification_context(
             expected_required_checks=auth_dict["required_checks"],
             is_transition=True,
             tree_sha=git_context.get("tree_sha", ""),
-            parent_shas=tuple(git_context.get("parent_shas", []))
+            parent_shas=tuple(git_context.get("parent_shas", [])),
+            canonical_policy_sha256=canonical_sha,
+            has_unapproved_proposed_policy=False,
         )
     else:
         # No transition authorization provided.
@@ -266,11 +286,15 @@ def resolve_verification_context(
                     expected_required_checks=req_checks,
                     is_transition=False,
                     tree_sha=git_context.get("tree_sha", ""),
-                    parent_shas=tuple(git_context.get("parent_shas", []))
+                    parent_shas=tuple(git_context.get("parent_shas", [])),
+                    canonical_policy_sha256=actual_sha,
+                    has_unapproved_proposed_policy=False,
                 )
             elif baseline_file.is_file():
                 b_checks, b_sha, b_errs = load_policy_checks_and_digest(baseline_file)
-                if not b_errs and b_sha.lower() == active_approved_policy_sha.lower():
+                if b_errs:
+                    raise TransitionError(b_errs)
+                if b_sha.lower() == active_approved_policy_sha.lower():
                     req_checks = [cid for cid, defn in b_checks.items() if defn.get("required")]
                     return ResolvedContext(
                         run_id=run_id,
@@ -283,7 +307,9 @@ def resolve_verification_context(
                         expected_required_checks=req_checks,
                         is_transition=False,
                         tree_sha=git_context.get("tree_sha", ""),
-                        parent_shas=tuple(git_context.get("parent_shas", []))
+                        parent_shas=tuple(git_context.get("parent_shas", [])),
+                        canonical_policy_sha256=actual_sha,
+                        has_unapproved_proposed_policy=(actual_sha.lower() != b_sha.lower()),
                     )
 
             # Modified policy without approved transition authorization fails closed!
@@ -306,7 +332,9 @@ def resolve_verification_context(
                 expected_required_checks=req_checks,
                 is_transition=False,
                 tree_sha=git_context.get("tree_sha", ""),
-                parent_shas=tuple(git_context.get("parent_shas", []))
+                parent_shas=tuple(git_context.get("parent_shas", [])),
+                canonical_policy_sha256=actual_sha,
+                has_unapproved_proposed_policy=False,
             )
 
 def main():
@@ -366,13 +394,15 @@ def main():
             sys.exit(1)
 
         print("[TRANSITION CONTEXT RESOLVED]")
-        print(f"  run_id:                   {resolved.run_id}")
-        print(f"  candidate_sha:            {resolved.candidate_sha}")
-        print(f"  base_sha:                 {resolved.base_sha}")
-        print(f"  policy_file:              {resolved.policy_file}")
-        print(f"  expected_policy_sha256:   {resolved.expected_policy_sha256}")
-        print(f"  expected_required_checks: {resolved.expected_required_checks}")
-        print(f"  is_transition:            {resolved.is_transition}")
+        print(f"  run_id:                         {resolved.run_id}")
+        print(f"  candidate_sha:                  {resolved.candidate_sha}")
+        print(f"  base_sha:                       {resolved.base_sha}")
+        print(f"  policy_file:                    {resolved.policy_file}")
+        print(f"  canonical_policy_sha256:        {resolved.canonical_policy_sha256}")
+        print(f"  expected_policy_sha256:         {resolved.expected_policy_sha256}")
+        print(f"  expected_required_checks:       {resolved.expected_required_checks}")
+        print(f"  is_transition:                  {resolved.is_transition}")
+        print(f"  has_unapproved_proposed_policy: {resolved.has_unapproved_proposed_policy}")
 
         if args.output_github_env:
             out_p = Path(args.output_github_env)
@@ -385,9 +415,11 @@ def main():
                 f"tree_sha={resolved.tree_sha}",
                 f"parent_shas={' '.join(resolved.parent_shas)}",
                 f"policy_file={resolved.policy_file}",
+                f"canonical_policy_sha256={resolved.canonical_policy_sha256}",
                 f"expected_policy_sha256={resolved.expected_policy_sha256}",
                 f"expected_required_checks={' '.join(resolved.expected_required_checks)}",
-                f"is_transition={'true' if resolved.is_transition else 'false'}"
+                f"is_transition={'true' if resolved.is_transition else 'false'}",
+                f"has_unapproved_proposed_policy={'true' if resolved.has_unapproved_proposed_policy else 'false'}",
             ]
             with open(out_p, "a", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")
