@@ -1,0 +1,3580 @@
+{
+  "schema_version": 1,
+  "stage": "L04A-S",
+  "change_id": "LOC-001",
+  "canonical_commit": "948c0b23a70a73a83bf2d8cb02e88e071618e2d4",
+  "apk_provenance": {
+    "debug": {
+      "path": "app/build/outputs/apk/debug/app-debug.apk",
+      "sha256": "06a15a95d99884958f8e639bdbc3248f02526a106d60f43bd574e06dc6791b1e",
+      "dex_files": {
+        "classes.dex": {
+          "all_classes": 9281,
+          "project_classes": 0
+        },
+        "classes10.dex": {
+          "all_classes": 66,
+          "project_classes": 66
+        },
+        "classes11.dex": {
+          "all_classes": 72,
+          "project_classes": 72
+        },
+        "classes12.dex": {
+          "all_classes": 3600,
+          "project_classes": 0
+        },
+        "classes2.dex": {
+          "all_classes": 82,
+          "project_classes": 3
+        },
+        "classes3.dex": {
+          "all_classes": 32,
+          "project_classes": 32
+        },
+        "classes4.dex": {
+          "all_classes": 292,
+          "project_classes": 292
+        },
+        "classes5.dex": {
+          "all_classes": 116,
+          "project_classes": 116
+        },
+        "classes6.dex": {
+          "all_classes": 43,
+          "project_classes": 43
+        },
+        "classes7.dex": {
+          "all_classes": 26,
+          "project_classes": 26
+        },
+        "classes8.dex": {
+          "all_classes": 56,
+          "project_classes": 56
+        },
+        "classes9.dex": {
+          "all_classes": 104,
+          "project_classes": 104
+        }
+      },
+      "total_project_descriptors": 810,
+      "unique_project_stems": 201
+    },
+    "pilot": {
+      "path": "app/build/outputs/apk/pilot/app-pilot.apk",
+      "sha256": "91f732d762f009cbc0eea2222d2538a66541a432f266990e1cf62261e7907043",
+      "dex_files": {
+        "classes.dex": {
+          "all_classes": 9281,
+          "project_classes": 0
+        },
+        "classes10.dex": {
+          "all_classes": 66,
+          "project_classes": 66
+        },
+        "classes11.dex": {
+          "all_classes": 72,
+          "project_classes": 72
+        },
+        "classes12.dex": {
+          "all_classes": 3600,
+          "project_classes": 0
+        },
+        "classes2.dex": {
+          "all_classes": 82,
+          "project_classes": 3
+        },
+        "classes3.dex": {
+          "all_classes": 32,
+          "project_classes": 32
+        },
+        "classes4.dex": {
+          "all_classes": 292,
+          "project_classes": 292
+        },
+        "classes5.dex": {
+          "all_classes": 116,
+          "project_classes": 116
+        },
+        "classes6.dex": {
+          "all_classes": 43,
+          "project_classes": 43
+        },
+        "classes7.dex": {
+          "all_classes": 26,
+          "project_classes": 26
+        },
+        "classes8.dex": {
+          "all_classes": 56,
+          "project_classes": 56
+        },
+        "classes9.dex": {
+          "all_classes": 104,
+          "project_classes": 104
+        }
+      },
+      "total_project_descriptors": 810,
+      "unique_project_stems": 201
+    }
+  },
+  "reconciliation_counts": {
+    "observed_project_stems": 201,
+    "observed_cloud_pilot_stems": 80,
+    "observed_shared_and_generated_stems": 121,
+    "observed_cloud_stems_omitted_in_l01f2_proposal": 21,
+    "omitted_stems_exact_list": [
+      "Lcom/weback/robot/PilotUiWorkflow",
+      "Lcom/weback/robot/core/DefaultAppContainer",
+      "Lcom/weback/robot/protocol/auth/AuthEnvelopeConfig",
+      "Lcom/weback/robot/protocol/auth/DisabledPasswordlessRefreshStrategy",
+      "Lcom/weback/robot/protocol/auth/RefreshGrantStrategy",
+      "Lcom/weback/robot/protocol/auth/RegionResolution",
+      "Lcom/weback/robot/protocol/inventory/InventoryFetchResult",
+      "Lcom/weback/robot/security/ConsumeAuthorizationResult",
+      "Lcom/weback/robot/security/EncryptedPayload",
+      "Lcom/weback/robot/security/InstalledApkVerification",
+      "Lcom/weback/robot/security/InstalledApkVerifier",
+      "Lcom/weback/robot/security/KeyDeletionResult",
+      "Lcom/weback/robot/security/LedgerCheckResult",
+      "Lcom/weback/robot/security/MissingKeystoreKeyException",
+      "Lcom/weback/robot/security/PermanentlyInvalidatedKeyException",
+      "Lcom/weback/robot/security/ProvisionedActivationPreparation",
+      "Lcom/weback/robot/security/ProvisionedAuthorizationPreview",
+      "Lcom/weback/robot/security/ProvisionedRawLoadResult",
+      "Lcom/weback/robot/security/TokenClearResult",
+      "Lcom/weback/robot/security/TokenLoadResult",
+      "Lcom/weback/robot/security/TokenSaveResult"
+    ],
+    "earlier_18_omissions_reconciliation_note": "Earlier pre-audit narrative count of 18 omitted stems omitted PilotUiWorkflow (+1), one of the 7 ExternalPilotAuthorization auxiliary types (+1), and DefaultAppContainer (+1, which is planned to rename to DefaultPilotContainer in L04A). Exact count against 948c0b2 app-pilot.apk is 21 observed cloud stems not in L01F2 explicit list (20 omitted auxiliary/result/workflow types: 4 protocol/auth, 1 protocol/inventory, 7 ExternalPilotAuthorization, 4 KeystoreAeadTokenStore, 3 TokenStore sealed results, 1 PilotUiWorkflow; plus 1 DefaultAppContainer).",
+    "future_l04a_cloud_stems_not_yet_in_948c0b2_apks": [
+      "Lcom/weback/robot/core/PilotAppContainer",
+      "Lcom/weback/robot/core/DefaultPilotContainer",
+      "Lcom/weback/robot/core/PilotCapabilityBridgeImpl",
+      "Lcom/weback/robot/core/PilotCapabilityBridgeImplKt"
+    ],
+    "future_l04b_local_live_stems_not_yet_in_948c0b2_apks": [
+      "Lcom/weback/robot/protocol/local/ReceiveOnlyTcpSource",
+      "Lcom/weback/robot/security/LocalDiagnosticSanitizer",
+      "Lcom/weback/robot/security/LocalLanTrustPolicy"
+    ]
+  },
+  "observed_dex_families": [
+    {
+      "stem": "Lcom/weback/robot/BuildConfig",
+      "source_file": "generated",
+      "ownership_classification": "generated",
+      "debug_dex_files": [
+        "classes6.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes6.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/MainActivity",
+      "source_file": "app/src/main/java/com/weback/robot/MainActivity.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes6.dex"
+      ],
+      "debug_descriptor_count": 40,
+      "pilot_dex_files": [
+        "classes6.dex"
+      ],
+      "pilot_descriptor_count": 40,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/PilotUiWorkflow",
+      "source_file": "app/src/main/java/com/weback/robot/MainActivity.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes6.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes6.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/PilotUiWorkflow"
+    },
+    {
+      "stem": "Lcom/weback/robot/R",
+      "source_file": "generated",
+      "ownership_classification": "generated",
+      "debug_dex_files": [
+        "classes2.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes2.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/WeBackApplication",
+      "source_file": "app/src/main/java/com/weback/robot/WeBackApplication.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes6.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes6.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalCodecErrorCode",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalDiagnosticCategory",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalDiagnosticEvent",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalDiagnosticLogger",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalDiagnosticLogger.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalDiagnosticSink",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalDiagnosticLogger.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalMapConnectionState",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalMapModelsKt",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalMapRepository",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapRepository.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 15,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 15,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalMapRepositoryState",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/LocalMapTerminalReason",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/local/SyntheticReplayPlaybackState",
+      "source_file": "app/src/main/java/com/weback/robot/app/local/LocalMapModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/app/pilot/PilotSessionController",
+      "source_file": "app/src/main/java/com/weback/robot/app/pilot/PilotSessionController.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 25,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 25,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/app/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/app/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/app/session/DeviceInventoryRepository",
+      "source_file": "app/src/main/java/com/weback/robot/app/session/DeviceInventoryRepository.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/app/session/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/app/session/"
+    },
+    {
+      "stem": "Lcom/weback/robot/app/session/SessionCoordinator",
+      "source_file": "app/src/main/java/com/weback/robot/app/session/SessionCoordinator.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 18,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 18,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/app/session/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/app/session/"
+    },
+    {
+      "stem": "Lcom/weback/robot/core/AndroidAuthMonotonicClock",
+      "source_file": "app/src/main/java/com/weback/robot/core/BootSessionTimeProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/AndroidBootSessionTimeProvider",
+      "source_file": "app/src/main/java/com/weback/robot/core/BootSessionTimeProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/AppContainer",
+      "source_file": "app/src/main/java/com/weback/robot/core/AppContainer.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/AppContainerDependency",
+      "source_file": "app/src/main/java/com/weback/robot/core/AppContainer.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/AuthMonotonicClock",
+      "source_file": "app/src/main/java/com/weback/robot/core/BootSessionTimeProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/BootSessionTimeProvider",
+      "source_file": "app/src/main/java/com/weback/robot/core/BootSessionTimeProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/BootTimeSnapshot",
+      "source_file": "app/src/main/java/com/weback/robot/core/BootSessionTimeProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/DefaultAppContainer",
+      "source_file": "app/src/main/java/com/weback/robot/core/AppContainer.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 42,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 42,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/core/DefaultAppContainer"
+    },
+    {
+      "stem": "Lcom/weback/robot/core/DefaultDispatcherProvider",
+      "source_file": "app/src/main/java/com/weback/robot/core/DispatcherProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/DispatcherProvider",
+      "source_file": "app/src/main/java/com/weback/robot/core/DispatcherProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/InMemoryMockTokenStore",
+      "source_file": "app/src/main/java/com/weback/robot/core/AppContainer.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/core/InMemoryMockTokenStore",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/core/InMemoryMockTokenStore"
+    },
+    {
+      "stem": "Lcom/weback/robot/core/MonotonicClock",
+      "source_file": "app/src/main/java/com/weback/robot/core/MonotonicClock.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/NonPersistentSessionStore",
+      "source_file": "app/src/main/java/com/weback/robot/core/AppContainer.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/core/NonPersistentSessionStore",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/core/NonPersistentSessionStore"
+    },
+    {
+      "stem": "Lcom/weback/robot/core/PilotContainerTestHooks",
+      "source_file": "app/src/main/java/com/weback/robot/core/AppContainer.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/core/PilotContainerTestHooks",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/core/PilotContainerTestHooks"
+    },
+    {
+      "stem": "Lcom/weback/robot/core/SystemMonotonicClock",
+      "source_file": "app/src/main/java/com/weback/robot/core/MonotonicClock.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/SystemWallClock",
+      "source_file": "app/src/main/java/com/weback/robot/core/BootSessionTimeProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/core/WallClock",
+      "source_file": "app/src/main/java/com/weback/robot/core/BootSessionTimeProvider.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/auth/LifetimeEvaluation",
+      "source_file": "app/src/main/java/com/weback/robot/domain/auth/TokenExpiryPolicy.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/auth/PersistedRestoreDecision",
+      "source_file": "app/src/main/java/com/weback/robot/domain/auth/TokenExpiryPolicy.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/auth/RestoreRejectionReason",
+      "source_file": "app/src/main/java/com/weback/robot/domain/auth/TokenExpiryPolicy.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/auth/SessionStateMachine",
+      "source_file": "app/src/main/java/com/weback/robot/domain/auth/SessionStateMachine.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/auth/TokenExpiryPolicy",
+      "source_file": "app/src/main/java/com/weback/robot/domain/auth/TokenExpiryPolicy.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes10.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes10.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/control/RobotStateMachine",
+      "source_file": "app/src/main/java/com/weback/robot/domain/control/RobotStateMachine.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/control/TransitionDecision",
+      "source_file": "app/src/main/java/com/weback/robot/domain/control/RobotStateMachine.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/device/DeviceCapabilityClassifier",
+      "source_file": "app/src/main/java/com/weback/robot/domain/device/DeviceCapabilityClassifier.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/map/HoslamFrame",
+      "source_file": "app/src/main/java/com/weback/robot/domain/map/HoslamFrame.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 6,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 6,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/map/HoslamFrameKind",
+      "source_file": "app/src/main/java/com/weback/robot/domain/map/HoslamFrameKind.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/map/LocalCodecError",
+      "source_file": "app/src/main/java/com/weback/robot/domain/map/LocalCodecError.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 9,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 9,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/map/RasterSnapshot",
+      "source_file": "app/src/main/java/com/weback/robot/domain/map/RasterSnapshot.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/map/RawHoslamFrame",
+      "source_file": "app/src/main/java/com/weback/robot/domain/map/RawHoslamFrame.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/AccountRegionType",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/AuthModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/AuthCredentials",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/AuthModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/AuthFailureReason",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/AuthModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 12,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 12,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/AuthResult",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/AuthModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/CommandExecutionState",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/CommandExecutionState.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 5,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 5,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/CommandRejectionReason",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/CommandExecutionState.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/CommandResult",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/CommandResult.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/ConnectionState",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ConnectivityModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 6,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 6,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/ConnectivityError",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ConnectivityModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 13,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 13,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/ControlAvailability",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ControlAvailability.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/ControlCompatibility",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ConnectivityModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/DeviceCapability",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ConnectivityModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/DeviceCapabilityCategory",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ConnectivityModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/DeviceInventoryItem",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ConnectivityModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/InventoryState",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ConnectivityModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 6,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 6,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/LogoutResult",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/AuthModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/PersistedSessionRecord",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/AuthModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/RecoveryAction",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/ConnectivityModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/RobotCommand",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/RobotCommand.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/RobotMode",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/RobotMode.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/RobotState",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/RobotState.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/SessionCredentials",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/AuthModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/SessionState",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/AuthModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 6,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 6,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/model/SimulatorErrorCodes",
+      "source_file": "app/src/main/java/com/weback/robot/domain/model/SimulatorErrorCodes.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/AdmissionResult",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotAuthorizationGate.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/ExpectedCandidateIdentity",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/GateActivationResult",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotAuthorizationGate.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/GateCheckResult",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotAuthorizationGate.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/ObservedOriginSummary",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotAbortReason",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 12,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 12,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotAccountScope",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotAccountScopeType",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotAdmissionTicket",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotAuthorizationGate.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotAuthorizationContext",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotAuthorizationGate",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotAuthorizationGate.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotClock",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotEmergencyDisconnectResult",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotEndpointConfig",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotEnvironment",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotExternalApproval",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotModeState",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 8,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 8,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotOperation",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotRequestBudgets",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/PilotTargetDevice",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/ReadOnlyPilotGuard",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/ReadOnlyPilotGuard.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/ReadOnlyTelemetrySnapshot",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/RuntimeAppIdentity",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/domain/pilot/TargetInventorySummary",
+      "source_file": "app/src/main/java/com/weback/robot/domain/pilot/PilotModels.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/RobotTransport",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/RobotTransport.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/SimulatorConfig",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/SimulatorConfig.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/SimulatorRobotTransport",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/SimulatorRobotTransport.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes9.dex"
+      ],
+      "debug_descriptor_count": 9,
+      "pilot_dex_files": [
+        "classes9.dex"
+      ],
+      "pilot_descriptor_count": 9,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/auth/AuthEnvelopeConfig",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/auth/AuthGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/auth/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/auth/AuthGateway",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/auth/AuthGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/auth/AuthGateway",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/auth/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/auth/DisabledPasswordlessRefreshStrategy",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/auth/AuthGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/auth/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/auth/OfflineFixtureAuthGateway",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/auth/OfflineFixtureAuthGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/auth/OfflineFixtureAuthGateway",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/auth/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/auth/OkHttpAuthGateway",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/auth/OkHttpAuthGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 19,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 19,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/auth/OkHttpAuthGateway",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/auth/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/auth/RefreshGrantStrategy",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/auth/AuthGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/auth/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/auth/RegionEndpointRouter",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/auth/RegionEndpointRouter.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/auth/RegionEndpointRouter",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/auth/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/auth/RegionResolution",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/auth/RegionEndpointRouter.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/auth/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/inventory/DeviceInventoryGateway",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/inventory/DeviceInventoryGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes7.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes7.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/inventory/DeviceInventoryGateway",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/inventory/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/inventory/InventoryFetchResult",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/inventory/DeviceInventoryGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes7.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes7.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/inventory/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/inventory/OfflineFixtureInventoryGateway",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/inventory/OfflineFixtureInventoryGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes7.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes7.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/inventory/OfflineFixtureInventoryGateway",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/inventory/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/inventory/OkHttpDeviceInventoryGateway",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/inventory/OkHttpDeviceInventoryGateway.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes7.dex"
+      ],
+      "debug_descriptor_count": 20,
+      "pilot_dex_files": [
+        "classes7.dex"
+      ],
+      "pilot_descriptor_count": 20,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/inventory/OkHttpDeviceInventoryGateway",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/inventory/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/LocalStreamFailureCode",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/LocalTelemetryStreamSource.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/LocalTelemetryEvent",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/LocalTelemetryStreamSource.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 5,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 5,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/LocalTelemetrySourceKind",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/LocalTelemetryStreamSource.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/LocalTelemetryStreamSource",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/LocalTelemetryStreamSource.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/SyntheticReplayTelemetrySource",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/SyntheticReplayTelemetrySource.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes11.dex"
+      ],
+      "debug_descriptor_count": 8,
+      "pilot_dex_files": [
+        "classes11.dex"
+      ],
+      "pilot_descriptor_count": 8,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/codec/HoslamByteUtils",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/codec/HoslamByteUtils.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/codec/HoslamDecodeResult",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/codec/HoslamDecodeResult.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/codec/HoslamFeedResult",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/codec/HoslamFeedResult.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/codec/HoslamFinishResult",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/codec/HoslamFinishResult.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/codec/HoslamFrameDecoder",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/codec/HoslamFrameDecoder.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/local/codec/HoslamStreamFramer",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/local/codec/HoslamStreamFramer.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/LoginEnvelopeIdentity",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/PilotAdmissionContextElement",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/PilotAuthProbeOutcome",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/PilotCapabilityRestrictedAuthGateway",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 21,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 21,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/PilotCapabilityRestrictedInventoryGateway",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 6,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 6,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/PilotHttpOperationGuard",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/PilotReadOnlyFixtureTransport",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/PilotReadOnlyTelemetryTransport",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/PilotReadOnlyWebSocketTransport",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/pilot/StrictJsonKeyUniquenessValidator",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/pilot/PilotReadOnlyTransportBoundary.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/ws/ConnectionConfig",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/ws/ConnectionConfig.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/ws/ConnectionConfig",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/ws/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/ws/OfflineFixtureRealtimeTransport",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/ws/OfflineFixtureRealtimeTransport.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/ws/OfflineFixtureRealtimeTransport",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/ws/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/ws/OkHttpWebSocketTransport",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/ws/OkHttpWebSocketTransport.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 11,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 11,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/ws/OkHttpWebSocketTransport",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/ws/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/ws/RealtimeSessionTransport",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/ws/RealtimeSessionTransport.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/ws/RealtimeSessionTransport",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/ws/"
+    },
+    {
+      "stem": "Lcom/weback/robot/protocol/ws/RealtimeSessionTransportKt",
+      "source_file": "app/src/main/java/com/weback/robot/protocol/ws/RealtimeSessionTransport.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/protocol/ws/RealtimeSessionTransportKt",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/protocol/ws/"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/AeadCipherProvider",
+      "source_file": "app/src/main/java/com/weback/robot/security/KeystoreAeadTokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/AeadCipherProvider",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/AeadCipherProvider"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/AndroidInstalledApkVerifier",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/AndroidInstalledApkVerifier",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/AndroidInstalledApkVerifier"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/AndroidKeystoreAeadCipherProvider",
+      "source_file": "app/src/main/java/com/weback/robot/security/KeystoreAeadTokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/AndroidKeystoreAeadCipherProvider",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/AndroidKeystoreAeadCipherProvider"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/AuthorizedPilotEndpointTrustPolicy",
+      "source_file": "app/src/main/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/AuthorizedPilotEndpointTrustPolicy",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/AuthorizedPilotEndpointTrustPolicy"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/ConsumeAuthorizationResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/ConsumeAuthorizationResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/DiagnosticEvent",
+      "source_file": "app/src/main/java/com/weback/robot/security/DiagnosticLogger.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/security/DiagnosticLogger",
+      "source_file": "app/src/main/java/com/weback/robot/security/DiagnosticLogger.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/security/DynamicOriginConfirmationResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/DynamicOriginConfirmationResult",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/DynamicOriginConfirmationResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/DynamicOriginEvaluation",
+      "source_file": "app/src/main/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/DynamicOriginEvaluation",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/DynamicOriginEvaluation"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/EncryptedPayload",
+      "source_file": "app/src/main/java/com/weback/robot/security/KeystoreAeadTokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/EncryptedPayload"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/EndpointTrustDecision",
+      "source_file": "app/src/main/java/com/weback/robot/security/EndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/EndpointTrustDecision",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/EndpointTrustDecision"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/EndpointTrustPolicy",
+      "source_file": "app/src/main/java/com/weback/robot/security/EndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/EndpointTrustPolicy",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/EndpointTrustPolicy"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/ExternalPilotAuthorizationLoader",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 35,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 35,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/ExternalPilotAuthorizationLoader",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/ExternalPilotAuthorizationLoader"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/FileBackedProvisionedPilotAuthorizationStore",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 5,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 5,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/FileBackedProvisionedPilotAuthorizationStore",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/FileBackedProvisionedPilotAuthorizationStore"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/InMemoryDiagnosticLogger",
+      "source_file": "app/src/main/java/com/weback/robot/security/DiagnosticLogger.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/security/InMemoryProvisionedPilotAuthorizationStore",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/InMemoryProvisionedPilotAuthorizationStore",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/InMemoryProvisionedPilotAuthorizationStore"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/InstalledApkVerification",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/InstalledApkVerification"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/InstalledApkVerifier",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/InstalledApkVerifier"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/IpAddressPolicy",
+      "source_file": "app/src/main/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/IpAddressPolicy",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/IpAddressPolicy"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/KeyDeletionResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/KeystoreAeadTokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/KeyDeletionResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/KeystoreAeadTokenStore",
+      "source_file": "app/src/main/java/com/weback/robot/security/KeystoreAeadTokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 6,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 6,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/KeystoreAeadTokenStore",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/KeystoreAeadTokenStore"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/LedgerCheckResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/LedgerCheckResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/MissingKeystoreKeyException",
+      "source_file": "app/src/main/java/com/weback/robot/security/KeystoreAeadTokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/MissingKeystoreKeyException"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/NoOpDiagnosticLogger",
+      "source_file": "app/src/main/java/com/weback/robot/security/DiagnosticLogger.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/security/OkHttpSecurityGuard",
+      "source_file": "app/src/main/java/com/weback/robot/security/EndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/OkHttpSecurityGuard",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/OkHttpSecurityGuard"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/OriginProvenanceResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/OriginProvenanceResult",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/OriginProvenanceResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/OriginProvenanceVerifier",
+      "source_file": "app/src/main/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/OriginProvenanceVerifier",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/OriginProvenanceVerifier"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/PasswordDigestStrategy",
+      "source_file": "app/src/main/java/com/weback/robot/security/PasswordDigestStrategy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/PasswordDigestStrategy",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/PasswordDigestStrategy"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/PermanentlyInvalidatedKeyException",
+      "source_file": "app/src/main/java/com/weback/robot/security/KeystoreAeadTokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/PermanentlyInvalidatedKeyException"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/PilotActiveCallRegistry",
+      "source_file": "app/src/main/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/PilotActiveCallRegistry",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/PilotActiveCallRegistry"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/PilotClientFactory",
+      "source_file": "app/src/main/java/com/weback/robot/security/AuthorizedPilotEndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 7,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 7,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/PilotClientFactory",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/PilotClientFactory"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/PilotSanitizedExporter",
+      "source_file": "app/src/main/java/com/weback/robot/security/PilotSanitizedExporter.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/PilotSanitizedExporter",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/PilotSanitizedExporter"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/ProductionEndpointTrustPolicy",
+      "source_file": "app/src/main/java/com/weback/robot/security/EndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/ProductionEndpointTrustPolicy",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/ProductionEndpointTrustPolicy"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/ProvisionedActivationPreparation",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/ProvisionedActivationPreparation"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/ProvisionedAuthorizationLoadResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/ProvisionedAuthorizationLoadResult",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/ProvisionedAuthorizationLoadResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/ProvisionedAuthorizationPreview",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/ProvisionedAuthorizationPreview"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/ProvisionedPilotAuthorizationStore",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/ProvisionedPilotAuthorizationStore",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/ProvisionedPilotAuthorizationStore"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/ProvisionedRawLoadResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/ExternalPilotAuthorization.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/ProvisionedRawLoadResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/SecretRedactor",
+      "source_file": "app/src/main/java/com/weback/robot/security/SecretRedactor.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 9,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 9,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/security/TestLoopbackTrustPolicy",
+      "source_file": "app/src/main/java/com/weback/robot/security/EndpointTrustPolicy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/TestLoopbackTrustPolicy",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/TestLoopbackTrustPolicy"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/TokenClearResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/TokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/TokenClearResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/TokenLoadResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/TokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 4,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 4,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/TokenLoadResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/TokenSaveResult",
+      "source_file": "app/src/main/java/com/weback/robot/security/TokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 3,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 3,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/TokenSaveResult"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/TokenStore",
+      "source_file": "app/src/main/java/com/weback/robot/security/TokenStore.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/TokenStore",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/TokenStore"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/UriValidator",
+      "source_file": "app/src/main/java/com/weback/robot/security/UriValidator.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 5,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 5,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/UriValidator",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/UriValidator"
+    },
+    {
+      "stem": "Lcom/weback/robot/security/Utf8TlsDefault",
+      "source_file": "app/src/main/java/com/weback/robot/security/PasswordDigestStrategy.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/security/Utf8TlsDefault",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/security/Utf8TlsDefault"
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/DashboardIntent",
+      "source_file": "app/src/main/java/com/weback/robot/ui/DashboardViewModel.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 6,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 6,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/DashboardViewModel",
+      "source_file": "app/src/main/java/com/weback/robot/ui/DashboardViewModel.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 9,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 9,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/RobotUiState",
+      "source_file": "app/src/main/java/com/weback/robot/ui/DashboardViewModel.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes3.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes3.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/map/ComposableSingletons",
+      "source_file": "app/src/main/java/com/weback/robot/ui/map/MapScreen.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 21,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 21,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/map/LocalMapUiState",
+      "source_file": "app/src/main/java/com/weback/robot/ui/map/MapViewModel.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/map/MapCanvasKt",
+      "source_file": "app/src/main/java/com/weback/robot/ui/map/MapCanvas.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 12,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 12,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/map/MapScreenKt",
+      "source_file": "app/src/main/java/com/weback/robot/ui/map/MapScreen.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 19,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 19,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/map/MapViewModel",
+      "source_file": "app/src/main/java/com/weback/robot/ui/map/MapViewModel.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 6,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 6,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/pilot/ComposableSingletons",
+      "source_file": "app/src/main/java/com/weback/robot/ui/pilot/PilotReadinessSheet.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes8.dex"
+      ],
+      "debug_descriptor_count": 15,
+      "pilot_dex_files": [
+        "classes8.dex"
+      ],
+      "pilot_descriptor_count": 15,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/ui/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/ui/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/pilot/EphemeralPasswordBuffer",
+      "source_file": "app/src/main/java/com/weback/robot/ui/pilot/PilotReadinessSheet.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes8.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes8.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/ui/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/ui/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/pilot/PilotReadinessSheetKt",
+      "source_file": "app/src/main/java/com/weback/robot/ui/pilot/PilotReadinessSheet.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes8.dex"
+      ],
+      "debug_descriptor_count": 39,
+      "pilot_dex_files": [
+        "classes8.dex"
+      ],
+      "pilot_descriptor_count": 39,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/ui/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/ui/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/pilot/PilotSheetUiState",
+      "source_file": "app/src/main/java/com/weback/robot/ui/pilot/PilotReadinessSheet.kt",
+      "ownership_classification": "cloud_pilot",
+      "debug_dex_files": [
+        "classes8.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes8.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": true,
+      "l01f2_matching_rule": "Lcom/weback/robot/ui/pilot/",
+      "covered_by_l04a_s_reconciled_rules": true,
+      "l04a_s_matching_rule": "Lcom/weback/robot/ui/pilot/"
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/screens/ComposableSingletons",
+      "source_file": "app/src/main/java/com/weback/robot/ui/screens/DashboardScreen.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 9,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 9,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/screens/DashboardScreenKt",
+      "source_file": "app/src/main/java/com/weback/robot/ui/screens/DashboardScreen.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes4.dex"
+      ],
+      "debug_descriptor_count": 24,
+      "pilot_dex_files": [
+        "classes4.dex"
+      ],
+      "pilot_descriptor_count": 24,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/theme/ColorKt",
+      "source_file": "app/src/main/java/com/weback/robot/ui/theme/Color.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/theme/ThemeKt",
+      "source_file": "app/src/main/java/com/weback/robot/ui/theme/Theme.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 2,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 2,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    },
+    {
+      "stem": "Lcom/weback/robot/ui/theme/TypeKt",
+      "source_file": "app/src/main/java/com/weback/robot/ui/theme/Type.kt",
+      "ownership_classification": "shared_main",
+      "debug_dex_files": [
+        "classes5.dex"
+      ],
+      "debug_descriptor_count": 1,
+      "pilot_dex_files": [
+        "classes5.dex"
+      ],
+      "pilot_descriptor_count": 1,
+      "covered_by_l01f2_proposal_rules": false,
+      "l01f2_matching_rule": null,
+      "covered_by_l04a_s_reconciled_rules": false,
+      "l04a_s_matching_rule": null
+    }
+  ]
+}

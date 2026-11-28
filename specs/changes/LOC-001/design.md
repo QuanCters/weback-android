@@ -1,9 +1,9 @@
 # LOC-001 Technical Design — Rapido R8S Local-First HOSLAM Read-Only Map
 
 - **Change ID:** `LOC-001`
-- **Revision:** `1.2.0 (Stage L01F2 Remediated & Frozen)`
+- **Revision:** `1.3.0 (Stage L04A-S Inventory Reconciliation)`
 - **Risk Tier:** `T4 (Critical Risk)`
-- **Canonical Base SHA:** `184175a14e5eb6659396c95624e2d3b08d1078a1`
+- **Canonical Base SHA:** `184175a14e5eb6659396c95624e2d3b08d1078a1` *(Reconciled against `948c0b23a70a73a83bf2d8cb02e88e071618e2d4` in Stage `L04A-S`)*
 - **References:** [proposal.md](proposal.md) | [requirements.md](requirements.md) | [risk-assessment.md](risk-assessment.md) | [validation.md](validation.md) | [t4-transition-proposal.md](t4-transition-proposal.md)
 
 ---
@@ -33,22 +33,22 @@ On `184175a`, `WeBackApplication.kt` instantiates `DefaultAppContainer`, `MainAc
 1. **Production Partition (`src/main/` vs `src/cloudPilot/` vs `src/{debug,pilot,release,local}/`):**
    - **Retained in `app/src/main/java/` (shared across ALL variants `debug`, `pilot`, `release`, `local`):**
      - `WeBackApplication.kt` (delegates creation to build-type-specific `VariantAppContainerFactory.create(applicationContext)`; retains `internal fun replaceContainerForTesting(testContainer: AppContainer)`)
-     - `core/AppContainer.kt` (minimal `AppContainer : AutoCloseable` exposing `robotTransport`, `dispatcherProvider`, `clock`, `diagnosticLogger`, `localMapRepository`, `localMapModeCapabilities`, `pilotCapabilityBridge: PilotCapabilityBridge?`), `core/PilotCapabilityBridge.kt` (zero cloud/pilot concrete imports), `core/OfflineAppContainer.kt` (`pilotCapabilityBridge = null`), `core/BootSessionTimeProvider.kt`, `core/DispatcherProvider.kt`, `core/MonotonicClock.kt`
-     - `MainActivity.kt` (renders `DashboardScreen` + `MapScreen` unconditionally and delegates optional Pilot UI/resume lifecycle strictly through `app.container.pilotCapabilityBridge` when non-null)
+     - `core/AppContainer.kt` (minimal `AppContainer : AutoCloseable` exposing `robotTransport`, `dispatcherProvider`, `clock`, `diagnosticLogger`, `localMapRepository`, `pilotCapabilityBridge: PilotCapabilityBridge?`, plus pure-enum `AppContainerDependency` with zero cloud imports), `core/PilotCapabilityBridge.kt` (zero cloud/pilot concrete imports), `core/OfflineAppContainer.kt` (`pilotCapabilityBridge = null`, supporting `robotTransportProvider`, `localStreamSourceProvider`, and `dependencyResolutionObserver` R1 seams without cloud types), `core/BootSessionTimeProvider.kt`, `core/DispatcherProvider.kt`, `core/MonotonicClock.kt`
+     - `MainActivity.kt` (renders `DashboardScreen` + `MapScreen` unconditionally and delegates optional Pilot UI/resume lifecycle strictly through `app.container.pilotCapabilityBridge` when non-null; `PilotUiWorkflow` enum moves out of `MainActivity.kt` into `src/cloudPilot/`)
      - **Entire `domain/**` package tree:** `domain/auth/*`, `domain/control/*`, `domain/device/*`, `domain/model/*`, `domain/pilot/*` (`PilotAuthorizationGate`, `PilotModels`, `ReadOnlyPilotGuard`), plus `L02A`–`L02B` `domain/map/*` *(remains pure JVM in `src/main/java/com/weback/robot/domain/` so `DomainPurityTest.kt` and `Fct004BPreInternetSecurityTest.kt:411` inspect canonical paths intact)*
      - `protocol/{RobotTransport.kt, SimulatorConfig.kt, SimulatorRobotTransport.kt}`
-     - Future common `LOC-001` code: `protocol/local/codec/*` (`L02A`–`L02B`), `protocol/local/*` (`L03A`), `app/local/*` (`L03A`), `ui/map/*` (`L03A`)
+     - Shared `LOC-001` code: `protocol/local/codec/*` (`L02A`–`L02B`), `protocol/local/{LocalTelemetryStreamSource.kt, SyntheticReplayTelemetrySource.kt}` (`L03A`), `app/local/*` (`L03A`), `ui/map/*` (`L03A`)
      - `security/{DiagnosticLogger.kt, SecretRedactor.kt}` *(shared `SecretRedactor.kt` stays UNMODIFIED per `FIX-05`)*
      - `ui/{DashboardViewModel.kt, screens/DashboardScreen.kt, theme/{Color,Theme,Type}.kt}`
    - **Relocated into `app/src/cloudPilot/java/` (wired ONLY to `debug` and `pilot` build types; EXCLUDED from `local` and `release` compilation & DEX):**
-     - `core/PilotAppContainer.kt` (`interface PilotAppContainer : AppContainer`, `PilotContainerTestHooks`, `DefaultPilotContainer` implementing `PilotAppContainer`, `InMemoryMockTokenStore`, `NonPersistentSessionStore`, and `PilotCapabilityBridgeImpl`)
+     - `core/PilotAppContainer.kt` (`interface PilotAppContainer : AppContainer`, `PilotContainerTestHooks`, `DefaultPilotContainer` implementing `PilotAppContainer` with all 5 provider seams + `dependencyResolutionObserver`, `InMemoryMockTokenStore`, `NonPersistentSessionStore`, and `PilotCapabilityBridgeImpl` owning `PilotUiWorkflow`)
      - `app/pilot/PilotSessionController.kt`
      - `app/session/{SessionCoordinator.kt, DeviceInventoryRepository.kt}`
      - `protocol/auth/{AuthGateway.kt, OfflineFixtureAuthGateway.kt, OkHttpAuthGateway.kt, RegionEndpointRouter.kt}`
      - `protocol/inventory/{DeviceInventoryGateway.kt, OfflineFixtureInventoryGateway.kt, OkHttpDeviceInventoryGateway.kt}`
      - `protocol/pilot/PilotReadOnlyTransportBoundary.kt` (`PilotAdmissionContextElement`, `PilotReadOnlyTelemetryTransport`, `LoginEnvelopeIdentity`, `PilotHttpOperationGuard`, `StrictJsonKeyUniquenessValidator`, `PilotAuthProbeOutcome`, `PilotCapabilityRestrictedAuthGateway`, `PilotCapabilityRestrictedInventoryGateway`, `PilotReadOnlyWebSocketTransport`, `PilotReadOnlyFixtureTransport`)
      - `protocol/ws/{ConnectionConfig.kt, OfflineFixtureRealtimeTransport.kt, OkHttpWebSocketTransport.kt, RealtimeSessionTransport.kt}`
-     - `security/{AuthorizedPilotEndpointTrustPolicy.kt, EndpointTrustPolicy.kt, ExternalPilotAuthorization.kt, KeystoreAeadTokenStore.kt, PasswordDigestStrategy.kt, PilotSanitizedExporter.kt, UriValidator.kt}`
+     - `security/{AuthorizedPilotEndpointTrustPolicy.kt, EndpointTrustPolicy.kt, ExternalPilotAuthorization.kt, KeystoreAeadTokenStore.kt, PasswordDigestStrategy.kt, PilotSanitizedExporter.kt, TokenStore.kt, UriValidator.kt}`
      - `ui/pilot/PilotReadinessSheet.kt` (`EphemeralPasswordBuffer`, `PilotSheetUiState`, top-level `PilotReadinessSheet` composables)
    - **Build-Type Composition Roots (`VariantAppContainerFactory` in package `com.weback.robot.core`):**
      - `src/debug/java/.../VariantAppContainerFactory.kt`: returns `DefaultPilotContainer(context = context)` (`PILOT_INTERNET_CAPABLE = false`)
@@ -56,15 +56,15 @@ On `184175a`, `WeBackApplication.kt` instantiates `DefaultAppContainer`, `MainAc
      - `src/release/java/.../VariantAppContainerFactory.kt`: returns `OfflineAppContainer(...)` (`pilotCapabilityBridge = null`)
      - `src/local/java/.../VariantAppContainerFactory.kt`: returns `OfflineAppContainer` / `LocalAppContainer` (`pilotCapabilityBridge = null`; `ReceiveOnlyTcpSource` + `LocalLanTrustPolicy` wired in `L04B`)
 
-2. **Test Source-Set Partition (Zero `setSrcDirs` Exclusion of Shared Tests/Resources, `FIX-02`):**
+2. **Test Source-Set Partition (Zero `setSrcDirs` Exclusion of Shared Tests/Resources, `FIX-02`, Reconciled in `L04A-S`):**
    - **`app/src/test/{java,resources}` (Common Shared Unit Tests — Compiled & Run in `testDebugUnitTest`, `testLocalUnitTest`, AND `testPilotUnitTest`):**
-     Holds all `20` existing pure offline/common files (`67` tests, including `DashboardScreenControlTest`, `DomainPurityTest`, `TestDispatcherProvider`, `DashboardViewModel*Test`, `SimulatorRobotTransportTest`, `DiagnosticLoggerTest`, `SecretRedactorTest`, pure `domain/` tests) **PLUS** all new `L02A`–`L03A` common HOSLAM/replay tests (`Hoslam*Test`, `LocalReplayViewerTest`, `LocalMapTruthfulnessUiTest`) and `app/src/test/resources/hoslam/`.
+     Holds all `20` existing pure offline/common files (`67` tests, including `DashboardScreenControlTest`, `DomainPurityTest`, `TestDispatcherProvider`, `DashboardViewModel*Test`, `SimulatorRobotTransportTest`, `DiagnosticLoggerTest`, `SecretRedactorTest`, pure `domain/` tests), `15` cloud-independent `L02A`–`L03A` HOSLAM/replay/viewer files (`81` tests + `HoslamTestFixtures.kt` + `app/src/test/resources/hoslam/` — totaling **`148` eligible existing cloud-independent tests**), **PLUS** the new `L04A` common `OfflineLocalMapActivityNavigationTest.kt` (`2` tests verifying `MainActivity` + `OfflineAppContainer` non-fallback across all 4 replay/EOF/error/recreate scenarios).
    - **`app/src/testCloudPilot/java/` (Added additively via `testDebug.java.srcDir(...)` & `testPilot.java.srcDir(...)` in `L04A`; EXCLUDED from `testLocal`):**
-     Receives the `45` existing cloud/pilot/session/keystore/container unit test files (`90` test methods) migrated from `app/src/test/java/` under the mandatory `L04A` migration inventory below.
+     Receives the `45` legacy cloud/pilot/session/keystore/container unit test files (`90` test methods) from `184175a` **PLUS** the `2` cloud-dependent `L03A` unit test files (`3` test methods: `LocalAppContainerNonFallbackTest.kt` and `LocalMapActivityNavigationTest.kt`) reconciled in `L04A-S`, totaling `47` files (`93` test methods).
    - **`app/src/testLocal/java/` (Native Gradle `local` test source set; `testLocal` only):**
-     Holds `L04A` variant isolation tests (`LocalAppContainerTest`, `LocalBuildSeparationTest`, `LocalSourceSecurityScanTest`) and `L04B` live LAN/lifecycle/privacy tests (`LocalLanTrustPolicyTest`, `ReceiveOnlyTcpBoundaryTest`, `LocalPrivacyRedactionTest`, `LocalTimeoutAndEofTest`, `LocalLifecycleTeardownTest`, `LocalBackpressureBoundsTest`).
+     Holds `L04A` variant isolation & non-fallback container tests (`LocalAppContainerTest`, `LocalBuildSeparationTest`, `LocalSourceSecurityScanTest`) and `L04B` live LAN/lifecycle/privacy tests (`LocalLanTrustPolicyTest`, `ReceiveOnlyTcpBoundaryTest`, `LocalPrivacyRedactionTest`, `LocalTimeoutAndEofTest`, `LocalLifecycleTeardownTest`, `LocalBackpressureBoundsTest`).
 
-3. **Approved Legacy Test & Instrumentation Migration Inventory (`Task 5` / `L04A`, Zero Edits During `L01F2`, `FIX-01`):**
+3. **Approved Legacy Test & Instrumentation Migration Inventory (`Task 5` / `L04A`, Historical `184175a` `45`-File Inventory Preserved Intact, `FIX-01`):**
    Migration is forbidden until `L04A` (`Task 5`), requires clean compilation across `testDebugUnitTest`, `testPilotUnitTest`, `testLocalUnitTest`, and `assemblePilotAndroidTest`, and requires verifying preserved JUnit XML test identities via `verification/checks/gradle_test_adapter.py`:
 
 | File / Group (`app/src/...`) | Existing Dependency | Applicable Variants | Future Source-Set | Required `L04A` Adaptation | Unchanged Assertions & Invariants | Verification Procedure | Owner |
@@ -85,6 +85,17 @@ On `184175a`, `WeBackApplication.kt` instantiates `DefaultAppContainer`, `MainAc
 | **`PilotDeviceAcceptanceInstrumentationTest.kt`** (`2` `androidTest` tests) | `replaceContainerForTesting(DefaultAppContainer(...))`, `PilotContainerTestHooks`, `loadProvisionedLiveAuthorization`, `activateLivePilot`, `pilot*` | `pilot` (`testBuildType = "pilot"`) | `src/androidTest/java` *(preserved)* | `DefaultAppContainer(...)` -> `DefaultPilotContainer(...)`; cast `(app.container as PilotAppContainer)` | Physical-device/emulator `FLAG_SECURE`, unapproved SHA rejection, emergency disconnect | `assemblePilotAndroidTest` (+ emulator `PilotDeviceAcceptanceInstrumentationTest`) | `L04A` |
 | `32` cloud/gateway/session/keystore unit test files (`59` tests, incl. `EndpointTrustAndRedirectTest`, `KeystoreAeadTokenStore*Test`, `OkHttp*Test`, `SessionCoordinatorTest`, `Pilot*Test`) | Concrete `src/cloudPilot/` classes (`OkHttp*`, `Keystore*`, `SessionCoordinator`, `AuthorizedPilotEndpointTrustPolicy`, `PilotAuthorizationGate`, `PilotClientFactory`, `PilotSanitizedExporter`, `EndpointTrustPolicy`) | `debug`, `pilot` | `src/testCloudPilot/java` *(+ `EndpointTrustAndRedirectTest` scanning `src/main` & `src/cloudPilot`; `LocalSourceSecurityScanTest` in `src/testLocal` scanning `src/main` & `src/local`)* | Relocate cleanly without modifying assertions; add `src/cloudPilot` path in `EndpointTrustAndRedirectTest` & `LocalSourceSecurityScanTest` | 100% of original TLS/SSRF/Keystore/session/gateway/redaction invariants preserved | `testDebugUnitTest`, `testPilotUnitTest`, `testLocalUnitTest` JUnit XML identity match | `L04A` |
 | `KeystoreHardwareSecurityLevelTest.kt` (`1` `androidTest` test) | `KeystoreAeadTokenStore`, `AndroidKeystoreAeadCipherProvider` | `pilot` (`testBuildType = "pilot"`) | `src/androidTest/java` *(preserved)* | None (`pilot` includes `src/cloudPilot/`) | AndroidKeyStore AES-256-GCM hardware security verification | `assemblePilotAndroidTest` | `L04A` |
+
+#### `L03A` Migration Delta (`Task 5` / `L04A`, Reconciled in Stage `L04A-S` Against `948c0b2`)
+
+The `15` cloud-independent `L02A`–`L03A` files (`81` tests + `HoslamTestFixtures.kt` + `app/src/test/resources/hoslam/`) stay untouched in shared `app/src/test/`. Only the `2` cloud-dependent `L03A` files (`3` tests) require relocation/equivalence pairing in `L04A`:
+
+| File (`app/src/test/java/...`) | Existing Cloud Dependency | Applicable Variants | Future Source-Set | Required `L04A` Adaptation | Preserved Assertions & Local Behavioral Equivalence | Verification Procedure | Owner |
+|---|---|---|---|---|---|---|---|
+| `app/local/LocalAppContainerNonFallbackTest.kt` (`1` test) | `DefaultAppContainer`, `OfflineFixtureAuthGateway`, `OfflineFixtureInventoryGateway`, `OfflineFixtureRealtimeTransport` | `debug`, `pilot` *(+ `local` via `LocalAppContainerTest`)* | `src/testCloudPilot/java` *(+ `src/testLocal/` equivalent)* | Construct `DefaultPilotContainer(...)` preserving exact JUnit identity `#ac501_3_defaultAppContainerExposesProviderFactoryAndResolutionOracleSeams`; add `LocalAppContainerTest` in `src/testLocal/` testing `OfflineAppContainer` | Zero upfront provider creation, lazy local/simulator non-fallback, cached singletons, `dependencyResolutionObserver`, `pilotCapabilityBridge == null` | `testDebugUnitTest` & `testPilotUnitTest` JUnit XML match + `testLocalUnitTest` `LocalAppContainerTest` | `L04A` |
+| `ui/map/LocalMapActivityNavigationTest.kt` (`2` tests) | `DefaultAppContainer`, `AuthGateway`, `DeviceInventoryGateway`, `RealtimeSessionTransport`, `PilotModeState`, `pilotSessionController`, `pilotAuthorizationGate` | `debug`, `pilot` *(+ all 3 variants via `OfflineLocalMapActivityNavigationTest`)* | `src/testCloudPilot/java` *(+ `src/test/` common offline equivalent)* | Construct `DefaultPilotContainer(...)` preserving both exact JUnit identities in `testDebugUnitTest` & `testPilotUnitTest`; add `OfflineLocalMapActivityNavigationTest.kt` (`2` tests) in shared `src/test/java/` using `OfflineAppContainer` + `SpyRobotTransport` | Valid synthetic replay, zero-map EOF, codec error before/after MAP, `Activity.recreate()`, explicit navigation only, zero automatic simulator fallback, truthful labels, constructor-seam anti-vacuity | `testDebugUnitTest` & `testPilotUnitTest` JUnit XML match + `OfflineLocalMapActivityNavigationTest` in `testDebugUnitTest`, `testPilotUnitTest`, `testLocalUnitTest` | `L04A` |
+
+> **Full Machine-Verified Inventories (`948c0b2`):** See [L04A-S Test Migration Inventory](../../../docs/engineering/L04A_S_TEST_MIGRATION_INVENTORY.json) and [L04A-S JUnit Identity Mapping](../../../docs/engineering/L04A_S_JUNIT_IDENTITY_MAPPING.json) (`82` unit test files / `241` tests + `2` `androidTest` files / `3` tests).
 
 ---
 
