@@ -1,9 +1,9 @@
 # LOC-001 Implementation & Verification Roadmap (`Task 1` .. `Task 8`)
 
 - **Change ID:** `LOC-001`
-- **Revision:** `1.2.0 (Stage L01F2 Remediated & Frozen)`
+- **Revision:** `1.3.0 (Stage L04A-S Inventory Reconciliation)`
 - **Risk Tier:** `T4 (Critical Risk)`
-- **Canonical Base SHA:** `184175a14e5eb6659396c95624e2d3b08d1078a1`
+- **Canonical Base SHA:** `184175a14e5eb6659396c95624e2d3b08d1078a1` *(Reconciled against `948c0b23a70a73a83bf2d8cb02e88e071618e2d4` in Stage `L04A-S`)*
 - **References:** [proposal.md](proposal.md) | [requirements.md](requirements.md) | [design.md](design.md) | [validation.md](validation.md) | [t4-transition-proposal.md](t4-transition-proposal.md)
 
 ---
@@ -62,22 +62,22 @@
 
 ### Task 5: Governed T4 Variant, Composition-Root Split, Test Migration, Validator & Policy Transition (`L04A`)
 - **Planning Alias:** `L04A` (`T4`)
-- **Prerequisite:** `Task 4` (`L03A`) merged on `main`, approved Test Migration Inventory & Class-Family DEX Inventory (`design.md` §1.1 & `t4-transition-proposal.md` §2–§3), explicit dual PO + Lead Maintainer T4 review, and external `TRANSITION_AUTHORIZATION`.
+- **Prerequisite:** `Task 4` (`L03A`, `948c0b2`) and `Stage L04A-S` inventory reconciliation spec PR merged on `main`, approved Test Migration Inventory (`45` legacy + `2` `L03A` delta files) & Class-Family DEX Inventory (`design.md` §1.1, `t4-transition-proposal.md` §2–§3, `docs/engineering/L04A_S_*`), explicit dual PO + Lead Maintainer T4 review, and external `TRANSITION_AUTHORIZATION`.
 - **Allowed Paths (`L04A`):**
   - `app/build.gradle.kts` (`local` buildType, `localImplementation` Compose BOM + `ui-test-manifest`, `cloudPilot`/`local` source sets, `testDebug`/`testPilot` adding `src/testCloudPilot/java` while preserving default `src/test/` common to all variants — zero `setSrcDirs` replacement — and `testBuildType = "pilot"` preserved)
-  - `app/src/main/java/com/weback/robot/WeBackApplication.kt`, `MainActivity.kt`, `core/AppContainer.kt`, `core/PilotCapabilityBridge.kt`, `core/OfflineAppContainer.kt`
-  - `app/src/cloudPilot/java/...` *(relocating `DefaultPilotContainer`, `PilotAppContainer`, `PilotCapabilityBridgeImpl`, `PilotContainerTestHooks`, `PilotSessionController`, `SessionCoordinator`, `DeviceInventoryRepository`, `protocol/{auth,inventory,pilot,ws}/*`, `security/{AuthorizedPilotEndpointTrustPolicy,EndpointTrustPolicy,ExternalPilotAuthorization,KeystoreAeadTokenStore,PasswordDigestStrategy,PilotSanitizedExporter,UriValidator}.kt`, and `ui/pilot/PilotReadinessSheet.kt` out of `src/main/`, wired solely to `debug` and `pilot`)*
+  - `app/src/main/java/com/weback/robot/WeBackApplication.kt`, `MainActivity.kt`, `core/AppContainer.kt` (retaining `AppContainerDependency`), `core/PilotCapabilityBridge.kt`, `core/OfflineAppContainer.kt` (exposing R1 provider/resolution seams)
+  - `app/src/cloudPilot/java/...` *(relocating `DefaultPilotContainer`, `PilotAppContainer`, `PilotCapabilityBridgeImpl` with `PilotUiWorkflow`, `PilotContainerTestHooks`, `PilotSessionController`, `SessionCoordinator`, `DeviceInventoryRepository`, `protocol/{auth,inventory,pilot,ws}/*`, `security/{AuthorizedPilotEndpointTrustPolicy,EndpointTrustPolicy,ExternalPilotAuthorization,KeystoreAeadTokenStore,PasswordDigestStrategy,PilotSanitizedExporter,TokenStore,UriValidator}.kt`, and `ui/pilot/PilotReadinessSheet.kt` out of `src/main/`, wired solely to `debug` and `pilot`)*
   - `app/src/debug/java/com/weback/robot/core/`, `app/src/pilot/java/com/weback/robot/core/`, `app/src/release/java/com/weback/robot/core/`, `app/src/local/java/com/weback/robot/core/` (`VariantAppContainerFactory`)
   - `app/src/local/AndroidManifest.xml` (`INTERNET` only), `app/src/local/res/values/strings.xml`
-  - `app/src/test/java/` *(strictly moving ONLY the `45` cloud/pilot/session files listed in the approved Migration Inventory out to `app/src/testCloudPilot/java/`, leaving all `20` pure offline/common files = `67` tests incl. `DashboardScreenControlTest`, `DomainPurityTest`, `TestDispatcherProvider` + all `L02A`–`L03A` tests & `app/src/test/resources/hoslam/` in `app/src/test/`)*
-  - `app/src/testCloudPilot/java/...` *(relocated `32` cloud/gateway/keystore tests untouched + `13` container/UI-pilot test files adapted solely on container factory/bridge references while preserving 100% of assertions & security invariants)*
+  - `app/src/test/java/` *(strictly moving ONLY the `45` legacy + `2` `L03A` cloud-dependent files listed in `design.md` §1.1 out to `app/src/testCloudPilot/java/`, leaving `148` eligible existing cloud-independent tests = `20` legacy common files [`67` tests] + `15` `L02A`–`L03A` cloud-independent files [`81` tests] & `app/src/test/resources/hoslam/` in `app/src/test/`, PLUS adding `OfflineLocalMapActivityNavigationTest.kt` [`2` tests])*
+  - `app/src/testCloudPilot/java/...` *(relocated `32` cloud/gateway/keystore tests untouched + `13` legacy container/UI-pilot test files + `2` `L03A` cloud-dependent test files [`LocalAppContainerNonFallbackTest.kt`, `LocalMapActivityNavigationTest.kt`] adapted solely on `DefaultPilotContainer`/`PilotAppContainer` references while preserving 100% of assertions & JUnit identities)*
   - `app/src/androidTest/java/com/weback/robot/pilot/PilotDeviceAcceptanceInstrumentationTest.kt` *(container factory/accessor adaptation only; assertions unchanged)*
   - `app/src/testLocal/java/com/weback/robot/...` *(`LocalAppContainerTest`, `LocalBuildSeparationTest`, `LocalSourceSecurityScanTest`)*
-  - `verification/checks/apk_validator.py` (symmetric 3-way policy, `$`-aware class-family matching across ALL `.dex` files, line 370 3-way tuple), `verification/selftests/test_apk_validator.py`, `verification/checks/spec_validator.py` *(optional schema/HIL-target hardening if authorized)*
+  - `verification/checks/apk_validator.py` (symmetric 3-way policy, `$`-aware class-family + `protocol/{auth,inventory,ws}/` prefix matching across ALL `.dex` files, line 370 3-way tuple), `verification/selftests/test_apk_validator.py`, `verification/checks/spec_validator.py` *(optional schema/HIL-target hardening if authorized)*
   - `policies/checks.json` (`11 -> 15` checks), `policies/checks.baseline.json` (updated to `fd870ee6...`)
   - `specs/changes/LOC-001/traceability.json` *(promoting `AC-506.1`..`AC-508.2` `verification_check_id` directly to `local-*` checks)*
   - *(Post-merge maintainer action required before `L04B`)* GitHub repository variables: synchronize `vars.APPROVED_POLICY_SHA256` to landed 15-check `canonical_policy_sha256` and clear `vars.TRANSITION_AUTHORIZATION`.
-- **Scope:** Enact isolated `local` variant (`com.weback.robot.local`, `INTERNET` only) with zero concrete cloud factories/controllers in `app-local.apk` DEX from Day 1, verify preserved JUnit XML test identities via `gradle_test_adapter.py` across `testDebugUnitTest`, `testPilotUnitTest`, and `testLocalUnitTest` (plus clean `assemblePilotAndroidTest`), execute `$`-aware multi-DEX `apk_validator.py` selftests, and activate 15-check T4 policy atomically + synchronize `vars.APPROVED_POLICY_SHA256` post-merge.
+- **Scope:** Enact isolated `local` variant (`com.weback.robot.local`, `INTERNET` only) with zero concrete cloud factories/controllers in `app-local.apk` DEX from Day 1, verify all `241` preserved JUnit XML test identities in `testDebugUnitTest` & `testPilotUnitTest` plus `148` eligible existing cloud-independent tests + local equivalent/isolation suites in `testLocalUnitTest` via `gradle_test_adapter.py` (and clean `assemblePilotAndroidTest`), execute `$`-aware multi-DEX `apk_validator.py` selftests, perform a mandatory second DEX inventory reconciliation against built `L04A` `debug`/`pilot`/`local` APKs prior to `G5`/`G6`, and activate 15-check T4 policy atomically + synchronize `vars.APPROVED_POLICY_SHA256` post-merge.
 - **Maps to:** `REQ-LOCAL-506` (`AC-506.1`), `REQ-LOCAL-509` (`AC-509.1`).
 
 ### Task 6: Local Receive-Only Socket Source, RFC1918 Trust Policy, Lifecycle & Diagnostic Privacy (`L04B`)

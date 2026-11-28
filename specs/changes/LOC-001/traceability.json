@@ -1,11 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "change_id": "LOC-001",
-  "milestone": "L01F2-REMEDIATED-SPEC-FREEZE",
+  "milestone": "L04A-S-INVENTORY-RECONCILIATION",
   "title": "Rapido R8S Local-First HOSLAM Read-Only Map Capability",
   "base_sha": "184175a14e5eb6659396c95624e2d3b08d1078a1",
+  "reconciled_against_sha": "948c0b23a70a73a83bf2d8cb02e88e071618e2d4",
   "risk_ceiling": "T4",
-  "status": "REMEDIATED_FOR_L01R3_INDEPENDENT_REVIEW",
+  "status": "L04A_S_RECONCILED_PENDING_REVIEW_AND_SIGN_OFF",
   "schema_limitation_note": "verification/checks/spec_validator.py supports a single verification_check_id string per AC belonging to policies/checks.json, policies/loc001_checks_proposal.json (not created in L01F2), or 'android-smoke-test'. Secondary check bindings (e.g., apk-validation on AC-505.1 and local-apk-validation/pilot-apk-validation on AC-506.2) are captured in secondary_verification_checks without fabricating active checks; provisional L01/L01F2 bindings on L04A/L04B ACs MUST be promoted atomically in L04A before status transitions to VERIFIED.",
   "requirements": [
     {
@@ -190,7 +191,7 @@
       "acceptance_criteria": [
         {
           "ac_id": "AC-506.1",
-          "description": "Dedicated local variant (com.weback.robot.local) declares INTERNET only in src/local/AndroidManifest.xml, adds localImplementation Compose BOM + ui-test-manifest, preserves testBuildType=pilot, decouples WeBackApplication/MainActivity/AppContainer via VariantAppContainerFactory & PilotCapabilityBridge? (DefaultPilotContainer + PilotCapabilityBridgeImpl + cloud classes in src/cloudPilot/; OfflineAppContainer in local/release), retains common src/test/ across testDebug/testPilot/testLocal (no setSrcDirs override) with additive testCloudPilot/, and enforces $-aware class-family DEX exclusions across all .dex files from Day 1.",
+          "description": "Dedicated local variant (com.weback.robot.local) declares INTERNET only in src/local/AndroidManifest.xml, adds localImplementation Compose BOM + ui-test-manifest, preserves testBuildType=pilot, decouples WeBackApplication/MainActivity/AppContainer via VariantAppContainerFactory & PilotCapabilityBridge? (DefaultPilotContainer + PilotCapabilityBridgeImpl + PilotUiWorkflow + cloud/TokenStore classes in src/cloudPilot/; OfflineAppContainer in local/release), retains common src/test/ across testDebug/testPilot/testLocal (no setSrcDirs override; 148 eligible existing cloud-independent tests + OfflineLocalMapActivityNavigationTest) with additive testCloudPilot/ (47 files / 93 tests), and enforces $-aware class-family + cloud package-prefix DEX exclusions across all .dex files from Day 1.",
           "stage_owner": "L04A",
           "task_id": "Task 5",
           "verification_check_id": "apk-validation",
@@ -201,7 +202,7 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-514",
           "pack_test_id": "V-S01",
-          "evidence_ref": "Planned L04A 3-way $-aware multi-DEX apk_validator.py + LocalAppContainerTest/LocalBuildSeparationTest/LocalSourceSecurityScanTest",
+          "evidence_ref": "Planned L04A 3-way $-aware multi-DEX apk_validator.py + LocalAppContainerTest/LocalBuildSeparationTest/LocalSourceSecurityScanTest + OfflineLocalMapActivityNavigationTest (reconciled in L04A-S against 948c0b2)",
           "status": "PLANNED"
         },
         {
@@ -306,7 +307,7 @@
       "acceptance_criteria": [
         {
           "ac_id": "AC-509.1",
-          "description": "Protected L04A PR executes under approved test migration inventory + verified JUnit XML identity coverage, adds local variant + $-aware multi-DEX 3-way apk_validator.py + 4 local-* checks (15 total), updates checks.baseline.json to fd870ee6..., promotes traceability.json check IDs, requires TRANSITION_AUTHORIZATION + dual PO/Lead approval, and mandates post-merge vars.APPROVED_POLICY_SHA256 sync prior to L04B.",
+          "description": "Protected L04A PR executes under reconciled test migration inventory (241 preserved debug/pilot identities + 148 eligible cloud-independent tests + OfflineLocalMapActivityNavigationTest + testLocal suites) + verified JUnit XML identity coverage, adds local variant + hybrid package-prefix and $-aware multi-DEX 3-way apk_validator.py + 4 local-* checks (15 total), updates checks.baseline.json to fd870ee6..., promotes traceability.json check IDs, requires second DEX audit on built L04A APKs + TRANSITION_AUTHORIZATION + dual PO/Lead approval, and mandates post-merge vars.APPROVED_POLICY_SHA256 sync prior to L04B.",
           "stage_owner": "L04A",
           "task_id": "Task 5",
           "verification_check_id": "harness-selftests",
@@ -314,7 +315,7 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-521",
           "pack_test_id": "V-BASE",
-          "evidence_ref": "Planned L04A transition, $-aware multi-DEX apk_validator selftests, JUnit XML identity verification & post-merge CI variable sync",
+          "evidence_ref": "Planned L04A transition, strengthened $-aware + prefix multi-DEX apk_validator selftests, JUnit XML identity verification & post-merge CI variable sync (reconciled in L04A-S against 948c0b2)",
           "status": "PLANNED"
         },
         {
