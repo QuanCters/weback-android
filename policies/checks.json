@@ -142,6 +142,59 @@
       "timeout_seconds": 60,
       "type": "command",
       "description": "Verifies isolated pilot APK existence, SHA-256, INTERNET-only manifest, com.weback.robot.pilot identity, signature, and clean-room DEX/native integrity"
+    },
+    {
+      "id": "local-android-lint",
+      "argv": [
+        "./gradlew",
+        "lintLocal",
+        "--no-daemon"
+      ],
+      "required": true,
+      "timeout_seconds": 300,
+      "type": "command",
+      "description": "Executes Android Lint on the isolated local buildType variant (:app:lintLocal)"
+    },
+    {
+      "id": "local-android-unit-tests",
+      "argv": [
+        "python3",
+        "-m",
+        "verification.checks.gradle_test_adapter",
+        "--task",
+        "testLocalUnitTest",
+        "--results-dir",
+        "app/build/test-results/testLocalUnitTest"
+      ],
+      "required": true,
+      "timeout_seconds": 180,
+      "type": "test_suite",
+      "description": "Executes JVM unit tests for isolated local buildType variant via Gradle test adapter"
+    },
+    {
+      "id": "local-android-build",
+      "argv": [
+        "./gradlew",
+        "assembleLocal",
+        "--no-daemon"
+      ],
+      "required": true,
+      "timeout_seconds": 300,
+      "type": "command",
+      "description": "Compiles and packages the isolated local APK (:app:assembleLocal)"
+    },
+    {
+      "id": "local-apk-validation",
+      "argv": [
+        "python3",
+        "verification/checks/apk_validator.py",
+        "--connectivity-policy",
+        "local"
+      ],
+      "required": true,
+      "timeout_seconds": 60,
+      "type": "command",
+      "description": "Verifies isolated local APK existence, SHA-256, INTERNET-only manifest, com.weback.robot.local identity, signature, and clean-room DEX/native integrity"
     }
   ]
 }

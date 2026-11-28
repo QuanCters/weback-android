@@ -21,6 +21,7 @@ android {
             useSupportLibrary = true
         }
         buildConfigField("boolean", "PILOT_INTERNET_CAPABLE", "false")
+        buildConfigField("boolean", "LOCAL_LAN_CAPABLE", "false")
         buildConfigField("String", "APP_CONNECTIVITY_MODE", "\"OFFLINE\"")
     }
 
@@ -42,10 +43,25 @@ android {
             buildConfigField("boolean", "PILOT_INTERNET_CAPABLE", "true")
             buildConfigField("String", "APP_CONNECTIVITY_MODE", "\"PILOT\"")
         }
+        create("local") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".local"
+            matchingFallbacks += listOf("debug")
+            buildConfigField("boolean", "PILOT_INTERNET_CAPABLE", "false")
+            buildConfigField("boolean", "LOCAL_LAN_CAPABLE", "true")
+            buildConfigField("String", "APP_CONNECTIVITY_MODE", "\"LOCAL_READ_ONLY\"")
+        }
     }
 
     // Target androidTest instrumentation APK against com.weback.robot.pilot for TEST-PILOT-460 Keystore verification
     testBuildType = "pilot"
+
+    sourceSets {
+        getByName("debug").java.srcDir("src/cloudPilot/java")
+        getByName("pilot").java.srcDir("src/cloudPilot/java")
+        getByName("testDebug").java.srcDir("src/testCloudPilot/java")
+        getByName("testPilot").java.srcDir("src/testCloudPilot/java")
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -115,4 +131,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     add("pilotImplementation", platform(libs.androidx.compose.bom))
     add("pilotImplementation", libs.androidx.compose.ui.test.manifest)
+    add("localImplementation", platform(libs.androidx.compose.bom))
+    add("localImplementation", libs.androidx.compose.ui.test.manifest)
 }
