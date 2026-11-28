@@ -52,7 +52,8 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     modifier: Modifier = Modifier,
     onOpenPilotSheet: (() -> Unit)? = null,
-    pilotButtonLabel: String = "Pilot Readiness (Offline / Mock)"
+    pilotButtonLabel: String = "Pilot Readiness (Offline / Mock)",
+    onOpenLocalMap: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     DashboardScreen(
@@ -60,7 +61,8 @@ fun DashboardScreen(
         onIntent = viewModel::onIntent,
         modifier = modifier,
         onOpenPilotSheet = onOpenPilotSheet,
-        pilotButtonLabel = pilotButtonLabel
+        pilotButtonLabel = pilotButtonLabel,
+        onOpenLocalMap = onOpenLocalMap
     )
 }
 
@@ -72,7 +74,8 @@ fun DashboardScreen(
     modifier: Modifier = Modifier,
     onOpenPilotSheet: (() -> Unit)? = null,
     pilotButtonLabel: String = "Pilot Readiness (Offline / Mock)",
-    unresolvedCleanupNotice: String? = null
+    unresolvedCleanupNotice: String? = null,
+    onOpenLocalMap: (() -> Unit)? = null
 ) {
     Scaffold(
         topBar = {
@@ -135,6 +138,16 @@ fun DashboardScreen(
                             .testTag("btn_open_pilot_readiness")
                     ) {
                         Text(text = pilotButtonLabel)
+                    }
+                }
+                if (onOpenLocalMap != null) {
+                    OutlinedButton(
+                        onClick = onOpenLocalMap,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("btn_open_local_map")
+                    ) {
+                        Text(text = stringResource(id = R.string.action_open_local_map))
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))

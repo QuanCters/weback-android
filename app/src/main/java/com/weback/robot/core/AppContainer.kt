@@ -2,6 +2,9 @@ package com.weback.robot.core
 
 import android.content.Context
 import com.weback.robot.BuildConfig
+import com.weback.robot.app.local.LocalDiagnosticLogger
+import com.weback.robot.app.local.LocalDiagnosticSink
+import com.weback.robot.app.local.LocalMapRepository
 import com.weback.robot.app.pilot.PilotSessionController
 import com.weback.robot.app.session.DeviceInventoryRepository
 import com.weback.robot.app.session.SessionCoordinator
@@ -33,6 +36,8 @@ import com.weback.robot.protocol.auth.RegionEndpointRouter
 import com.weback.robot.protocol.inventory.DeviceInventoryGateway
 import com.weback.robot.protocol.inventory.OfflineFixtureInventoryGateway
 import com.weback.robot.protocol.inventory.OkHttpDeviceInventoryGateway
+import com.weback.robot.protocol.local.LocalTelemetryStreamSource
+import com.weback.robot.protocol.local.SyntheticReplayTelemetrySource
 import com.weback.robot.protocol.pilot.PilotCapabilityRestrictedAuthGateway
 import com.weback.robot.protocol.pilot.PilotCapabilityRestrictedInventoryGateway
 import com.weback.robot.protocol.pilot.PilotReadOnlyFixtureTransport
@@ -81,6 +86,17 @@ data class PilotContainerTestHooks(
     val allowUnsupportedInstalledApkForHostTests: Boolean = false
 )
 
+enum class AppContainerDependency {
+    ROBOT_TRANSPORT,
+    AUTH_GATEWAY,
+    INVENTORY_GATEWAY,
+    REALTIME_TRANSPORT,
+    SESSION_COORDINATOR,
+    INVENTORY_REPOSITORY,
+    LOCAL_TELEMETRY_SOURCE,
+    LOCAL_MAP_REPOSITORY
+}
+
 /**
  * Manual dependency container owning transport, session, inventory, security, dispatcher, and clock lifecycles.
  * Preserves offline [SimulatorRobotTransport] as the default FCT-002/FCT-003 robot control path.
@@ -98,6 +114,7 @@ interface AppContainer : AutoCloseable {
     val pilotSessionController: PilotSessionController
     val offlineMockAuthorizationGate: PilotAuthorizationGate
     val offlineMockPilotController: PilotSessionController
+    val localMapRepository: LocalMapRepository
     val isLivePilotSupported: Boolean
         get() = BuildConfig.PILOT_INTERNET_CAPABLE
     fun startOfflineMockPilot(
@@ -122,8 +139,25 @@ class DefaultAppContainer(
     private val authGatewayOverride: AuthGateway? = null,
     private val inventoryGatewayOverride: DeviceInventoryGateway? = null,
     private val realtimeTransportOverride: RealtimeSessionTransport? = null,
-    private val pilotTestHooks: PilotContainerTestHooks? = null
+    private val pilotTestHooks: PilotContainerTestHooks? = null,
+    private val robotTransportOverride: RobotTransport? = null,
+    private val localStreamSourceOverride: LocalTelemetryStreamSource? = null,
+    private val localDiagnosticLoggerOverride: LocalDiagnosticSink? = null,
+    private val authGatewayProvider: (() -> AuthGateway)? = null,
+    private val inventoryGatewayProvider: (() -> DeviceInventoryGateway)? = null,
+    private val realtimeTransportProvider: (() -> RealtimeSessionTransport)? = null,
+    private val robotTransportProvider: (() -> RobotTransport)? = null,
+    private val localStreamSourceProvider: (() -> LocalTelemetryStreamSource)? = null,
+    private val dependencyResolutionObserver: ((AppContainerDependency) -> Unit)? = null
 ) : AppContainer {
+
+    private fun <T> resolveDependency(
+        dependency: AppContainerDependency,
+        delegate: Lazy<T>
+    ): T {
+        dependencyResolutionObserver?.invoke(dependency)
+        return delegate.value
+    }
 
     private val timeProvider: BootSessionTimeProvider by lazy {
         timeProviderOverride ?: context?.let {
@@ -147,19 +181,28 @@ class DefaultAppContainer(
         } ?: NonPersistentSessionStore
     }
 
-    private val authGateway: AuthGateway by lazy {
-        authGatewayOverride ?: OfflineFixtureAuthGateway(authClock = authClock)
+    private val authGatewayDelegate = lazy {
+        authGatewayOverride ?: authGatewayProvider?.invoke() ?: OfflineFixtureAuthGateway(authClock = authClock)
     }
 
-    private val inventoryGateway: DeviceInventoryGateway by lazy {
-        inventoryGatewayOverride ?: OfflineFixtureInventoryGateway()
+    private val authGateway: AuthGateway
+        get() = resolveDependency(AppContainerDependency.AUTH_GATEWAY, authGatewayDelegate)
+
+    private val inventoryGatewayDelegate = lazy {
+        inventoryGatewayOverride ?: inventoryGatewayProvider?.invoke() ?: OfflineFixtureInventoryGateway()
     }
 
-    override val realtimeTransport: RealtimeSessionTransport by lazy {
-        realtimeTransportOverride ?: OfflineFixtureRealtimeTransport()
+    private val inventoryGateway: DeviceInventoryGateway
+        get() = resolveDependency(AppContainerDependency.INVENTORY_GATEWAY, inventoryGatewayDelegate)
+
+    private val realtimeTransportDelegate = lazy {
+        realtimeTransportOverride ?: realtimeTransportProvider?.invoke() ?: OfflineFixtureRealtimeTransport()
     }
 
-    override val sessionCoordinator: SessionCoordinator by lazy {
+    override val realtimeTransport: RealtimeSessionTransport
+        get() = resolveDependency(AppContainerDependency.REALTIME_TRANSPORT, realtimeTransportDelegate)
+
+    private val sessionCoordinatorDelegate = lazy {
         SessionCoordinator(
             authGateway = authGateway,
             tokenStore = tokenStore,
@@ -183,19 +226,50 @@ class DefaultAppContainer(
         }
     }
 
-    override val inventoryRepository: DeviceInventoryRepository by lazy {
+    override val sessionCoordinator: SessionCoordinator
+        get() = resolveDependency(AppContainerDependency.SESSION_COORDINATOR, sessionCoordinatorDelegate)
+
+    private val inventoryRepositoryDelegate = lazy {
         DeviceInventoryRepository(
             sessionCoordinator = sessionCoordinator,
             inventoryGateway = inventoryGateway
         )
     }
 
-    override val robotTransport: RobotTransport by lazy {
-        SimulatorRobotTransport(
+    override val inventoryRepository: DeviceInventoryRepository
+        get() = resolveDependency(AppContainerDependency.INVENTORY_REPOSITORY, inventoryRepositoryDelegate)
+
+    private val robotTransportDelegate = lazy {
+        robotTransportOverride ?: robotTransportProvider?.invoke() ?: SimulatorRobotTransport(
             dispatcherProvider = dispatcherProvider,
             clock = clock
         )
     }
+
+    override val robotTransport: RobotTransport
+        get() = resolveDependency(AppContainerDependency.ROBOT_TRANSPORT, robotTransportDelegate)
+
+    private val localTelemetrySourceDelegate = lazy {
+        localStreamSourceOverride ?: localStreamSourceProvider?.invoke() ?: SyntheticReplayTelemetrySource.fromAssetManager(
+            assetManager = context?.assets,
+            ioDispatcher = dispatcherProvider.io
+        )
+    }
+
+    private val localTelemetrySource: LocalTelemetryStreamSource
+        get() = resolveDependency(AppContainerDependency.LOCAL_TELEMETRY_SOURCE, localTelemetrySourceDelegate)
+
+    private val localMapRepositoryDelegate = lazy {
+        LocalMapRepository(
+            streamSource = localTelemetrySource,
+            dispatcherProvider = dispatcherProvider,
+            clock = clock,
+            diagnosticLogger = localDiagnosticLoggerOverride ?: LocalDiagnosticLogger()
+        )
+    }
+
+    override val localMapRepository: LocalMapRepository
+        get() = resolveDependency(AppContainerDependency.LOCAL_MAP_REPOSITORY, localMapRepositoryDelegate)
 
     override val pilotAuthorizationGate: PilotAuthorizationGate by lazy {
         PilotAuthorizationGate(
@@ -606,10 +680,17 @@ class DefaultAppContainer(
     }
 
     override fun close() {
-        (robotTransport as? AutoCloseable)?.close()
-        realtimeTransport.close()
+        if (robotTransportDelegate.isInitialized()) {
+            (robotTransportDelegate.value as? AutoCloseable)?.close()
+        }
+        if (realtimeTransportDelegate.isInitialized()) {
+            realtimeTransportDelegate.value.close()
+        }
         offlineMockPilotController.close()
         pilotSessionController.close()
+        if (localMapRepositoryDelegate.isInitialized()) {
+            localMapRepositoryDelegate.value.close()
+        }
     }
 }
 

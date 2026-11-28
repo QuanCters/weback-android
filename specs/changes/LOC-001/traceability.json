@@ -48,8 +48,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-513",
           "pack_test_id": "V-U03",
-          "evidence_ref": "Planned L03A provider/factory spy counter tests in LocalMapTruthfulnessUiTest",
-          "status": "PLANNED"
+          "evidence_ref": "Behavioral provider & resolution oracles: app/src/test/java/com/weback/robot/ui/map/LocalMapActivityNavigationTest.kt (syntheticReplaySurvivesRecreateAndExplicitNavigationHasZeroFallbackOnEmptyAndErrorStreams & ac501_3_nonFallbackOracleRequiresRealProviderAndCachedResolutionTelemetryAcrossScenarios) + app/src/test/java/com/weback/robot/app/local/LocalAppContainerNonFallbackTest.kt (relocated from AppContainerTest.kt: ac501_3_defaultAppContainerExposesProviderFactoryAndResolutionOracleSeams) verify DefaultAppContainer lazy provider deltas=0 (robotTransportProvider, authGatewayProvider, inventoryGatewayProvider, realtimeTransportProvider), cached/lazy dependencyResolutionObserver deltas=0 across valid replay, zero-map EOF (asserted before Back navigation), codec error before MAP, codec error after valid MAP, and explicit navigation back to simulator; Operation-call & gate oracles: SpyRobotTransport.sendCommandCount=0 (1 only after explicit simulator control), SpyAuthGateway.signInCount=0, SpyInventoryGateway.fetchThingsCount=0, SpyRealtimeTransport.connectCount/sendOutboundCount=0, PilotAuthorizationGate.isAuthorized=false, PilotModeState.OfflineDefault; Local codec factory & structural isolation evidence: app/src/test/java/com/weback/robot/app/local/LocalMapRepositoryTest.kt (repositoryInvokesInjectedCodecFactoriesPerSessionWithoutTransportFallbackDependencies) verifies framerFactory/decoderFactory isolation with zero gateway/transport references; isolated single-fault anti-vacuity probes AV-1..AV-4 killed by AssertionError (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -165,8 +165,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-512",
           "pack_test_id": "V-U01",
-          "evidence_ref": "Planned L03A Robolectric Compose replay + zero-map rejection tests + offline apk-validation",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/map/LocalReplayViewerTest.kt & app/src/test/java/com/weback/robot/app/local/{SyntheticReplayTelemetrySourceTest,LocalMapRepositoryTest}.kt + packaged valid_mixed.bin/manifest.json + INTERNET-free apk-validation (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-505.2",
@@ -177,8 +177,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-513",
           "pack_test_id": "V-U02, V-U03",
-          "evidence_ref": "Planned L03A fixed-clock UI truthfulness, recreate, and accessibility tests",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/map/{LocalMapTruthfulnessUiTest,LocalMapActivityNavigationTest}.kt (incl. corrected SYNTHETIC_REPLAY non-LIVE presentation PLAYING (SYNTHETIC REPLAY — NOT LIVE) + syntheticReplaySourceAndFreshnessStayTruthfulAcrossPausedStaleEofErrorAndClockJump fake-clock challenge) & app/src/test/java/com/weback/robot/app/local/{LocalMapRepositoryTest,LocalDiagnosticLoggerTest}.kt + isolated temp-workspace Mutant M11b kills (PASS)",
+          "status": "VERIFIED"
         }
       ]
     },
@@ -346,8 +346,8 @@
           "evidence_tier": "AUTOMATED_IMPL",
           "test_oracle": "TEST-LOCAL-513",
           "pack_test_id": "V-U03",
-          "evidence_ref": "Planned L03A Compose UI unsupported controls & non-telemetry verification",
-          "status": "PLANNED"
+          "evidence_ref": "app/src/test/java/com/weback/robot/ui/map/LocalMapTruthfulnessUiTest.kt (unsupportedCapabilitiesDisabledAndVisiblyLabeledUnsupported) covering LF-010..LF-013 & LF-015 (PASS)",
+          "status": "VERIFIED"
         },
         {
           "ac_id": "AC-510.2",
